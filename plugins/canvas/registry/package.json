@@ -1,0 +1,14 @@
+{
+    "name": "mgcanvas-official-plugins",
+    "version": "1.0.0",
+    "private": true,
+    "type": "module",
+    "description": "MGCanvas 内置插件的本地集中构建",
+    "scripts": {
+        "build": "node build.mjs"
+    },
+    "devDependencies": {
+        "@mgcanvas/plugin-sdk": "file:../sdk",
+        "esbuild": "^0.25.0"
+    }
+}

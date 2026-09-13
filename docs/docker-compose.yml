@@ -1,0 +1,6 @@
+services:
+  docs:
+    image: ${MGCANVAS_DOCS_IMAGE:-mgcanvas-docs:local}
+    ports:
+      - "3001:3000"
+    restart: unless-stopped

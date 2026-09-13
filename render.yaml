@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: mgcanvas
+    runtime: docker
+    plan: free
+    autoDeployTrigger: off
+    healthCheckPath: /
+    envVars:
+      - key: PORT
+        value: 3000

@@ -503,7 +503,8 @@ export function createGenericNativePayload(operationId: string, currentPayload?:
     const usesOperationDefaults = currentPayload === undefined;
     const payload = clonePayload(currentPayload || operation.defaultPayload);
     const supportedModels = genericNativeModels(operationId);
-    if (supportedModels.length) {
+    // 渠道模型（channelId::model）不走内置目录规范化，否则会被覆盖回内置首个模型。
+    if (supportedModels.length && !isChannelModelValue(payload.model)) {
         const selectedModel = typeof payload.model === "string" ? getGenericModelProfile(payload.model) : undefined;
         const currentModel = selectedModel && supportedModels.some((profile) => profile.id === selectedModel.id) ? selectedModel : supportedModels[0]!;
         const variants = supportedModels.filter((profile) => genericNativeModelKey(profile) === genericNativeModelKey(currentModel));

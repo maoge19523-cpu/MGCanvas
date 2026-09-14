@@ -134,7 +134,8 @@ export function GenericNativeGenerationPanel({
     }, [config, kind]);
     const modelGroups = useMemo(() => {
         const builtinGroups = genericNativeModelChoiceGroups(kind, operation.id);
-        return channelModelGroup ? [channelModelGroup, ...builtinGroups] : builtinGroups;
+        // 已配置渠道模型时只列出渠道模型；没有可用渠道模型时回退内置目录，避免列表为空。
+        return channelModelGroup ? [channelModelGroup] : builtinGroups;
     }, [kind, operation.id, channelModelGroup]);
     const videoModelCategories = useMemo(() => (kind === "video" ? genericNativeVideoModelCategories(operation.id) : []), [kind, operation.id]);
     const hasModelChoices = kind === "video" ? videoModelCategories.some((category) => category.options.length > 0) : modelGroups.some((group) => group.options.length > 0);

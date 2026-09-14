@@ -582,8 +582,36 @@ export function genericNativeUsesPrompt(operationId: string): boolean {
     return usesPrompt(getGenericOperation(operationId));
 }
 
+/**
+ * 渠道模型没有内置 constraints，这里给出通用参数。
+ * 这些值会随 config 传给「调用脚本」的 params（size / count），脚本里可直接使用。
+ */
+function channelModelParameterDefinitions(operationId: string): readonly GenericNativeParameterDefinition[] {
+    if (operationId === "image.generate") {
+        return [
+            {
+                path: "metadata.size",
+                label: "尺寸",
+                control: "select",
+                optional: true,
+                options: [
+                    { label: "1024×1024 (1:1)", value: "1024*1024" },
+                    { label: "1280×720 (16:9)", value: "1280*720" },
+                    { label: "720×1280 (9:16)", value: "720*1280" },
+                    { label: "1152×864 (4:3)", value: "1152*864" },
+                    { label: "864×1152 (3:4)", value: "864*1152" },
+                ],
+            },
+            { path: "n", label: "生成数量", control: "number", min: 1, max: 4, step: 1 },
+        ];
+    }
+    return [];
+}
+
 export function genericNativeParameterDefinitions(operationId: string, payload: Record<string, unknown>): readonly GenericNativeParameterDefinition[] {
     const operation = getGenericOperation(operationId);
+    // 渠道模型走通用参数，不读取内置模型目录的 constraints。
+    if (isChannelModelValue(payload.model)) return channelModelParameterDefinitions(operationId);
     const profile = typeof payload.model === "string" ? getGenericModelProfile(payload.model) : undefined;
     const constraints = profile?.constraints;
     const parameters: GenericNativeParameterDefinition[] = [];

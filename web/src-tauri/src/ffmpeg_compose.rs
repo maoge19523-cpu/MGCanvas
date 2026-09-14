@@ -111,6 +111,24 @@ fn candidate_from_dir(dir: &Path) -> Option<PathBuf> {
     None
 }
 
+/// 读取 FFmpeg 的版本号用于横向比较；解析失败（例如每日构建 N-78313）返回 0，会被排到最后。
+fn ffmpeg_version_rank(executable: &Path) -> u32 {
+    let Ok(output) = Command::new(executable).arg("-version").output() else {
+        return 0;
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    let token = text
+        .lines()
+        .next()
+        .and_then(|line| line.split("version").nth(1))
+        .map(|rest| rest.trim().split(['-', ' ']).next().unwrap_or("").to_owned())
+        .unwrap_or_default();
+    let mut parts = token.split('.');
+    let major = parts.next().and_then(|value| value.parse::<u32>().ok()).unwrap_or(0);
+    let minor = parts.next().and_then(|value| value.parse::<u32>().ok()).unwrap_or(0);
+    major * 1000 + minor
+}
+
 fn detect_ffmpeg_path(manual: Option<&str>) -> Option<PathBuf> {
     if let Some(value) = manual.map(str::trim).filter(|value| !value.is_empty()) {
         let path = PathBuf::from(value);
@@ -123,21 +141,18 @@ fn detect_ffmpeg_path(manual: Option<&str>) -> Option<PathBuf> {
             return Some(found);
         }
     }
-    if Command::new("ffmpeg")
-        .arg("-version")
-        .stderr(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .spawn()
-        .is_ok()
-    {
-        return Some(PathBuf::from("ffmpeg"));
+    // 收集全部候选后按版本高低选择：本机可能残留多年前的旧构建，旧版缺少部分滤镜选项会直接导致合成失败。
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if Command::new("ffmpeg").arg("-version").output().is_ok() {
+        candidates.push(PathBuf::from("ffmpeg"));
     }
     for dir in AUTO_DIRS {
         if let Some(found) = candidate_from_dir(Path::new(dir)) {
-            return Some(found);
+            candidates.push(found);
         }
     }
-    None
+    candidates.sort_by_key(|path| std::cmp::Reverse(ffmpeg_version_rank(path)));
+    candidates.into_iter().next()
 }
 
 fn run_captured(executable: &Path, arguments: &[&str]) -> Result<std::process::Output, String> {

@@ -125,9 +125,29 @@ export function CanvasCompositePanel({ node, segments, music, isRunning, onChang
                             </Tooltip>
                             <span className="inline-flex items-center gap-1 text-[10px]" style={{ color: theme.node.faint }}>
                                 入
-                                <InputNumber size="small" min={0} max={durationSec || undefined} step={0.01} precision={2} controls={false} value={item.start} placeholder={durationSec ? "0" : "—"} style={{ width: 56 }} onChange={(value) => updateSegment(segment.node.id, { start: value === null ? undefined : Number(value) })} />
+                                <InputNumber
+                                    size="small"
+                                    min={0}
+                                    max={durationSec || undefined}
+                                    step={0.1}
+                                    controls={false}
+                                    value={typeof item.start === "number" && Number.isFinite(item.start) ? item.start : undefined}
+                                    placeholder={durationSec ? "0.0" : "—"}
+                                    style={{ width: 72 }}
+                                    onChange={(value) => updateSegment(segment.node.id, { start: value === null || !Number.isFinite(Number(value)) ? undefined : Number(value) })}
+                                />
                                 出
-                                <InputNumber size="small" min={0} max={durationSec || undefined} step={0.01} precision={2} controls={false} value={item.end} placeholder={durationSec ? String(Number(durationSec.toFixed(2))) : "—"} style={{ width: 56 }} onChange={(value) => updateSegment(segment.node.id, { end: value === null ? undefined : Number(value) })} />
+                                <InputNumber
+                                    size="small"
+                                    min={0}
+                                    max={durationSec || undefined}
+                                    step={0.1}
+                                    controls={false}
+                                    value={typeof item.end === "number" && Number.isFinite(item.end) ? item.end : undefined}
+                                    placeholder={durationSec ? String(Number(durationSec.toFixed(1))) : "—"}
+                                    style={{ width: 72 }}
+                                    onChange={(value) => updateSegment(segment.node.id, { end: value === null || !Number.isFinite(Number(value)) ? undefined : Number(value) })}
+                                />
                                 <span>秒</span>
                             </span>
                             <InputNumber size="small" min={0} max={400} step={5} addonAfter="%" controls={false} value={Math.round((item.volume ?? 1) * 100)} style={{ width: 92 }} onChange={(value) => updateSegment(segment.node.id, { volume: clampPercent(value, 100) / 100 })} />

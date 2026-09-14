@@ -96,7 +96,7 @@ export function assertGenericEnvelope(raw: unknown): void {
     if (!body) return;
     const code = body.code;
     const explicitFailure = code === false || (typeof code === "number" && code !== 0 && code !== 200) || (typeof code === "string" && ["error", "failed", "failure", "unauthorized", "forbidden"].includes(code.toLowerCase()));
-    if (explicitFailure) throw new Error(readMessage(body) || `Generic API 返回错误代码：${String(code)}`);
+    if (explicitFailure) throw new Error(readMessage(body) || `异步任务接口返回错误代码：${String(code)}`);
 }
 
 export function extractGenericOutputs(raw: unknown, outputHint: GenericOutputKind, taskId?: string): GenericOutput[] {

@@ -652,7 +652,7 @@ export default {
             generate: "Generate",
         },
         generic: {
-            nodeDescription: "Generic API task: choose an operation, submit parameters, and track its result",
+            nodeDescription: "Async task: choose an operation, submit parameters, and track its result",
             card: { eyebrow: "Generic task", taskId: "Task ID", notSubmitted: "Not submitted" },
             status: { idle: "Ready", queued: "Queued", running: "Processing", succeeded: "Completed", partial: "Partially completed", failed: "Failed", attention: "Needs input", stopped: "Stopped" },
             panel: {
@@ -1153,8 +1153,7 @@ export default {
         apiKeyWalletBalance: "Wallet balance: {{amount}} {{currency}}",
         apiKeyWalletUsed: "Used: {{amount}} {{currency}}",
         tabs: {
-            quick: "Generic API",
-            channels: "Providers",
+                channels: "Providers",
             preferences: "Preferences",
             promptSources: "Prompt sources",
         },
@@ -1370,7 +1369,7 @@ export default {
         },
         protocols: {
             ark: "Volcengine Ark",
-            generic: "通用 API",
+            generic: "Async Task",
         },
     },
     agent: {

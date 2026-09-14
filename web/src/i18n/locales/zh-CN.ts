@@ -646,7 +646,7 @@ export default {
             generate: "开始生成",
         },
         generic: {
-            nodeDescription: "通用 API 任务：选择能力、提交参数并跟踪结果",
+            nodeDescription: "异步任务：选择能力、提交参数并跟踪结果",
             card: { eyebrow: "通用生成任务", taskId: "任务 ID", notSubmitted: "尚未提交" },
             status: { idle: "待配置", queued: "已排队", running: "处理中", succeeded: "已完成", partial: "部分完成", failed: "失败", attention: "等待补充参数", stopped: "已停止" },
             panel: {
@@ -1132,8 +1132,7 @@ export default {
         apiKeyWalletBalance: "钱包余额：{{amount}} {{currency}}",
         apiKeyWalletUsed: "已使用：{{amount}} {{currency}}",
         tabs: {
-            quick: "通用 API",
-            channels: "渠道",
+                channels: "渠道",
             preferences: "偏好设置",
             promptSources: "提示词来源",
         },
@@ -1343,7 +1342,7 @@ export default {
         },
         protocols: {
             ark: "火山方舟",
-            generic: "通用 API",
+            generic: "异步任务",
         },
     },
     agent: {

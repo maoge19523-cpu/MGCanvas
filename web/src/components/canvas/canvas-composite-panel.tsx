@@ -119,11 +119,11 @@ export function CanvasCompositePanel({ node, segments, music, isRunning, onChang
                                 <Video className="size-4 shrink-0 opacity-45" />
                             )}
                             <Tooltip title={segment.node.title}>
-                                <button type="button" className="h-6 max-w-[150px] truncate rounded-md px-1.5 text-left text-[11px] transition-colors hover:bg-black/5 dark:hover:bg-white/10" style={{ color: theme.node.text }} onClick={() => onFocusReference(segment.node.id)}>
+                                <button type="button" className="h-6 w-[118px] shrink-0 truncate rounded-md px-1.5 text-left text-[11px] transition-colors hover:bg-black/5 dark:hover:bg-white/10" style={{ color: theme.node.text }} onClick={() => onFocusReference(segment.node.id)}>
                                     {segmentLabel(index)} · {segment.node.title || "未命名"}
                                 </button>
                             </Tooltip>
-                            <span className="inline-flex items-center gap-1 text-[10px]" style={{ color: theme.node.faint }}>
+                            <span className="inline-flex shrink-0 items-center gap-1 text-[10px]" style={{ color: theme.node.faint }}>
                                 入
                                 <InputNumber
                                     size="small"

@@ -21,6 +21,8 @@ export function CanvasWalletBalance() {
     const [wallet, setWallet] = useState<GenericWalletSummary | null>(null);
     const [status, setStatus] = useState<WalletStatus>("idle");
     const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+    // 余额接口只有部分服务商提供；从未查到过余额时隐藏整个入口，避免常驻无法消除的错误提示。
+    const [everSucceeded, setEverSucceeded] = useState(false);
 
     const refresh = useCallback(async () => {
         const apiKey = channel.apiKey.trim();
@@ -40,6 +42,7 @@ export function CanvasWalletBalance() {
             setWallet(nextWallet);
             setUpdatedAt(new Date());
             setStatus("ready");
+            setEverSucceeded(true);
         } catch {
             setStatus("error");
         }
@@ -59,6 +62,9 @@ export function CanvasWalletBalance() {
     }, [i18n.language, updatedAt]);
 
     if (!channel.apiKey.trim() || !channel.baseUrl.trim()) return null;
+    // 该渠道从未成功返回过余额（例如百炼没有 /api/usage/wallet/ 接口）时不显示入口。
+    // 查询中仍展示一次加载态，便于用户知道正在尝试；失败后即隐藏。
+    if (status === "error" && !everSucceeded) return null;
 
     const amount = wallet ? formatGenericWalletAmount(wallet.amount) : "—";
     const label = t("canvas.wallet.balance", { amount });

@@ -109,53 +109,60 @@ export function CanvasCompositePanel({ node, segments, music, isRunning, onChang
                     const durationMs = segment.node.metadata?.durationMs || 0;
                     const durationSec = durationMs ? durationMs / 1000 : undefined;
                     return (
-                        <div key={segment.connectionId} className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-lg px-1 py-1" style={{ background: `${theme.node.fill}55` }}>
-                            <span className="w-4 shrink-0 text-center text-[10px] tabular-nums" style={{ color: theme.node.faint }}>
-                                {index + 1}
-                            </span>
-                            {segment.node.metadata?.content ? (
-                                <video src={segment.node.metadata.content} preload="metadata" muted playsInline className="size-9 shrink-0 rounded-md object-cover" style={{ pointerEvents: "none" }} />
-                            ) : (
-                                <Video className="size-4 shrink-0 opacity-45" />
-                            )}
-                            <Tooltip title={segment.node.title}>
-                                <button type="button" className="h-6 w-[118px] shrink-0 truncate rounded-md px-1.5 text-left text-[11px] transition-colors hover:bg-black/5 dark:hover:bg-white/10" style={{ color: theme.node.text }} onClick={() => onFocusReference(segment.node.id)}>
-                                    {segmentLabel(index)} · {segment.node.title || "未命名"}
-                                </button>
-                            </Tooltip>
-                            <span className="inline-flex shrink-0 items-center gap-1 text-[10px]" style={{ color: theme.node.faint }}>
-                                入
-                                <InputNumber
-                                    size="small"
-                                    min={0}
-                                    max={durationSec || undefined}
-                                    step={0.1}
-                                    controls={false}
-                                    value={typeof item.start === "number" && Number.isFinite(item.start) ? item.start : undefined}
-                                    placeholder={durationSec ? "0.0" : "—"}
-                                    style={{ width: 72 }}
-                                    onChange={(value) => updateSegment(segment.node.id, { start: value === null || !Number.isFinite(Number(value)) ? undefined : Number(value) })}
-                                />
-                                出
-                                <InputNumber
-                                    size="small"
-                                    min={0}
-                                    max={durationSec || undefined}
-                                    step={0.1}
-                                    controls={false}
-                                    value={typeof item.end === "number" && Number.isFinite(item.end) ? item.end : undefined}
-                                    placeholder={durationSec ? String(Number(durationSec.toFixed(1))) : "—"}
-                                    style={{ width: 72 }}
-                                    onChange={(value) => updateSegment(segment.node.id, { end: value === null || !Number.isFinite(Number(value)) ? undefined : Number(value) })}
-                                />
-                                <span>秒</span>
-                            </span>
-                            <InputNumber size="small" min={0} max={400} step={5} addonAfter="%" controls={false} value={Math.round((item.volume ?? 1) * 100)} style={{ width: 92 }} onChange={(value) => updateSegment(segment.node.id, { volume: clampPercent(value, 100) / 100 })} />
-                            <span className="ml-auto inline-flex shrink-0 items-center">
-                                <Button size="small" type="text" disabled={index === 0 || isRunning} icon={<ChevronUp className="size-3.5" />} aria-label="上移" onClick={() => onReorderConnections(segment.connectionId, segments[index - 1]!.connectionId)} />
-                                <Button size="small" type="text" disabled={index === segments.length - 1 || isRunning} icon={<ChevronDown className="size-3.5" />} aria-label="下移" onClick={() => onReorderConnections(segment.connectionId, segments[index + 1]!.connectionId)} />
-                                <Button size="small" type="text" disabled={isRunning} icon={<X className="size-3.5" />} aria-label="移除连线" onClick={() => onRemoveConnection(segment.connectionId)} />
-                            </span>
+                        <div key={segment.connectionId} className="flex flex-col gap-1.5 rounded-lg px-1.5 py-1.5" style={{ background: `${theme.node.fill}55` }}>
+                            <div className="flex min-w-0 items-center gap-2">
+                                <span className="w-4 shrink-0 text-center text-[10px] tabular-nums" style={{ color: theme.node.faint }}>
+                                    {index + 1}
+                                </span>
+                                {segment.node.metadata?.content ? (
+                                    <video src={segment.node.metadata.content} preload="metadata" muted playsInline className="size-9 shrink-0 rounded-md object-cover" style={{ pointerEvents: "none" }} />
+                                ) : (
+                                    <Video className="size-4 shrink-0 opacity-45" />
+                                )}
+                                <Tooltip title={segment.node.title}>
+                                    <button type="button" className="h-6 min-w-0 flex-1 truncate rounded-md px-1.5 text-left text-[11px] transition-colors hover:bg-black/5 dark:hover:bg-white/10" style={{ color: theme.node.text }} onClick={() => onFocusReference(segment.node.id)}>
+                                        {segmentLabel(index)} · {segment.node.title || "未命名"}
+                                    </button>
+                                </Tooltip>
+                                <span className="ml-auto inline-flex shrink-0 items-center">
+                                    <Button size="small" type="text" disabled={index === 0 || isRunning} icon={<ChevronUp className="size-3.5" />} aria-label="上移" onClick={() => onReorderConnections(segment.connectionId, segments[index - 1]!.connectionId)} />
+                                    <Button size="small" type="text" disabled={index === segments.length - 1 || isRunning} icon={<ChevronDown className="size-3.5" />} aria-label="下移" onClick={() => onReorderConnections(segment.connectionId, segments[index + 1]!.connectionId)} />
+                                    <Button size="small" type="text" disabled={isRunning} icon={<X className="size-3.5" />} aria-label="移除连线" onClick={() => onRemoveConnection(segment.connectionId)} />
+                                </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pl-6 text-[10px]" style={{ color: theme.node.faint }}>
+                                <span className="inline-flex shrink-0 items-center gap-1">
+                                    入
+                                    <InputNumber
+                                        size="small"
+                                        min={0}
+                                        max={durationSec || undefined}
+                                        step={0.1}
+                                        controls={false}
+                                        value={typeof item.start === "number" && Number.isFinite(item.start) ? item.start : undefined}
+                                        placeholder={durationSec ? "0.0" : "—"}
+                                        style={{ width: 76 }}
+                                        onChange={(value) => updateSegment(segment.node.id, { start: value === null || !Number.isFinite(Number(value)) ? undefined : Number(value) })}
+                                    />
+                                    出
+                                    <InputNumber
+                                        size="small"
+                                        min={0}
+                                        max={durationSec || undefined}
+                                        step={0.1}
+                                        controls={false}
+                                        value={typeof item.end === "number" && Number.isFinite(item.end) ? item.end : undefined}
+                                        placeholder={durationSec ? String(Number(durationSec.toFixed(1))) : "—"}
+                                        style={{ width: 76 }}
+                                        onChange={(value) => updateSegment(segment.node.id, { end: value === null || !Number.isFinite(Number(value)) ? undefined : Number(value) })}
+                                    />
+                                    <span>秒</span>
+                                </span>
+                                <span className="inline-flex shrink-0 items-center gap-1">
+                                    音量
+                                    <InputNumber size="small" min={0} max={400} step={5} addonAfter="%" controls={false} value={Math.round((item.volume ?? 1) * 100)} style={{ width: 96 }} onChange={(value) => updateSegment(segment.node.id, { volume: clampPercent(value, 100) / 100 })} />
+                                </span>
+                            </div>
                         </div>
                     );
                 })}

@@ -443,7 +443,7 @@
         transform: none;
     }
 
-    /* 画布工具按钮：鼠标悬停时出现一圈彩虹光环，同时旋转与呼吸。 */
+    /* 画布工具按钮：内圈与外圈同为圆形，悬停时外圈出现旋转 + 呼吸的彩虹光环。 */
     .td-canvas-tool-ring {
         position: relative;
         display: inline-flex;
@@ -451,7 +451,7 @@
         justify-content: center;
         padding: 0;
         border: 0;
-        border-radius: 10px;
+        border-radius: 9999px;
         background: transparent;
         cursor: pointer;
     }
@@ -459,10 +459,10 @@
     .td-canvas-tool-ring::before {
         content: "";
         position: absolute;
-        inset: -1.5px;
+        inset: -2px;
         z-index: -1;
-        border-radius: inherit;
-        background: conic-gradient(from 0deg, #2dd4bf, #22d3ee, #818cf8, #e879f9, #2dd4bf);
+        border-radius: 9999px;
+        background: conic-gradient(from 0deg, #2dd4bf, #38bdf8, #a78bfa, #f0abfc, #2dd4bf);
         opacity: 0;
         pointer-events: none;
         transition: opacity 180ms ease;
@@ -481,12 +481,12 @@
     @keyframes td-canvas-tool-ring {
         0%,
         100% {
-            transform: rotate(0deg) scale(0.97);
-            filter: blur(0.6px) brightness(0.9);
+            transform: rotate(0deg) scale(0.98);
+            filter: brightness(0.92);
         }
         50% {
-            transform: rotate(180deg) scale(1.03);
-            filter: blur(0.6px) brightness(1.2);
+            transform: rotate(180deg) scale(1.02);
+            filter: brightness(1.15);
         }
     }
 

@@ -456,23 +456,42 @@ function ToolbarButton({
 }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
 
+    // 圆形主按钮使用自带彩虹光环的样式，其余工具保持扁平线框按钮。
+    if (primary) {
+        return (
+            <button
+                type="button"
+                aria-label={label}
+                data-canvas-tool={id}
+                className="td-canvas-primary-tool"
+                disabled={disabled}
+                onMouseEnter={(event) => {
+                    onHover(id);
+                    onTipY(getTipY(wrapRef.current, event.currentTarget));
+                }}
+                onMouseLeave={() => onHover(null)}
+                onClick={onClick}
+            >
+                {children}
+            </button>
+        );
+    }
+
     return (
         <Button
             type="text"
             aria-label={label}
             data-canvas-tool={id}
-            className={`td-canvas-tool-button !p-0 ${primary ? "!h-10 !w-10 !min-w-10 !rounded-full" : "!h-8 !w-8 !min-w-8 !rounded-[10px]"}`}
+            className={`td-canvas-tool-button !p-0 !h-8 !w-8 !min-w-8 !rounded-[10px]`}
             disabled={disabled}
             style={
-                primary
-                    ? { background: "#f5f5f4", color: "#111827", opacity: 1, boxShadow: "0 6px 18px rgba(0,0,0,.28)" }
-                    : active
-                      ? activeStyle
-                      : hovered === id && !disabled
-                        ? danger
-                            ? { background: "rgba(248,113,113,.1)", color: "#f87171" }
-                            : hoverStyle
-                        : { color: theme.toolbar.item, opacity: disabled ? 0.28 : danger ? 0.58 : 0.82 }
+                active
+                    ? activeStyle
+                    : hovered === id && !disabled
+                      ? danger
+                          ? { background: "rgba(248,113,113,.1)", color: "#f87171" }
+                          : hoverStyle
+                      : { color: theme.toolbar.item, opacity: disabled ? 0.28 : danger ? 0.58 : 0.82 }
             }
             icon={children}
             onMouseEnter={(event) => {

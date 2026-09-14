@@ -45,17 +45,10 @@ export function AppTopNav() {
         if (navigation && actions) setDesktopTitlebarSlots({ navigation, actions });
     }, [windowsDesktop]);
 
-    // 主导航已迁移到左侧边栏（AppSideNav），Agent 入口固定在右下角，标题栏只承载状态操作。
-    const desktopActions = (
-        <div className="flex h-full items-center gap-1 whitespace-nowrap">
-            <UserStatusActions />
-        </div>
-    );
-
+    // 导航与系统操作已分别迁到左侧边栏（AppSideNav）与右下角 Agent 入口，
+    // 桌面端标题栏不再承载操作区，避免与侧边栏底部重复。
     return (
         <>
-            {windowsDesktop && !hideHeader && desktopTitlebarSlots ? createPortal(desktopActions, desktopTitlebarSlots.actions) : null}
-
             {!windowsDesktop && !hideHeader ? (
                 <header className="td-app-top-nav sticky top-0 z-20 h-14 shrink-0 border-b border-black/[0.06] bg-background/86 backdrop-blur-xl dark:border-white/[0.06]">
                     <div className="td-app-top-nav-inner mx-auto flex h-full w-full max-w-[1440px] items-stretch justify-between gap-5 px-6">

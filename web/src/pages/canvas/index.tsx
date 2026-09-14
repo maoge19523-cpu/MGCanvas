@@ -107,7 +107,7 @@ export default function CanvasPage() {
                     <motion.div {...contentMotion(0.02)} className="td-home-hero-copy relative z-10 max-w-[650px]">
                         <div className="td-home-kicker flex items-center gap-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-stone-500 dark:text-zinc-500">
                             <span className="h-px w-8 bg-[#756bff] shadow-[0_0_10px_rgba(117,107,255,0.65)]" />
-                            <span>TD / WORKSPACE</span>
+                            <span>{t("meta.title")} / WORKSPACE</span>
                             {hydrated ? <span className="normal-case tracking-normal text-stone-400 dark:text-zinc-600">{t("canvas.start.workspaceStatus", { count: projects.length })}</span> : null}
                         </div>
                         <h1 className="td-home-headline max-w-[620px] font-semibold leading-[1.02] tracking-[-0.05em] text-stone-950 dark:text-[#f5f5f6]">{t("canvas.start.headline")}</h1>

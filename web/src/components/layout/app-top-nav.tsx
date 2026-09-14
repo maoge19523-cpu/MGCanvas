@@ -48,30 +48,7 @@ export function AppTopNav() {
         if (navigation && actions) setDesktopTitlebarSlots({ navigation, actions });
     }, [windowsDesktop]);
 
-    const desktopNavigation = (
-        <nav className="flex h-full min-w-0 items-stretch gap-0.5" aria-label={t("topNav.menu")}>
-            {navigationTools.map((tool) => {
-                const Icon = tool.icon;
-                const active = tool.slug === activeToolSlug;
-                return (
-                    <Link
-                        key={tool.slug}
-                        to={`/${tool.slug}`}
-                        className={cn(
-                            "relative flex h-full shrink-0 items-center gap-1.5 px-3 text-[13px] transition-colors after:absolute after:inset-x-3 after:bottom-1.5 after:h-0.5 after:rounded-full",
-                            active
-                                ? "font-medium text-stone-950 after:bg-violet-500 dark:text-stone-100 dark:after:bg-violet-400"
-                                : "text-stone-500 after:bg-transparent hover:bg-black/[0.035] hover:text-stone-900 dark:text-stone-400 dark:hover:bg-white/[0.045] dark:hover:text-stone-100",
-                        )}
-                    >
-                        <Icon className="size-[15px]" strokeWidth={1.65} />
-                        <span>{t(`navigation.${tool.slug}`)}</span>
-                    </Link>
-                );
-            })}
-        </nav>
-    );
-
+    // 主导航已迁移到左侧边栏（AppSideNav），标题栏只承载状态与系统操作。
     const desktopActions = (
         <div className="flex h-full items-center gap-1 whitespace-nowrap">
             <Tooltip title={t(panelOpen ? "topNav.closeAgent" : "topNav.openAgent")}>
@@ -90,12 +67,7 @@ export function AppTopNav() {
 
     return (
         <>
-            {windowsDesktop && !hideHeader && desktopTitlebarSlots ? (
-                <>
-                    {createPortal(desktopNavigation, desktopTitlebarSlots.navigation)}
-                    {createPortal(desktopActions, desktopTitlebarSlots.actions)}
-                </>
-            ) : null}
+            {windowsDesktop && !hideHeader && desktopTitlebarSlots ? createPortal(desktopActions, desktopTitlebarSlots.actions) : null}
 
             {!windowsDesktop && !hideHeader ? (
                 <header className="td-app-top-nav sticky top-0 z-20 h-14 shrink-0 border-b border-black/[0.06] bg-background/86 backdrop-blur-xl dark:border-white/[0.06]">

@@ -12,7 +12,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { getGenericOperation } from "@/services/api/generic-contract";
 import { getGenericModelProfile } from "@/services/api/generic-models";
 import { formatGenericPriceQuote, getCachedGenericPricingCatalog, loadGenericPricingCatalog, quoteGenericPrice, type GenericPriceQuote, type GenericPricingCatalog } from "@/services/api/generic-pricing";
-import { resolveModelRequestConfig, useConfigStore } from "@/stores/use-config-store";
+import { modelOptionLabel, resolveModelRequestConfig, selectableModelsByCapability, useConfigStore, type ModelCapability } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { CanvasNodeData, CanvasNodeMetadata } from "@/types/canvas";
 import { GENERIC_SEEDREAM_VIRTUAL_RATIO_PATH, GENERIC_SEEDREAM_VIRTUAL_RESOLUTION_PATH, inferGenericSeedreamGeometry, isGenericSeedreamVirtualPath } from "./generic-aspect-dimensions";
@@ -124,7 +124,18 @@ export function GenericNativeGenerationPanel({
     }, [pricingBaseUrl]);
 
     const effectivePayload = useMemo(() => createGenericNativePayload(operation.id, payload, referenceCounts), [operation.id, payload, referenceCounts]);
-    const modelGroups = useMemo(() => genericNativeModelChoiceGroups(kind, operation.id), [kind, operation.id]);
+    // 渠道模型优先展示：用户在设置里配置的模型按当前节点能力筛选后与内置目录并列。
+    // 目前只有图片生成接入了渠道协议，视频/音频/文本仍走内置目录，避免误选后调用到错误接口。
+    const channelModelGroup = useMemo(() => {
+        if (kind !== "image") return null;
+        const values = selectableModelsByCapability(config, kind as ModelCapability);
+        if (!values.length) return null;
+        return { label: "渠道模型", options: values.map((value) => ({ label: modelOptionLabel(config, value), value })) };
+    }, [config, kind]);
+    const modelGroups = useMemo(() => {
+        const builtinGroups = genericNativeModelChoiceGroups(kind, operation.id);
+        return channelModelGroup ? [channelModelGroup, ...builtinGroups] : builtinGroups;
+    }, [kind, operation.id, channelModelGroup]);
     const videoModelCategories = useMemo(() => (kind === "video" ? genericNativeVideoModelCategories(operation.id) : []), [kind, operation.id]);
     const hasModelChoices = kind === "video" ? videoModelCategories.some((category) => category.options.length > 0) : modelGroups.some((group) => group.options.length > 0);
     const parameters = useMemo(() => genericNativeParameterDefinitions(operation.id, effectivePayload), [effectivePayload, operation.id]);

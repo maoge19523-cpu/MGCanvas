@@ -13,7 +13,7 @@ import type { GenericOutput } from "@/services/api/generic-protocol";
 import { persistGenericRunResult } from "@/services/api/generic-storage";
 import { clearGenericTaskJournal, journalGenericSubmission, mergeGenericTaskJournal } from "@/services/api/generic-task-journal";
 import { requestGenericWalletRefresh } from "@/services/api/generic-wallet";
-import { resolveModelChannel, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
+import { resolveModelChannel, resolveModelRequestConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { uploadImage } from "@/services/image-storage";
 import { uploadMediaFile } from "@/services/file-storage";
 import { downloadBlobBackedMedia, downloadFilenameFromTitle, type DownloadableMediaKind } from "@/services/media-download";
@@ -48,6 +48,7 @@ import {
     changeGenericNativeModel,
     countGenericNativeReferences,
     createGenericNativePayload,
+    isChannelModelValue,
     parseGenericNativePayload,
     prepareGenericNativeRun,
     writeGenericNativePrompt,
@@ -2101,6 +2102,56 @@ function MGCanvasProjectPage() {
         }
     }, []);
 
+    /**
+     * 用户渠道模型（OpenAI / Gemini / 火山方舟等）走渠道协议生成；
+     * 内置目录模型继续走异步任务协议，两条路径互不影响。
+     */
+    const handleChannelModelRun = useCallback(
+        async (node: CanvasNodeData, modelValue: string, payload: Record<string, unknown>) => {
+            if (genericNativeNodeKind(node.type) !== "image") {
+                message.warning("渠道模型目前只支持图片节点，视频、音频与文本请在模型列表中选择内置模型。");
+                return;
+            }
+            const requestConfig = resolveModelRequestConfig(effectiveConfig, modelValue);
+            if (!isAiConfigReady(requestConfig, requestConfig.model)) {
+                openConfigDialog(true);
+                return;
+            }
+            genericRequestLocksRef.current.add(node.id);
+            const controller = startGenerationRequest(node.id, node.id, node.id);
+            const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
+            const requested = Number(payload.n);
+            const count = Number.isInteger(requested) && requested >= 1 ? String(Math.min(requested, 10)) : "1";
+            setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, model: modelValue, prompt, status: NODE_STATUS_LOADING, errorDetails: undefined } } : item)));
+            try {
+                const references = buildNodeGenerationInputs(node.id, nodesRef.current, connectionsRef.current).flatMap((input) => (input.type === "image" && input.image ? [input.image] : []));
+                const items = references.length
+                    ? await requestEdit({ ...requestConfig, count }, prompt, references, undefined, { signal: controller.signal })
+                    : await requestGeneration({ ...requestConfig, count }, prompt, { signal: controller.signal });
+                const image = items[0];
+                if (!image?.dataUrl) throw new Error("渠道模型没有返回图片，请检查模型能力与接口地址。");
+                const uploaded = await uploadImage(image.dataUrl);
+                setNodes((prev) =>
+                    prev.map((item) =>
+                        item.id === node.id
+                            ? { ...item, metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt, model: modelValue, status: NODE_STATUS_SUCCESS, errorDetails: undefined } }
+                            : item,
+                    ),
+                );
+            } catch (error) {
+                if (!isGenerationCanceled(error)) {
+                    const errorDetails = error instanceof Error ? error.message : "生成失败";
+                    message.error(errorDetails);
+                    setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails } } : item)));
+                }
+            } finally {
+                genericRequestLocksRef.current.delete(node.id);
+                finishGenerationRequest(node.id, controller);
+            }
+        },
+        [effectiveConfig, finishGenerationRequest, message, openConfigDialog, startGenerationRequest],
+    );
+
     const handleRunGeneric = useCallback(
         async (node: CanvasNodeData, payload: Record<string, unknown>) => {
             if (genericRequestLocksRef.current.has(node.id) || generationRequestsRef.current.has(node.id)) {
@@ -2109,6 +2160,11 @@ function MGCanvasProjectPage() {
             }
             if (hasUnresolvedGenericTask(node)) {
                 message.warning("该节点仍有关联的远端任务。为避免串用 Task ID 或重复计费，请先恢复查询；如需并行生成，请新建一个同类型节点。");
+                return;
+            }
+            const channelModel = typeof payload.model === "string" ? payload.model : "";
+            if (isChannelModelValue(channelModel)) {
+                await handleChannelModelRun(node, channelModel, payload);
                 return;
             }
             const resolved = resolveGenericChannel(node);

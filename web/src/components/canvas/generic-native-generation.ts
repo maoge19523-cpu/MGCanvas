@@ -15,6 +15,17 @@ import {
 
 export type GenericNativeNodeKind = "image" | "video" | "audio" | "text";
 
+/**
+ * 渠道模型值形如 `channelId::modelName`（与 use-config-store 的 CHANNEL_MODEL_SEPARATOR 保持一致）。
+ * 这里不复用 store 常量，是为了让本模块保持零 store 依赖，便于在测试环境中直接导入。
+ */
+const CHANNEL_MODEL_SEPARATOR = "::";
+
+/** 判断模型值是否来自用户配置的渠道（而非内置模型目录）。 */
+export function isChannelModelValue(value: unknown): boolean {
+    return typeof value === "string" && value.includes(CHANNEL_MODEL_SEPARATOR);
+}
+
 export type GenericNativeReferenceCounts = Readonly<{
     image: number;
     video: number;
@@ -380,6 +391,8 @@ export function genericNativeVideoModelCategories(operationId: string): readonly
 }
 
 export function readGenericNativeModelChoice(kind: GenericNativeNodeKind, operationId: string, payload: Record<string, unknown>): string | undefined {
+    // 渠道模型（channelId::model）直接回显，不查内置目录。
+    if (typeof payload.model === "string" && isChannelModelValue(payload.model)) return payload.model;
     if (kind === "image" && operationId === "midjourney.imagine") {
         const version = typeof payload.version === "string" ? payload.version.toLowerCase().replace(/^v/, "") : "";
         if (payload.niji === true && ["7", "6"].includes(version)) return `midjourney:niji${version}`;
@@ -398,6 +411,15 @@ export function changeGenericNativeModelChoice(
 ): { operationId: string; payload: Record<string, unknown> } {
     const currentPrompt = readGenericNativePrompt(operationId, payload);
     const currentOutputCount = requestedOutputCount(payload);
+    // 渠道模型：直接写入 payload.model，不走内置目录的参数规范化。
+    if (isChannelModelValue(choice)) {
+        const nextOperationId = kind === "image" && operationId === "midjourney.imagine" ? "image.generate" : operationId;
+        const nextPayload = nextOperationId === operationId ? clonePayload(payload) : createGenericNativePayload(nextOperationId, undefined, referenceCounts);
+        writeGenericNativePrompt(nextOperationId, nextPayload, currentPrompt);
+        nextPayload.model = choice;
+        if (currentOutputCount > 1) nextPayload.n = currentOutputCount;
+        return { operationId: nextOperationId, payload: nextPayload };
+    }
     if (kind === "image" && choice.startsWith("midjourney:")) {
         const nextOperationId = "midjourney.imagine";
         const nextPayload = operationId === nextOperationId ? clonePayload(payload) : createGenericNativePayload(nextOperationId, undefined, referenceCounts);

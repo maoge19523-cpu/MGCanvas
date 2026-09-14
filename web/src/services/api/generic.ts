@@ -405,6 +405,9 @@ function validateGenericModelPayload(operation: GenericOperationDefinition, payl
     if (!expectedFamily) return;
     const modelId = String(payload.model || "").trim();
     if (!modelId) return;
+    // 渠道模型（channelId::model，与 use-config-store 的分隔符一致）由渠道协议和调用脚本自行校验，
+    // 不参与内置目录的模型族检查，否则会被误判为"不在官方目录中"而阻止提交。
+    if (modelId.includes("::")) return;
     const profile = getGenericModelProfile(modelId);
     if (!profile) throw new Error(`模型 ${modelId} 不在本次从 Generic 官方文档核对出的模型目录中；为避免猜测，已阻止提交。`);
     if (profile.family !== expectedFamily) throw new Error(`模型 ${modelId} 属于 ${profile.family}，不能用于 ${operation.label}。`);

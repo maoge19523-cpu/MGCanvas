@@ -2108,8 +2108,9 @@ function MGCanvasProjectPage() {
      */
     const handleChannelModelRun = useCallback(
         async (node: CanvasNodeData, modelValue: string, payload: Record<string, unknown>) => {
-            if (genericNativeNodeKind(node.type) !== "image") {
-                message.warning("渠道模型目前只支持图片节点，视频、音频与文本请在模型列表中选择内置模型。");
+            const nativeKind = genericNativeNodeKind(node.type);
+            if (nativeKind !== "image" && nativeKind !== "video") {
+                message.warning("渠道模型支持图片与视频节点；音频与文本请在模型列表中选择内置模型。");
                 return;
             }
             const requestConfig = resolveModelRequestConfig(effectiveConfig, modelValue);
@@ -2124,22 +2125,35 @@ function MGCanvasProjectPage() {
             const size = typeof metadata.size === "string" ? metadata.size : "";
             const requested = Number(payload.n);
             const count = Number.isInteger(requested) && requested >= 1 ? String(Math.min(requested, 10)) : "1";
+            const seconds = payload.seconds === undefined || payload.seconds === null || payload.seconds === "" ? "" : String(payload.seconds);
             setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, model: modelValue, prompt, status: NODE_STATUS_LOADING, errorDetails: undefined } } : item)));
             try {
                 const references = buildNodeGenerationInputs(node.id, nodesRef.current, connectionsRef.current).flatMap((input) => (input.type === "image" && input.image ? [input.image] : []));
-                const items = references.length
-                    ? await requestEdit({ ...requestConfig, size, count }, prompt, references, undefined, { signal: controller.signal })
-                    : await requestGeneration({ ...requestConfig, size, count }, prompt, { signal: controller.signal });
-                const image = items[0];
-                if (!image?.dataUrl) throw new Error("渠道模型没有返回图片，请检查模型能力与接口地址。");
-                const uploaded = await uploadImage(image.dataUrl);
-                setNodes((prev) =>
-                    prev.map((item) =>
-                        item.id === node.id
-                            ? { ...item, metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt, model: modelValue, status: NODE_STATUS_SUCCESS, errorDetails: undefined } }
-                            : item,
-                    ),
-                );
+                if (nativeKind === "video") {
+                    const video = await requestVideoGeneration({ ...requestConfig, size, videoSeconds: seconds }, prompt, references, [], [], { signal: controller.signal });
+                    const uploadedVideo = await storeGeneratedVideo(video);
+                    setNodes((prev) =>
+                        prev.map((item) =>
+                            item.id === node.id
+                                ? { ...item, metadata: { ...item.metadata, ...videoMetadata(uploadedVideo), prompt, model: modelValue, status: NODE_STATUS_SUCCESS, errorDetails: undefined } }
+                                : item,
+                        ),
+                    );
+                } else {
+                    const items = references.length
+                        ? await requestEdit({ ...requestConfig, size, count }, prompt, references, undefined, { signal: controller.signal })
+                        : await requestGeneration({ ...requestConfig, size, count }, prompt, { signal: controller.signal });
+                    const image = items[0];
+                    if (!image?.dataUrl) throw new Error("渠道模型没有返回图片，请检查模型能力与接口地址。");
+                    const uploaded = await uploadImage(image.dataUrl);
+                    setNodes((prev) =>
+                        prev.map((item) =>
+                            item.id === node.id
+                                ? { ...item, metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt, model: modelValue, status: NODE_STATUS_SUCCESS, errorDetails: undefined } }
+                                : item,
+                        ),
+                    );
+                }
             } catch (error) {
                 if (!isGenerationCanceled(error)) {
                     const errorDetails = error instanceof Error ? error.message : "生成失败";

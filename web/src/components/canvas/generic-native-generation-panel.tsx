@@ -125,9 +125,9 @@ export function GenericNativeGenerationPanel({
 
     const effectivePayload = useMemo(() => createGenericNativePayload(operation.id, payload, referenceCounts), [operation.id, payload, referenceCounts]);
     // 渠道模型优先展示：用户在设置里配置的模型按当前节点能力筛选后与内置目录并列。
-    // 目前只有图片生成接入了渠道协议，视频/音频/文本仍走内置目录，避免误选后调用到错误接口。
+    // 图像与视频已接入渠道协议；音频/文本仍走内置目录，避免误选后调用到错误接口。
     const channelModelGroup = useMemo(() => {
-        if (kind !== "image") return null;
+        if (kind !== "image" && kind !== "video") return null;
         const values = selectableModelsByCapability(config, kind as ModelCapability);
         if (!values.length) return null;
         return { label: "渠道模型", options: values.map((value) => ({ label: modelOptionLabel(config, value), value })) };
@@ -138,7 +138,9 @@ export function GenericNativeGenerationPanel({
         return channelModelGroup ? [channelModelGroup] : builtinGroups;
     }, [kind, operation.id, channelModelGroup]);
     const videoModelCategories = useMemo(() => (kind === "video" ? genericNativeVideoModelCategories(operation.id) : []), [kind, operation.id]);
-    const hasModelChoices = kind === "video" ? videoModelCategories.some((category) => category.options.length > 0) : modelGroups.some((group) => group.options.length > 0);
+    // 视频节点在有渠道模型时也使用统一的下拉（否则才回退内置的两级分类选择器）。
+    const hasModelChoices =
+        kind === "video" && !channelModelGroup ? videoModelCategories.some((category) => category.options.length > 0) : modelGroups.some((group) => group.options.length > 0);
     const parameters = useMemo(() => genericNativeParameterDefinitions(operation.id, effectivePayload), [effectivePayload, operation.id]);
     const prompt = readGenericNativePrompt(operation.id, payload);
     const visiblePrompt = prompt === "@Text 1" ? "" : prompt;
@@ -412,7 +414,7 @@ export function GenericNativeGenerationPanel({
             ) : null}
 
             <div className={`${isMediaKind ? "mt-0" : "mt-2.5 border-t"} flex min-w-0 items-center gap-2 px-3 py-2.5`} style={{ borderColor: theme.toolbar.border }}>
-                {hasModelChoices && kind === "video" ? (
+                {hasModelChoices && kind === "video" && !channelModelGroup ? (
                     <GenericVideoModelPicker
                         categories={videoModelCategories}
                         value={selectedModelKey}

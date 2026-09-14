@@ -605,6 +605,24 @@ function channelModelParameterDefinitions(operationId: string): readonly Generic
             { path: "n", label: "生成数量", control: "number", min: 1, max: 4, step: 1 },
         ];
     }
+    if (operationId === "video.generate") {
+        return [
+            {
+                path: "metadata.size",
+                label: "分辨率",
+                control: "select",
+                optional: true,
+                options: [
+                    { label: "1280×720 (16:9)", value: "1280x720" },
+                    { label: "720×1280 (9:16)", value: "720x1280" },
+                    { label: "960×960 (1:1)", value: "960x960" },
+                    { label: "1088×832 (4:3)", value: "1088x832" },
+                    { label: "832×1088 (3:4)", value: "832x1088" },
+                ],
+            },
+            { path: "seconds", label: "时长（秒）", control: "number", min: 2, max: 15, step: 1, optional: true },
+        ];
+    }
     return [];
 }
 

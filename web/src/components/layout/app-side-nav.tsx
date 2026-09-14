@@ -43,14 +43,7 @@ export function AppSideNav() {
     return (
         <aside className="td-app-side-nav flex w-[176px] shrink-0 flex-col border-r border-black/[0.07] bg-[#faf9f7] dark:border-white/[0.07] dark:bg-[#0c0d0f]">
             <Link to="/" className="flex h-14 shrink-0 items-center gap-2.5 px-4 transition-opacity hover:opacity-80">
-                <span
-                    aria-hidden="true"
-                    className="size-[22px] shrink-0 bg-[#292524] dark:bg-zinc-100"
-                    style={{
-                        mask: "url(/logo.svg) center / contain no-repeat",
-                        WebkitMask: "url(/logo.svg) center / contain no-repeat",
-                    }}
-                />
+                <img src="/logo.png" alt="" aria-hidden="true" className="size-[24px] shrink-0 rounded-[7px]" />
                 <span className="truncate text-[15px] font-semibold tracking-[-0.01em] text-stone-950 dark:text-zinc-50">{t("meta.title")}</span>
             </Link>
 

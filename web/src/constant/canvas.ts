@@ -47,6 +47,13 @@ export const NODE_DEFAULT_SIZE = {
             return i18n.t("canvas.nodeTypes.audio");
         },
     },
+    [CanvasNodeType.Composite]: {
+        width: 420,
+        height: 240,
+        get title() {
+            return i18n.t("canvas.nodeTypes.composite");
+        },
+    },
     [CanvasNodeType.Generic]: {
         width: 380,
         height: 220,
@@ -103,6 +110,14 @@ export const NODE_SPECS = {
             return NODE_DEFAULT_SIZE[CanvasNodeType.Audio].title;
         },
         metadata: { content: "", status: "idle" },
+    },
+    [CanvasNodeType.Composite]: {
+        width: 420,
+        height: 240,
+        get title() {
+            return NODE_DEFAULT_SIZE[CanvasNodeType.Composite].title;
+        },
+        metadata: { status: "idle" },
     },
     [CanvasNodeType.Generic]: {
         width: 380,

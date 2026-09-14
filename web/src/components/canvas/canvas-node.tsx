@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Boxes, ChevronRight, CircleAlert, FileText, Group, History, Image as ImageIcon, LoaderCircle, Music2, Puzzle, RefreshCw, Star, UploadCloud, Video } from "lucide-react";
+import { Boxes, ChevronRight, CircleAlert, Clapperboard, FileText, Group, History, Image as ImageIcon, LoaderCircle, Music2, Puzzle, RefreshCw, Star, UploadCloud, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes } from "@/lib/image-utils";
@@ -545,6 +545,7 @@ const nodeContentRenderers: Partial<Record<CanvasNodeType, (props: NodeContentRe
     [CanvasNodeType.Config]: EmptyImageContent,
     [CanvasNodeType.Video]: VideoNodeContent,
     [CanvasNodeType.Audio]: AudioNodeContent,
+    [CanvasNodeType.Composite]: CompositeNodeContent,
     [CanvasNodeType.Group]: GroupNodeContent,
 };
 
@@ -837,6 +838,18 @@ function AudioNodeContent({ node, theme }: NodeContentRendererProps) {
                 <span className="truncate">{t("canvas.node.audio")}</span>
             </div>
             <audio src={node.metadata.content} controls className="w-full" data-canvas-no-zoom />
+        </div>
+    );
+}
+
+function CompositeNodeContent({ node, theme }: NodeContentRendererProps) {
+    const { t } = useTranslation();
+    const result = node.metadata?.compositeResult;
+    return (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-5 text-center" style={{ color: theme.node.placeholder }}>
+            <Clapperboard className="size-9 opacity-35" />
+            <span className="text-sm">{result ? t("canvas.composite.nodeDone", { filename: result.filename }) : t("canvas.composite.nodeHint")}</span>
+            {!result ? <span className="text-[11px] opacity-60">{t("canvas.composite.nodeOpenHint")}</span> : null}
         </div>
     );
 }

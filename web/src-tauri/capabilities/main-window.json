@@ -26,6 +26,9 @@
             "identifier": "fs:allow-read-file",
             "allow": [{ "path": "$APPLOCALDATA/media-cache/**/*" }, { "path": "$APPLOCALDATA/comfyui-local/results/**/*" }]
         },
-        "fs:allow-write-file"
+        {
+            "identifier": "fs:allow-write-file",
+            "allow": [{ "path": "$APPLOCALDATA/media-cache/**/*" }]
+        }
     ]
 }

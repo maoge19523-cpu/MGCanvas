@@ -90,7 +90,10 @@ import {
     sourceNodeReferenceImages,
 } from "@/lib/canvas/canvas-generation-helpers";
 import { getNodeDefinition, isBuiltinNodeType as isBuiltinType, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
-import { registerBuiltinNodes } from "@/components/canvas/nodes/builtin-nodes";
+import { registerBuiltinNodes, COMPOSITE_SEGMENTS_PORT_ID, COMPOSITE_MUSIC_PORT_ID, COMPOSITE_VIDEO_OUTPUT_PORT_ID } from "@/components/canvas/nodes/builtin-nodes";
+import { CanvasCompositePanel } from "@/components/canvas/canvas-composite-panel";
+import { composeVideo, readFfmpegPath, resolveCanvasMediaLocalPath } from "@/services/platform/desktop-ffmpeg";
+import { desktopFileUrl, isTauriRuntime } from "@/services/platform/desktop-runtime";
 import { CanvasRefreshShell } from "@/components/canvas/canvas-refresh-shell";
 import { CanvasTopBar } from "@/components/canvas/canvas-top-bar";
 import { ConnectionCreateMenu, NodeCreateMenu, type PendingConnectionCreate } from "@/components/canvas/canvas-create-menus";
@@ -2168,6 +2171,121 @@ function MGCanvasProjectPage() {
         [effectiveConfig, finishGenerationRequest, message, openConfigDialog, startGenerationRequest],
     );
 
+    // 合成节点：片段与背景音乐按连线读取，连线顺序即片段顺序。
+    type CompositeSourceItem = { connectionId: string; node: CanvasNodeData };
+    const collectCompositeSources = useCallback((compositeNodeId: string): { segments: CompositeSourceItem[]; music: CompositeSourceItem | null } => {
+        const segments: CompositeSourceItem[] = [];
+        let music: CompositeSourceItem | null = null;
+        connectionsRef.current.forEach((connection) => {
+            if (connection.toNodeId !== compositeNodeId) return;
+            const source = nodesRef.current.find((item) => item.id === connection.fromNodeId);
+            if (!source || !source.metadata?.content) return;
+            if (connection.toPortId === COMPOSITE_SEGMENTS_PORT_ID && source.type === CanvasNodeType.Video) segments.push({ connectionId: connection.id, node: source });
+            if (!music && connection.toPortId === COMPOSITE_MUSIC_PORT_ID && source.type === CanvasNodeType.Audio) music = { connectionId: connection.id, node: source };
+        });
+        return { segments, music };
+    }, []);
+
+    const handleRunComposite = useCallback(
+        async (node: CanvasNodeData) => {
+            const current = nodesRef.current.find((item) => item.id === node.id);
+            if (!current) return;
+            if (!isTauriRuntime()) {
+                message.warning("视频合成仅在桌面客户端可用");
+                return;
+            }
+            if (genericRequestLocksRef.current.has(node.id)) {
+                message.warning("该节点正在合成中，请等待完成。");
+                return;
+            }
+            const { segments, music } = collectCompositeSources(node.id);
+            if (!segments.length) {
+                message.warning("请先连接至少 1 个视频节点作为片段");
+                setDialogNodeId(node.id);
+                return;
+            }
+            genericRequestLocksRef.current.add(node.id);
+            setRunningGenericNodeIds((prev) => new Set(prev).add(node.id));
+            setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined } } : item)));
+            try {
+                const settings = current.metadata?.compositeSettings || {};
+                const requests = await Promise.all(
+                    segments.map(async (segment) => {
+                        const segmentSettings = settings.segments?.[segment.node.id] || {};
+                        return { path: await resolveCanvasMediaLocalPath(segment.node), start: segmentSettings.start, end: segmentSettings.end, volume: segmentSettings.volume };
+                    }),
+                );
+                let musicRequest: { path: string; volume?: number; fadeOut?: number } | undefined;
+                if (music) {
+                    musicRequest = { path: await resolveCanvasMediaLocalPath(music.node), volume: settings.musicVolume, fadeOut: settings.musicFadeOut };
+                }
+                const result = await composeVideo({
+                    ffmpegPath: readFfmpegPath() || undefined,
+                    segments: requests,
+                    music: musicRequest,
+                    longEdge: settings.longEdge,
+                    fps: settings.fps,
+                    fadeIn: settings.fadeIn,
+                    fadeOut: settings.fadeOut,
+                    title: current.title,
+                });
+                const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Video];
+                const videoSize = fitNodeSize(result.width || spec.width, result.height || spec.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
+                const outputId = `video-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+                const outputNode: CanvasNodeData = {
+                    id: outputId,
+                    type: CanvasNodeType.Video,
+                    title: `${current.title || "合成"} · 成片`,
+                    position: { x: current.position.x + current.width + 96, y: current.position.y + current.height / 2 - videoSize.height / 2 },
+                    width: videoSize.width,
+                    height: videoSize.height,
+                    metadata: {
+                        content: desktopFileUrl(result.absolutePath),
+                        localPath: result.absolutePath,
+                        filename: result.filename,
+                        mimeType: result.mimeType,
+                        bytes: result.bytes,
+                        naturalWidth: result.width,
+                        naturalHeight: result.height,
+                        durationMs: result.durationMs,
+                        status: NODE_STATUS_SUCCESS,
+                        sourceOrigin: "generated",
+                    },
+                };
+                setNodes((prev) => [
+                    ...prev.map((item) =>
+                        item.id === node.id
+                            ? {
+                                  ...item,
+                                  metadata: {
+                                      ...item.metadata,
+                                      status: NODE_STATUS_SUCCESS,
+                                      compositeResult: { filename: result.filename, bytes: result.bytes, width: result.width, height: result.height, durationMs: result.durationMs, createdAt: new Date().toISOString() },
+                                  },
+                              }
+                            : item,
+                    ),
+                    outputNode,
+                ]);
+                setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: node.id, toNodeId: outputId, fromPortId: COMPOSITE_VIDEO_OUTPUT_PORT_ID }]);
+                setSelectedNodeIds(new Set([outputId]));
+                message.success("视频合成完成，成片已生成新的视频节点");
+            } catch (error) {
+                const errorDetails = error instanceof Error ? error.message : String(error);
+                message.error(errorDetails);
+                setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails } } : item)));
+            } finally {
+                genericRequestLocksRef.current.delete(node.id);
+                setRunningGenericNodeIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(node.id);
+                    return next;
+                });
+            }
+        },
+        [collectCompositeSources, message],
+    );
+
     const handleRunGeneric = useCallback(
         async (node: CanvasNodeData, payload: Record<string, unknown>) => {
             if (genericRequestLocksRef.current.has(node.id) || generationRequestsRef.current.has(node.id)) {
@@ -3307,6 +3425,10 @@ function MGCanvasProjectPage() {
 
     const handleRetryNode = useCallback(
         async (node: CanvasNodeData) => {
+            if (node.type === CanvasNodeType.Composite) {
+                await handleRunComposite(node);
+                return;
+            }
             const sourceNode = findRetrySourceNode(node.id, nodesRef.current, connectionsRef.current) || node;
             const nativeRetryNode = isNativeGenerationNode(node) ? node : isNativeGenerationNode(sourceNode) ? sourceNode : null;
             const genericNode = nativeRetryNode && (nativeRetryNode.metadata?.providerTask?.provider === "generic" || nativeRetryNode.metadata?.genericOperation) ? nativeRetryNode : null;
@@ -3479,7 +3601,7 @@ function MGCanvasProjectPage() {
                 setRunningNodeId(null);
             }
         },
-        [effectiveConfig, finishGenerationRequest, handleResumeGeneric, handleRunGeneric, isAiConfigReady, message, openConfigDialog, startGenerationRequest, t],
+        [effectiveConfig, finishGenerationRequest, handleResumeGeneric, handleRunComposite, handleRunGeneric, isAiConfigReady, message, openConfigDialog, startGenerationRequest, t],
     );
 
     const generateImageFromTextNode = useCallback(
@@ -3603,6 +3725,22 @@ function MGCanvasProjectPage() {
         (panelNode: CanvasNodeData) => {
             const definition = getNodeDefinition(panelNode.type);
             if (definition?.Panel) return renderPluginPanel(panelNode);
+            if (panelNode.type === CanvasNodeType.Composite) {
+                const { segments, music } = collectCompositeSources(panelNode.id);
+                return (
+                    <CanvasCompositePanel
+                        node={panelNode}
+                        segments={segments}
+                        music={music}
+                        isRunning={runningGenericNodeIds.has(panelNode.id)}
+                        onChange={handleConfigNodeChange}
+                        onRun={(compositeNode) => void handleRunComposite(compositeNode)}
+                        onReorderConnections={reorderReferenceConnections}
+                        onRemoveConnection={deleteConnection}
+                        onFocusReference={focusNode}
+                    />
+                );
+            }
             const nativeKind = genericNativeNodeKind(panelNode.type);
             if (nativeKind) {
                 const hasSubmittedTask = Boolean(panelNode.metadata?.providerTask?.taskId || panelNode.metadata?.providerTask?.taskIds?.length);
@@ -3668,8 +3806,10 @@ function MGCanvasProjectPage() {
         },
         [
             configInputsById,
+            connections,
             addObjectReference,
             buildGenericReferences,
+            collectCompositeSources,
             confirmStopGenericPolling,
             confirmStopGeneration,
             createReferenceMaterialForNode,
@@ -3684,6 +3824,7 @@ function MGCanvasProjectPage() {
             handleGenerateNode,
             handleNodePromptChange,
             handleResumeGeneric,
+            handleRunComposite,
             handleRunGeneric,
             focusNode,
             mentionReferencesByNodeId,
@@ -3927,6 +4068,7 @@ function MGCanvasProjectPage() {
                     onAddImage={() => createNode(CanvasNodeType.Image)}
                     onAddVideo={() => createNode(CanvasNodeType.Video)}
                     onAddAudio={() => createNode(CanvasNodeType.Audio)}
+                    onAddComposite={() => createNode(CanvasNodeType.Composite)}
                     onAddText={() => createNode(CanvasNodeType.Text)}
                     onAddMaterial={() => createUploadMaterialNode()}
                     onAddGroup={() => createNode(CanvasNodeType.Group)}

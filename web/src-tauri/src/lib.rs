@@ -1,3 +1,4 @@
+mod ffmpeg_compose;
 mod media_cache;
 
 use std::{
@@ -177,6 +178,8 @@ pub fn run() {
             splash_animation_complete,
             open_downloads_directory,
             allow_download_directory,
+            ffmpeg_compose::detect_ffmpeg,
+            ffmpeg_compose::compose_video,
             media_cache::cache_remote_media,
             media_cache::import_legacy_cached_media
         ])

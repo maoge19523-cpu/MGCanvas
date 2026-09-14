@@ -15,6 +15,7 @@ export enum CanvasNodeType {
     Config = "config",
     Video = "video",
     Audio = "audio",
+    Composite = "composite",
     Generic = "generic",
     Group = "group",
 }
@@ -116,6 +117,32 @@ export type CanvasImageHistoryEntry = {
     createdAt: string;
 };
 
+// 视频合成节点参数：片段裁剪/音量按源视频节点 id 存入 segments，片段顺序由连到「片段」端口的连线顺序决定。
+export type CanvasCompositeSegmentSettings = {
+    start?: number;
+    end?: number;
+    volume?: number;
+};
+
+export type CanvasCompositeSettings = {
+    segments?: Record<string, CanvasCompositeSegmentSettings>;
+    musicVolume?: number;
+    musicFadeOut?: number;
+    longEdge?: number;
+    fps?: number;
+    fadeIn?: number;
+    fadeOut?: number;
+};
+
+export type CanvasCompositeResult = {
+    filename: string;
+    bytes: number;
+    width: number;
+    height: number;
+    durationMs: number;
+    createdAt: string;
+};
+
 export type CanvasNodeMetadata = {
     content?: string;
     composerContent?: string;
@@ -164,6 +191,8 @@ export type CanvasNodeMetadata = {
     providerResult?: GenericProviderResult;
     imageHistory?: CanvasImageHistoryEntry[];
     activeImageHistoryId?: string;
+    compositeSettings?: CanvasCompositeSettings;
+    compositeResult?: CanvasCompositeResult;
     canvasSetEnabled?: boolean;
     objectReferences?: CanvasObjectReference[];
     interactive?: boolean; // Plugin node interaction/move state; see CanvasNodeDefinition.interactionToggle.

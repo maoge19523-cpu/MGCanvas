@@ -120,7 +120,7 @@ export function CanvasNodeHoverToolbar({
     const hasFile = node.type === CanvasNodeType.Text && Boolean(node.metadata?.content) && Boolean(node.metadata?.providerResult?.outputs?.some((output) => output.kind === "file"));
     const isText = node.type === CanvasNodeType.Text && !hasFile;
     const isConfig = node.type === CanvasNodeType.Config;
-    const canOpenDialog = isText || isImage || isVideo || isAudio;
+    const canOpenDialog = isText || isImage || isVideo || isAudio || node.type === CanvasNodeType.Composite;
     const canRetry = node.metadata?.status === "error";
     const canSetCanvasValue = canvasSetAvailable && ((isImage && hasImage) || (isVideo && hasVideo) || (isAudio && hasAudio) || (isText && Boolean(node.metadata?.content || node.metadata?.prompt)));
     const canvasSetEnabled = Boolean(node.metadata?.canvasSetEnabled);

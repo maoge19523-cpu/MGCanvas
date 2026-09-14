@@ -46,6 +46,10 @@ impl MediaCacheState {
         })
     }
 
+    pub fn cache_dir(&self) -> PathBuf {
+        self.cache_dir.clone()
+    }
+
     async fn cache_remote_media(
         &self,
         source: &str,
@@ -563,7 +567,7 @@ fn build_cache_filename(
     format!("{stem}-{}.{}", &source_hash[..12], extension)
 }
 
-fn sanitize_filename_stem(value: &str) -> String {
+pub(crate) fn sanitize_filename_stem(value: &str) -> String {
     let mut stem: String = value
         .chars()
         .map(|character| {

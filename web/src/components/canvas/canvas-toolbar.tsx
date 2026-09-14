@@ -1,6 +1,6 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
-import { Button, Segmented, Switch } from "antd";
+import { Segmented, Switch } from "antd";
 import { CircleDot, Clapperboard, FolderOpen, Grid2x2, Group, History, Image as ImageIcon, Info, Moon, Music2, Palette, Plus, Redo2, Scissors, Search, Sparkles, Square, Sun, Trash2, Type, Undo2, Unplug, Upload, UploadCloud, Video, Workflow, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -456,51 +456,34 @@ function ToolbarButton({
 }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
 
-    // 圆形主按钮使用自带彩虹光环的样式，其余工具保持扁平线框按钮。
-    if (primary) {
-        return (
-            <button
-                type="button"
-                aria-label={label}
-                data-canvas-tool={id}
-                className="td-canvas-primary-tool"
-                disabled={disabled}
-                onMouseEnter={(event) => {
-                    onHover(id);
-                    onTipY(getTipY(wrapRef.current, event.currentTarget));
-                }}
-                onMouseLeave={() => onHover(null)}
-                onClick={onClick}
-            >
-                {children}
-            </button>
-        );
-    }
-
+    // 统一用原生 button：悬停时由 CSS 提供旋转 + 呼吸的彩虹光环。
     return (
-        <Button
-            type="text"
+        <button
+            type="button"
             aria-label={label}
             data-canvas-tool={id}
-            className={`td-canvas-tool-button !p-0 !h-8 !w-8 !min-w-8 !rounded-[10px]`}
+            className={`td-canvas-tool-button td-canvas-tool-ring ${primary ? "td-canvas-primary-tool" : "h-8 w-8"}`}
             disabled={disabled}
             style={
-                active
-                    ? activeStyle
-                    : hovered === id && !disabled
-                      ? danger
-                          ? { background: "rgba(248,113,113,.1)", color: "#f87171" }
-                          : hoverStyle
-                      : { color: theme.toolbar.item, opacity: disabled ? 0.28 : danger ? 0.58 : 0.82 }
+                primary
+                    ? { opacity: disabled ? 0.5 : 1 }
+                    : active
+                      ? activeStyle
+                      : hovered === id && !disabled
+                        ? danger
+                            ? { background: "rgba(248,113,113,.1)", color: "#f87171" }
+                            : hoverStyle
+                        : { color: theme.toolbar.item, opacity: disabled ? 0.28 : danger ? 0.58 : 0.82 }
             }
-            icon={children}
             onMouseEnter={(event) => {
                 onHover(id);
                 onTipY(getTipY(wrapRef.current, event.currentTarget));
             }}
             onMouseLeave={() => onHover(null)}
             onClick={onClick}
-        />
+        >
+            {children}
+        </button>
     );
 }
 

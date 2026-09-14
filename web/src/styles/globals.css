@@ -443,42 +443,60 @@
         transform: none;
     }
 
-    /* 画布工具栏的圆形主按钮：白色实心圆 + 缓慢旋转的彩虹光环。 */
-    .td-canvas-primary-tool {
+    /* 画布工具按钮：鼠标悬停时出现一圈彩虹光环，同时旋转与呼吸。 */
+    .td-canvas-tool-ring {
         position: relative;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        width: 40px;
-        height: 40px;
         padding: 0;
         border: 0;
+        background: transparent;
+        cursor: pointer;
+    }
+
+    .td-canvas-tool-ring::before {
+        content: "";
+        position: absolute;
+        inset: -3px;
+        z-index: -1;
+        border-radius: 9999px;
+        background: conic-gradient(#22d3ee, #818cf8, #e879f9, #38bdf8, #22d3ee);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 160ms ease;
+    }
+
+    .td-canvas-tool-ring:hover::before,
+    .td-canvas-tool-ring:focus-visible::before {
+        opacity: 1;
+        animation: td-canvas-tool-ring 4s linear infinite;
+    }
+
+    .td-canvas-tool-ring:disabled {
+        cursor: not-allowed;
+    }
+
+    @keyframes td-canvas-tool-ring {
+        0%,
+        100% {
+            transform: rotate(0deg) scale(0.9);
+            filter: brightness(0.8);
+        }
+        50% {
+            transform: rotate(180deg) scale(1.08);
+            filter: brightness(1.3);
+        }
+    }
+
+    /* 画布工具栏的圆形主按钮（创建）：白色实心圆，悬停时同样出现彩虹光环。 */
+    .td-canvas-primary-tool {
+        width: 40px;
+        height: 40px;
         border-radius: 9999px;
         background: #f5f5f4;
         color: #111827;
         box-shadow: 0 6px 18px rgb(0 0 0 / 28%);
-        cursor: pointer;
-    }
-
-    .td-canvas-primary-tool::before {
-        content: "";
-        position: absolute;
-        inset: -2.5px;
-        z-index: -1;
-        border-radius: inherit;
-        background: conic-gradient(#22d3ee, #818cf8, #e879f9, #38bdf8, #22d3ee);
-        animation: td-canvas-primary-ring 5s linear infinite;
-    }
-
-    .td-canvas-primary-tool:disabled {
-        cursor: not-allowed;
-        opacity: 0.5;
-    }
-
-    @keyframes td-canvas-primary-ring {
-        to {
-            transform: rotate(1turn);
-        }
     }
 
     .td-canvas-flyout {

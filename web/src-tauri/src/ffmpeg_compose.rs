@@ -346,7 +346,9 @@ fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<Co
         }
         music_filter.push_str("[mx]");
         filters.push(music_filter);
-        filters.push("[ca][mx]amix=inputs=2:duration=first:normalize=0[aout]".to_owned());
+        // amix 的 normalize 选项需要 FFmpeg 4.4+，为兼容用户可能存在的旧版本（例如 2016 年的构建），
+        // 这里改用通用写法：默认混音会让各输入衰减一半，随后用 volume 补偿回原音量。
+        filters.push("[ca][mx]amix=inputs=2:duration=first,volume=2[aout]".to_owned());
         audio_label = "aout".to_string();
     }
 

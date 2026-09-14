@@ -1,6 +1,6 @@
 {
     "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-    "productName": "MGCanvas",
+    "productName": "猫歌映画",
     "version": "0.14.0",
     "identifier": "com.mgcanvas.app",
     "build": {
@@ -34,7 +34,7 @@
             },
             {
                 "label": "splashscreen",
-                "title": "MGCanvas 正在启动",
+                "title": "猫歌映画 正在启动",
                 "url": "/splashscreen.html",
                 "width": 680,
                 "height": 360,

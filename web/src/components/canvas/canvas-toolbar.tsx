@@ -203,22 +203,40 @@ export function CanvasToolbar({
                     <Sparkles className="size-4" />
                 </ToolbarButton>
                 <ToolbarButton
-                    id="tool-history"
-                    label={t("canvas.toolbar.history", { defaultValue: "历史" })}
-                    active={historyOpen}
+                    id="tool-undo"
+                    label={t("canvas.undo")}
                     hovered={hovered}
-                    activeStyle={activeStyle}
                     hoverStyle={hoverStyle}
                     wrapRef={wrapRef}
                     onTipY={setTipY}
                     onHover={setHovered}
+                    disabled={!canUndo}
                     onClick={() => {
                         setCreateOpen(false);
                         setAppearanceOpen(false);
-                        setHistoryOpen((value) => !value);
+                        setHistoryOpen(false);
+                        onUndo();
                     }}
                 >
-                    <History className="size-4" />
+                    <Undo2 className="size-4" />
+                </ToolbarButton>
+                <ToolbarButton
+                    id="tool-redo"
+                    label={t("canvas.redo")}
+                    hovered={hovered}
+                    hoverStyle={hoverStyle}
+                    wrapRef={wrapRef}
+                    onTipY={setTipY}
+                    onHover={setHovered}
+                    disabled={!canRedo}
+                    onClick={() => {
+                        setCreateOpen(false);
+                        setAppearanceOpen(false);
+                        setHistoryOpen(false);
+                        onRedo();
+                    }}
+                >
+                    <Redo2 className="size-4" />
                 </ToolbarButton>
                 <ToolbarButton
                     id="tool-upload"
@@ -380,17 +398,6 @@ export function CanvasToolbar({
                             {t("canvas.toolbar.imageInfo")}
                         </span>
                         <Switch size="small" checked={showImageInfo} onChange={onShowImageInfoChange} />
-                    </div>
-                </div>
-            ) : null}
-
-            {historyOpen ? (
-                <div className="td-canvas-flyout pointer-events-auto absolute left-[calc(100%+10px)] top-0 z-30 w-[220px] rounded-2xl border p-2 backdrop-blur-xl" style={popoverStyle}>
-                    <div className="px-2 pb-1.5 pt-1 text-[11px] font-semibold tracking-wide opacity-45">{t("canvas.toolbar.history", { defaultValue: "历史" })}</div>
-                    <CreateMenuItem icon={<Undo2 />} label={t("canvas.undo")} theme={theme} onClick={() => (onUndo(), setHistoryOpen(false))} disabled={!canUndo} />
-                    <CreateMenuItem icon={<Redo2 />} label={t("canvas.redo")} theme={theme} onClick={() => (onRedo(), setHistoryOpen(false))} disabled={!canRedo} />
-                    <div className="mx-2 mt-2 border-t px-0 pb-1 pt-2 text-[10px] leading-4 opacity-40" style={{ borderColor: theme.toolbar.border }}>
-                        {t("canvas.toolbar.autoSave", { defaultValue: "画布更改会自动保存" })}
                     </div>
                 </div>
             ) : null}

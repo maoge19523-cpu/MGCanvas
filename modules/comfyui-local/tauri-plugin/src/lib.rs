@@ -532,6 +532,10 @@ async fn start_environment<R: Runtime>(
     command
         .args(&launch.args)
         .current_dir(&launch.working_directory)
+        // 强制 Python 使用 UTF-8 输出：中文 Windows 默认 GBK，自定义节点打印 emoji
+        // 时会触发 UnicodeEncodeError 直接导致 ComfyUI 启动失败。
+        .env("PYTHONUTF8", "1")
+        .env("PYTHONIOENCODING", "utf-8")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1385,6 +1389,9 @@ fn build_launch_spec(profile: &ComfyEnvironmentProfile) -> Result<LaunchSpec, St
         OsString::from(LOOPBACK_HOST),
         OsString::from("--port"),
         OsString::from(port.to_string()),
+        // Windows 便携版必需：让 ComfyUI 以 UTF-8 输出日志，
+        // 否则自定义节点打印 emoji 时会因 GBK 编码失败而直接崩溃。
+        OsString::from("--windows-standalone-build"),
         OsString::from("--disable-auto-launch"),
     ];
     args.extend(profile.extra_args.iter().map(OsString::from));

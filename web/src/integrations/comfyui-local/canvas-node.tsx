@@ -143,7 +143,8 @@ function ComfyWorkflowNodeContent({ ctx }: { ctx: CanvasNodeContext }) {
                 </span>
             </div>
             <div className="grid min-h-0 flex-1 gap-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto]">
-                <div className="grid content-start gap-2 overflow-hidden">
+                {/* 右侧留出输出端口标签的空间，避免参数值预览与端口标签重叠。 */}
+                <div className="grid content-start gap-2 overflow-hidden pr-[72px]">
                     {visibleInputs.map((input) => (
                         <div key={input.id} className="flex min-w-0 items-center justify-between gap-4 text-[11px]">
                             <span className="truncate" style={{ color: ctx.theme.node.muted }}>

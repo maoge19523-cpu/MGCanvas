@@ -109,9 +109,8 @@ export default function CanvasPage() {
             <div className="td-home-content relative z-[1] mx-auto w-full max-w-[1440px]">
                 <section className="td-home-hero relative flex items-center overflow-hidden border-b border-black/[0.08] dark:border-white/[0.07]">
                     <div className="td-home-hero-art" aria-hidden="true">
-                        {/* 深色主题用深色底插画，浅色主题用透明底插画，避免出现与页面不协调的色块。 */}
-                        <img src="/hero-art-dark.png" alt="" className="hidden dark:block" />
-                        <img src="/hero-art-light.png" alt="" className="block dark:hidden" />
+                        {/* 透明底插画：页面背景自带渐变光晕，不透明底会露出色块边界。 */}
+                        <img src="/hero-art.png" alt="" />
                         <p className="td-home-hero-slogan">{t("canvas.start.heroSlogan")}</p>
                     </div>
 

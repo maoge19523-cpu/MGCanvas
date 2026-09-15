@@ -1129,6 +1129,52 @@ fn select_result_value<'a>(node_result: &'a Value, request: &RequestedOutput) ->
         .or(Some(node_result))
 }
 
+/// RunningHub 云端：从代理地址解析 API Key（形如 /proxy/{key} 或 /proxy-plus/{key}）。
+fn runninghub_api_key(base: &str) -> Option<String> {
+    if !base.to_ascii_lowercase().contains("runninghub") {
+        return None;
+    }
+    let key = base.trim_end_matches('/').rsplit('/').next()?;
+    if key.len() < 16 {
+        return None;
+    }
+    Some(key.to_owned())
+}
+
+/// RunningHub 的 /view 不是标准文件接口，改用原生查询接口取回真实可下载的结果地址。
+async fn query_runninghub_output(key: &str, task_id: &str, filename: &str) -> Result<Option<String>, String> {
+    let response = reqwest::Client::builder()
+        .timeout(Duration::from_secs(60))
+        .build()
+        .map_err(|error| format!("无法创建 RunningHub 查询请求：{error}"))?
+        .post("https://www.runninghub.cn/openapi/v2/query")
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({ "taskId": task_id }))
+        .send()
+        .await
+        .map_err(|error| format!("无法查询 RunningHub 任务结果：{error}"))?;
+    if !response.status().is_success() {
+        return Err(format!("RunningHub 查询返回 HTTP {}", response.status().as_u16()));
+    }
+    let value = response
+        .json::<Value>()
+        .await
+        .map_err(|error| format!("RunningHub 查询响应不是有效 JSON：{error}"))?;
+    let results = value
+        .get("results")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    // 优先按文件名匹配，匹配不到就退回第一个可用结果
+    fn url_of(item: &Value) -> Option<&str> {
+        item.get("url").and_then(Value::as_str)
+    }
+    let matched = results
+        .iter()
+        .find(|item| url_of(item).is_some_and(|url| url.ends_with(filename)))
+        .or_else(|| results.iter().find(|item| url_of(item).is_some()));
+    Ok(matched.and_then(|item| url_of(item)).map(str::to_owned))
+}
 async fn cache_comfy_output<R: Runtime>(
     app: &AppHandle<R>,
     base: String,
@@ -1149,12 +1195,25 @@ async fn cache_comfy_output<R: Runtime>(
         .get("type")
         .and_then(Value::as_str)
         .unwrap_or("output");
-    let mut url = reqwest::Url::parse(&format!("{base}/view"))
-        .map_err(|error| format!("无法创建 ComfyUI 输出地址：{error}"))?;
-    url.query_pairs_mut()
-        .append_pair("filename", filename)
-        .append_pair("subfolder", subfolder)
-        .append_pair("type", file_type);
+    // RunningHub 云端优先用原生查询接口拿到真实存储地址；其余情况沿用标准 /view。
+    let remote = match runninghub_api_key(&base) {
+        Some(key) => query_runninghub_output(&key, prompt_id, filename).await.ok().flatten(),
+        None => None,
+    };
+    let url = match remote {
+        Some(remote) => reqwest::Url::parse(&remote)
+            .map_err(|error| format!("无法创建 RunningHub 输出地址：{error}"))?,
+        None => {
+            let mut fallback = reqwest::Url::parse(&format!("{base}/view"))
+                .map_err(|error| format!("无法创建 ComfyUI 输出地址：{error}"))?;
+            fallback
+                .query_pairs_mut()
+                .append_pair("filename", filename)
+                .append_pair("subfolder", subfolder)
+                .append_pair("type", file_type);
+            fallback
+        }
+    };
     let response = local_http_client(Duration::from_secs(30 * 60))?
         .get(url)
         .send()

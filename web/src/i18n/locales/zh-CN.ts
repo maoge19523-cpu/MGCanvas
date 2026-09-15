@@ -1057,7 +1057,7 @@ export default {
             chooseWorkflow: "请先选择一个本地工作流",
             dependenciesMissing: "当前工作流缺少依赖，暂时无法运行",
             workflowMissing: "未找到这个工作流，请重新导入",
-            environmentStopped: "请先启动 ComfyUI 本地环境",
+            environmentStopped: "请先启动本地 ComfyUI 或在「ComfyUI 本地」页连接云端环境",
             environmentMismatch: "当前启动的 ComfyUI 环境与工作流关联环境不一致",
             inputUnavailable: "无法读取输入参数：{{name}}",
             inputInvalidNumber: "输入参数 {{name}} 不是有效数字",

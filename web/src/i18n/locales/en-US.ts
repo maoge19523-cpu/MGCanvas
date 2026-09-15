@@ -1078,7 +1078,7 @@ export default {
             chooseWorkflow: "Choose a local workflow first",
             dependenciesMissing: "This workflow is missing dependencies and cannot run yet",
             workflowMissing: "This workflow could not be found. Import it again.",
-            environmentStopped: "Start the local ComfyUI environment first",
+            environmentStopped: "Start a local ComfyUI or connect a cloud one from the ComfyUI page first",
             environmentMismatch: "The running ComfyUI environment does not match this workflow",
             inputUnavailable: "Could not read input: {{name}}",
             inputInvalidNumber: "Input {{name}} is not a valid number",

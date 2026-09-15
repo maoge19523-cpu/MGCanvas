@@ -1433,17 +1433,17 @@ body,
 
 .td-home-hero-slogan {
     position: absolute;
-    /* 居中落在插画里小猫手中的画本纸面上，按「左高右低」斜排。 */
-    left: 62%;
-    top: 45%;
+    /* 落在画本上部的留白区域并水平居中，避开小猫的头，按「左高右低」斜排。 */
+    left: 68%;
+    top: 20%;
     transform: translate(-50%, -50%) rotate(12deg);
     margin: 0;
     /* 楷书系：优先用户已装的霞鹜文楷，其次系统楷体，带出文艺书卷气。 */
     font-family: "LXGW WenKai", "霞鹜文楷", "KaiTi", "楷体", "STKaiti", "Kaiti SC", "Songti SC", serif;
-    font-size: clamp(0.9rem, 1.3cqi, 1.4rem);
+    font-size: clamp(0.8rem, 1.15cqi, 1.25rem);
     font-weight: 700;
-    letter-spacing: 0.12em;
-    text-indent: 0.12em;
+    letter-spacing: 0.1em;
+    text-indent: 0.1em;
     white-space: nowrap;
     /* 彩虹渐变文字：取饱和偏深的色阶，保证在米白纸面上依然清晰。 */
     background-image: linear-gradient(90deg, #e11d48 0%, #f97316 16%, #d97706 32%, #16a34a 50%, #0284c7 68%, #7c3aed 84%, #db2777 100%);

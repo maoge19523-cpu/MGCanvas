@@ -20,6 +20,8 @@ import { downloadBlobBackedMedia, downloadFilenameFromTitle, type DownloadableMe
 import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
+import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
+import { runComfyWorkflowNode } from "@/integrations/comfyui-local/execution";
 import { CANVAS_MATERIAL_ACCEPT, CANVAS_MATERIAL_ACCEPT_BY_KIND, validateCanvasMaterialFile, type CanvasMaterialKind } from "@/lib/canvas/canvas-upload-material";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -3429,6 +3431,12 @@ function MGCanvasProjectPage() {
                 await handleRunComposite(node);
                 return;
             }
+            // ComfyUI 工作流节点：重试就是重跑该工作流，不能落到生成参数面板逻辑上。
+            if (node.metadata?.comfyuiLocal) {
+                const target = nodesRef.current.find((item) => item.id === node.id) || node;
+                void runComfyWorkflowNode(buildNodeContext(pluginHost, target, theme, viewport.k, true));
+                return;
+            }
             const sourceNode = findRetrySourceNode(node.id, nodesRef.current, connectionsRef.current) || node;
             const nativeRetryNode = isNativeGenerationNode(node) ? node : isNativeGenerationNode(sourceNode) ? sourceNode : null;
             const genericNode = nativeRetryNode && (nativeRetryNode.metadata?.providerTask?.provider === "generic" || nativeRetryNode.metadata?.genericOperation) ? nativeRetryNode : null;
@@ -3601,7 +3609,7 @@ function MGCanvasProjectPage() {
                 setRunningNodeId(null);
             }
         },
-        [effectiveConfig, finishGenerationRequest, handleResumeGeneric, handleRunComposite, handleRunGeneric, isAiConfigReady, message, openConfigDialog, startGenerationRequest, t],
+        [effectiveConfig, finishGenerationRequest, handleResumeGeneric, handleRunComposite, handleRunGeneric, isAiConfigReady, message, openConfigDialog, pluginHost, startGenerationRequest, t, theme, viewport.k],
     );
 
     const generateImageFromTextNode = useCallback(

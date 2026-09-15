@@ -16,7 +16,8 @@ export default function UserLayout({ children }: { children: ReactNode }) {
     const panelMounted = useAgentStore((state) => state.panelMounted);
     const togglePanel = useAgentStore((state) => state.togglePanel);
     // 画布项目页（/canvas/{id}）自带完整工具栏，隐藏左侧导航以保留整块画布空间。
-    const hideSideNav = /^\/canvas\/[^/]+/.test(pathname);
+    const isCanvasProject = /^\/canvas\/[^/]+/.test(pathname);
+    const hideSideNav = isCanvasProject;
     // Agent 入口固定在右下角；面板展开时自身带有收起方式，浮动按钮随之隐藏避免遮挡。
     const showAgentDock = panelMounted && !panelOpen;
 
@@ -25,7 +26,10 @@ export default function UserLayout({ children }: { children: ReactNode }) {
             {hideSideNav ? null : <AppSideNav />}
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
                 <AppTopNav />
-                <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
+                {/* 路由切换时播放一次淡入上移；画布项目页保持固定 key，避免重新挂载画布。 */}
+                <div key={isCanvasProject ? "canvas-project" : pathname} className="td-page-enter min-h-0 flex-1 overflow-hidden">
+                    {children}
+                </div>
             </div>
             <AgentPanel />
             {showAgentDock ? (

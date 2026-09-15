@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowRight, Download, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, Download, Plus, Search, Trash2 } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
@@ -26,6 +26,13 @@ export default function CanvasPage() {
     const selectedIds = useCanvasUiStore((state) => state.selectedProjectIds);
     const setDeleteIds = useCanvasUiStore((state) => state.setDeleteProjectIds);
     const sortedProjects = useMemo(() => sortCanvasProjectsByRecent(projects), [projects]);
+    const [searchQuery, setSearchQuery] = useState("");
+    // 按画布名称过滤，便于画布较多时快速定位。
+    const visibleProjects = useMemo(() => {
+        const keyword = searchQuery.trim().toLowerCase();
+        if (!keyword) return sortedProjects;
+        return sortedProjects.filter((project) => project.title.toLowerCase().includes(keyword));
+    }, [searchQuery, sortedProjects]);
 
     const mode = searchParams.get("mode");
     const agentMode = mode === "new" || mode === "recent" || mode === "choose";
@@ -140,47 +147,71 @@ export default function CanvasPage() {
                             </div>
                         </div>
 
-                        {selectedIds.length ? (
-                            <div className="flex flex-wrap items-center gap-2 rounded-full border border-black/[0.08] bg-white/55 p-1.5 pl-3 text-[11px] text-stone-500 backdrop-blur-xl dark:border-white/[0.09] dark:bg-white/[0.04] dark:text-zinc-400">
-                                <span className="mr-1">{t("canvas.start.selectedCount", { count: selectedIds.length })}</span>
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                            <div className="flex h-9 items-center gap-2 rounded-full border border-black/[0.08] bg-white/55 px-3 text-stone-500 backdrop-blur-xl transition focus-within:border-black/[0.16] dark:border-white/[0.09] dark:bg-white/[0.04] dark:text-zinc-400 dark:focus-within:border-white/[0.18]">
+                                <Search className="size-3.5 shrink-0 opacity-60" />
+                                <input
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={(event) => setSearchQuery(event.target.value)}
+                                    placeholder={t("canvas.start.searchPlaceholder")}
+                                    aria-label={t("canvas.start.searchPlaceholder")}
+                                    className="h-full w-36 bg-transparent text-[12px] outline-none placeholder:text-current placeholder:opacity-50"
+                                />
+                            </div>
+                            {selectedIds.length ? (
+                                <div className="flex flex-wrap items-center gap-2 rounded-full border border-black/[0.08] bg-white/55 p-1.5 pl-3 text-[11px] text-stone-500 backdrop-blur-xl dark:border-white/[0.09] dark:bg-white/[0.04] dark:text-zinc-400">
+                                    <span className="mr-1">{t("canvas.start.selectedCount", { count: selectedIds.length })}</span>
+                                    <button
+                                        type="button"
+                                        className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-stone-600 transition hover:bg-black/[0.06] dark:text-zinc-300 dark:hover:bg-white/[0.07]"
+                                        onClick={() =>
+                                            void exportCanvasProjects(
+                                                projects.filter((project) => selectedIds.includes(project.id)),
+                                                `${t("canvas.title")}-${selectedIds.length}`,
+                                            )
+                                        }
+                                    >
+                                        <Download className="size-3.5" />
+                                        {t("canvas.exportSelected")}
+                                    </button>
+                                    <button type="button" className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-red-500 transition hover:bg-red-500/10 dark:text-red-400" onClick={() => setDeleteIds(selectedIds)}>
+                                        <Trash2 className="size-3.5" />
+                                        {t("canvas.deleteSelected")}
+                                    </button>
+                                </div>
+                            ) : projects.length ? (
                                 <button
                                     type="button"
-                                    className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-stone-600 transition hover:bg-black/[0.06] dark:text-zinc-300 dark:hover:bg-white/[0.07]"
-                                    onClick={() =>
-                                        void exportCanvasProjects(
-                                            projects.filter((project) => selectedIds.includes(project.id)),
-                                            `${t("canvas.title")}-${selectedIds.length}`,
-                                        )
-                                    }
+                                    disabled={!hydrated}
+                                    className="cursor-pointer text-[11px] text-stone-400 transition hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-45 dark:text-zinc-600 dark:hover:text-red-400"
+                                    onClick={() => setDeleteIds(projects.map((project) => project.id))}
                                 >
-                                    <Download className="size-3.5" />
-                                    {t("canvas.exportSelected")}
+                                    {t("canvas.deleteAll")}
                                 </button>
-                                <button type="button" className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-red-500 transition hover:bg-red-500/10 dark:text-red-400" onClick={() => setDeleteIds(selectedIds)}>
-                                    <Trash2 className="size-3.5" />
-                                    {t("canvas.deleteSelected")}
-                                </button>
-                            </div>
-                        ) : projects.length ? (
-                            <button
-                                type="button"
-                                disabled={!hydrated}
-                                className="cursor-pointer text-[11px] text-stone-400 transition hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-45 dark:text-zinc-600 dark:hover:text-red-400"
-                                onClick={() => setDeleteIds(projects.map((project) => project.id))}
-                            >
-                                {t("canvas.deleteAll")}
-                            </button>
-                        ) : null}
+                            ) : null}
+                        </div>
                     </div>
 
                     {!hydrated ? (
                         <CanvasHomeLoading />
-                    ) : sortedProjects.length ? (
+                    ) : visibleProjects.length ? (
                         <div className="td-home-project-grid grid gap-4">
-                            {sortedProjects.map((project, index) => (
+                            {visibleProjects.map((project, index) => (
                                 <CanvasProjectCard key={project.id} project={project} index={index} />
                             ))}
                         </div>
+                    ) : sortedProjects.length ? (
+                        <section className="td-home-empty flex min-h-[190px] items-center gap-5 border-y border-black/[0.07] py-8 dark:border-white/[0.07]">
+                            <div className="relative grid size-14 shrink-0 place-items-center rounded-[18px] border border-black/[0.09] text-stone-400 dark:border-white/[0.09] dark:text-zinc-600">
+                                <Search className="size-5" />
+                            </div>
+                            <div>
+                                <h3 className="text-[14px] font-semibold text-stone-800 dark:text-zinc-200">{t("canvas.start.searchEmpty")}</h3>
+                                <p className="mt-1.5 max-w-md text-[11px] leading-5 text-stone-500 dark:text-zinc-500">{t("canvas.start.searchEmptyDescription", { keyword: searchQuery.trim() })}</p>
+                            </div>
+                            <span className="hidden h-px flex-1 bg-black/[0.07] dark:bg-white/[0.07] sm:block" aria-hidden="true" />
+                        </section>
                     ) : (
                         <section className="td-home-empty flex min-h-[190px] items-center gap-5 border-y border-black/[0.07] py-8 dark:border-white/[0.07]">
                             <div className="relative grid size-14 shrink-0 place-items-center rounded-[18px] border border-black/[0.09] text-stone-400 dark:border-white/[0.09] dark:text-zinc-600">

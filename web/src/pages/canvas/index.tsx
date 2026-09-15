@@ -5,7 +5,6 @@ import { motion, useReducedMotion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
 import { CanvasDeleteProjectsDialog } from "@/components/canvas/canvas-delete-projects-dialog";
-import { CanvasHomeShowcase } from "@/components/canvas/canvas-home-showcase";
 import { CanvasProjectCard } from "@/components/canvas/canvas-project-card";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
 import { latestCanvasProjectId, sortCanvasProjectsByRecent } from "@/lib/canvas/canvas-home";
@@ -109,7 +108,10 @@ export default function CanvasPage() {
 
             <div className="td-home-content relative z-[1] mx-auto w-full max-w-[1440px]">
                 <section className="td-home-hero relative flex items-center overflow-hidden border-b border-black/[0.08] dark:border-white/[0.07]">
-                    <CanvasHomeShowcase project={sortedProjects[0]} />
+                    <div className="td-home-hero-art" aria-hidden="true">
+                        <img src="/hero-art.jpg" alt="" />
+                        <p className="td-home-hero-slogan">{t("canvas.start.heroSlogan")}</p>
+                    </div>
 
                     <motion.div {...contentMotion(0.02)} className="td-home-hero-copy relative z-10 max-w-[650px]">
                         <div className="td-home-kicker flex items-center gap-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-stone-500 dark:text-zinc-500">

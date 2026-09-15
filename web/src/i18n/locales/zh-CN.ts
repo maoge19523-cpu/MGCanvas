@@ -323,6 +323,7 @@ export default {
             recentTitle: "最近画布",
             recentDescription: "按最近修改时间排列，继续上一次创作。",
             searchPlaceholder: "搜索画布…",
+            heroSlogan: "梦开始的地方",
             searchEmpty: "没有匹配的画布",
             searchEmptyDescription: "没有找到名称包含「{{keyword}}」的画布，换个关键词试试。",
             selectedCount: "已选择 {{count}} 个",

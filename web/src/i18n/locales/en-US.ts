@@ -329,6 +329,7 @@ export default {
             recentTitle: "Recent canvases",
             recentDescription: "Sorted by the latest edit so you can continue where you left off.",
             searchPlaceholder: "Search canvases…",
+            heroSlogan: "Where dreams begin",
             searchEmpty: "No matching canvases",
             searchEmptyDescription: "No canvas name contains \"{{keyword}}\". Try another keyword.",
             selectedCount: "{{count}} selected",

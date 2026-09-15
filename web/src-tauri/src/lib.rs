@@ -8,7 +8,11 @@ use std::{
 };
 
 use media_cache::MediaCacheState;
-use tauri::{AppHandle, Manager};
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    AppHandle, Manager, WindowEvent,
+};
 use tauri_plugin_fs::FsExt;
 
 const SPLASH_ANIMATION_FAILSAFE_DURATION: Duration = Duration::from_secs(4);
@@ -119,6 +123,56 @@ fn resolve_download_directory(
         .map_err(|error| format!("无法读取素材存放目录：{error}"))
 }
 
+/// 显示并聚焦主窗口（从系统托盘唤起时使用）。
+fn reveal_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+/// 系统托盘：常驻通知区域，左键切换主窗口显隐，右键提供显示主窗口与退出。
+fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
+    let show_item = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "退出猫歌映画", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+    let Some(icon) = app.default_window_icon().cloned() else {
+        return Ok(());
+    };
+
+    TrayIconBuilder::with_id("main-tray")
+        .icon(icon)
+        .tooltip("猫歌映画")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "show" => reveal_main_window(app),
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                let app = tray.app_handle();
+                let visible = app.get_webview_window("main").and_then(|window| window.is_visible().ok()).unwrap_or(false);
+                if visible {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.hide();
+                    }
+                } else {
+                    reveal_main_window(app);
+                }
+            }
+        })
+        .build(app)?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -171,7 +225,18 @@ pub fn run() {
                 tokio::time::sleep(SPLASH_FALLBACK_DURATION).await;
                 try_reveal_main_window(fallback_app, true);
             });
+
+            setup_tray(app)?;
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // 关闭主窗口时隐藏到系统托盘，保证正在进行的生成与合成任务不被中断。
+            if window.label() == "main"
+                && let WindowEvent::CloseRequested { api, .. } = event
+            {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             frontend_ready,

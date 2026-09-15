@@ -18,6 +18,9 @@ import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 
 const EMPTY_STATUS: ComfyEnvironmentStatus = { phase: "idle" };
 
+/** 云端环境没有本地 profile，用固定标识绑定工作流。 */
+const CLOUD_ENVIRONMENT_ID = "cloud-remote";
+
 export default function ComfyUiLocalPage() {
     const { message, modal } = App.useApp();
     const { t } = useTranslation();
@@ -253,14 +256,16 @@ export default function ComfyUiLocalPage() {
 
     /** 安装内置示例工作流：直接读取随包分发的演示 JSON，省去新用户自己找文件。 */
     const installDemoWorkflow = async () => {
-        if (!profile) return;
+        // 云端模式没有本地 profile，使用固定的远端环境标识即可（运行时不校验环境一致性）。
+        const environmentId = profile?.id || (status.remoteBaseUrl ? CLOUD_ENVIRONMENT_ID : "");
+        if (!environmentId) return;
         setPackImporting(true);
         try {
             const response = await fetch("/workflows/demo-text-to-image.json");
             if (!response.ok) throw new Error(`读取示例工作流失败（HTTP ${response.status}）`);
             const parsed = parseComfyWorkflowPack(await response.json() as unknown);
             if (parsed.length === 1 && !parsed[0].name) parsed[0].name = t("comfyuiLocal.pack.demoName");
-            const result = await importComfyWorkflowPack(profile.id, parsed);
+            const result = await importComfyWorkflowPack(environmentId, parsed);
             setWorkflows(await listComfyWorkflowDefinitions());
             if (result.imported.length) message.success(t("comfyuiLocal.pack.demoInstalled"));
             for (const item of result.failed) message.warning(t("comfyuiLocal.pack.failed", { name: item.name, reason: item.reason }));
@@ -330,6 +335,13 @@ export default function ComfyUiLocalPage() {
                         onChoosePython={choosePython}
                         onSaveAndStart={() => void saveEnvironment()}
                         onCancel={profile ? () => setEditing(false) : undefined}
+                        cloudUrl={cloudUrl}
+                        onCloudUrlChange={setCloudUrl}
+                        onConnectCloud={() => void connectCloud()}
+                        connecting={connecting}
+                        cloudConnected={Boolean(status.remoteBaseUrl)}
+                        onInstallDemo={() => void installDemoWorkflow()}
+                        installingDemo={packImporting}
                     />
                 ) : (
                     <EnvironmentRuntime
@@ -390,9 +402,16 @@ type SetupProps = {
     onChoosePython: () => void;
     onSaveAndStart: () => void;
     onCancel?: () => void;
+    cloudUrl: string;
+    onCloudUrlChange: (value: string) => void;
+    onConnectCloud: () => void;
+    connecting: boolean;
+    cloudConnected: boolean;
+    onInstallDemo: () => void;
+    installingDemo: boolean;
 };
 
-function EnvironmentSetup({ detection, selectedRoot, detecting, onChooseRoot, onChoosePython, onSaveAndStart, onCancel }: SetupProps) {
+function EnvironmentSetup({ detection, selectedRoot, detecting, onChooseRoot, onChoosePython, onSaveAndStart, onCancel, cloudUrl, onCloudUrlChange, onConnectCloud, connecting, cloudConnected, onInstallDemo, installingDemo }: SetupProps) {
     const { t } = useTranslation();
     return (
         <section className="py-8 sm:py-12">
@@ -406,6 +425,40 @@ function EnvironmentSetup({ detection, selectedRoot, detecting, onChooseRoot, on
                         {t("common.cancel")}
                     </Button>
                 ) : null}
+            </div>
+
+            <div className="mb-7 border border-violet-500/25 bg-violet-500/[0.035] p-5">
+                <div className="flex flex-wrap items-center gap-2">
+                    <Cloud className="size-4 text-violet-500" strokeWidth={2} />
+                    <h3 className="text-[15px] font-semibold text-stone-950 dark:text-zinc-100">{t("comfyuiLocal.setup.cloudTitle")}</h3>
+                    <span className="rounded-md bg-violet-500/[0.14] px-2 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-300">
+                        {t("comfyuiLocal.setup.cloudRecommended")}
+                    </span>
+                    {cloudConnected ? (
+                        <span className="ml-auto flex items-center gap-1.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                            <span className="size-1.5 rounded-full bg-emerald-500" />
+                            {t("comfyuiLocal.setup.cloudConnected")}
+                        </span>
+                    ) : null}
+                </div>
+                <p className="mt-2 max-w-3xl text-[12px] leading-6 text-stone-500 dark:text-zinc-400">{t("comfyuiLocal.setup.cloudHint")}</p>
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <Input
+                        value={cloudUrl}
+                        onChange={(event) => onCloudUrlChange(event.target.value)}
+                        placeholder="https://www.runninghub.cn/proxy/your-api-key"
+                        allowClear
+                        className="min-w-[260px] flex-1"
+                    />
+                    <Button type="primary" onClick={onConnectCloud} loading={connecting}>
+                        {t("comfyuiLocal.cloud.connect")}
+                    </Button>
+                    {cloudConnected ? (
+                        <Button icon={<Sparkles className="size-4" />} onClick={onInstallDemo} loading={installingDemo}>
+                            {t("comfyuiLocal.pack.installDemo")}
+                        </Button>
+                    ) : null}
+                </div>
             </div>
 
             <div className="min-w-0 border-y border-black/[0.08] dark:border-white/[0.08]">

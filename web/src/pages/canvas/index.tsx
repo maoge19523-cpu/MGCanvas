@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowRight, Download, Plus, Search, Trash2 } from "lucide-react";
+import { ArrowRight, Download, Plus, Search, Sparkles, Trash2, X } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
@@ -10,6 +10,9 @@ import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
 import { latestCanvasProjectId, sortCanvasProjectsByRecent } from "@/lib/canvas/canvas-home";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useCanvasUiStore } from "@/stores/canvas/use-canvas-ui-store";
+
+/** 快速开始引导的关闭标记。 */
+const GUIDE_DISMISS_KEY = "mgcanvas:home-guide-dismissed";
 
 export default function CanvasPage() {
     const { t } = useTranslation();
@@ -26,6 +29,12 @@ export default function CanvasPage() {
     const setDeleteIds = useCanvasUiStore((state) => state.setDeleteProjectIds);
     const sortedProjects = useMemo(() => sortCanvasProjectsByRecent(projects), [projects]);
     const [searchQuery, setSearchQuery] = useState("");
+    // 首次使用的三步引导卡片，用户关闭后本地记住不再显示。
+    const [showGuide, setShowGuide] = useState(() => localStorage.getItem(GUIDE_DISMISS_KEY) !== "1");
+    const dismissGuide = () => {
+        localStorage.setItem(GUIDE_DISMISS_KEY, "1");
+        setShowGuide(false);
+    };
     // 按画布名称过滤，便于画布较多时快速定位。
     const visibleProjects = useMemo(() => {
         const keyword = searchQuery.trim().toLowerCase();
@@ -137,6 +146,52 @@ export default function CanvasPage() {
                         </div>
                     </motion.div>
                 </section>
+
+                {showGuide ? (
+                    <motion.section {...contentMotion(0.08)} className="border-b border-black/[0.08] py-7 dark:border-white/[0.07]" aria-labelledby="quick-start-title">
+                        <div className="flex min-w-0 items-start justify-between gap-4">
+                            <div className="flex min-w-0 items-start gap-4">
+                                <span className="pt-1 text-[10px] font-semibold tabular-nums tracking-[0.18em] text-[#756bff]">02</span>
+                                <div className="min-w-0">
+                                    <h2 id="quick-start-title" className="text-xl font-semibold tracking-[-0.025em] text-stone-900 dark:text-zinc-100">
+                                        {t("canvas.start.guideTitle")}
+                                    </h2>
+                                    <p className="mt-2 max-w-2xl text-[12px] leading-6 text-stone-500 dark:text-zinc-500">{t("canvas.start.guideDescription")}</p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={dismissGuide}
+                                className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-[8px] text-stone-400 transition-colors hover:bg-black/[0.05] hover:text-stone-700 dark:text-zinc-500 dark:hover:bg-white/[0.06] dark:hover:text-zinc-200"
+                                aria-label={t("canvas.start.guideDismiss")}
+                            >
+                                <X className="size-[15px]" strokeWidth={1.7} />
+                            </button>
+                        </div>
+                        <ol className="mt-5 grid gap-3 sm:grid-cols-3">
+                            {[
+                                { key: "channel", to: "/config" },
+                                { key: "environment", to: "/comfyui-local" },
+                                { key: "canvas", to: "" },
+                            ].map((step, index) => (
+                                <li key={step.key}>
+                                    <button
+                                        type="button"
+                                        onClick={() => (step.to ? navigate(step.to) : void createProject())}
+                                        className="flex w-full cursor-pointer flex-col gap-2 rounded-[14px] border border-black/[0.08] bg-black/[0.015] p-4 text-left transition-colors hover:border-[#756bff]/40 hover:bg-[#756bff]/[0.04] dark:border-white/[0.08] dark:bg-white/[0.025]"
+                                    >
+                                        <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400 dark:text-zinc-600">
+                                            <Sparkles className="size-3 text-[#756bff]" strokeWidth={2} />
+                                            {t(`canvas.start.guide.step${index + 1}.label`)}
+                                        </span>
+                                        <span className="text-[13px] font-semibold text-stone-900 dark:text-zinc-100">{t(`canvas.start.guide.step${index + 1}.title`)}</span>
+                                        <span className="text-[11px] leading-5 text-stone-500 dark:text-zinc-500">{t(`canvas.start.guide.step${index + 1}.description`)}</span>
+                                    </button>
+                                </li>
+                            ))}
+                        </ol>
+                    </motion.section>
+                ) : null}
 
                 <motion.section {...contentMotion(0.1)} className="td-home-recent" aria-labelledby="recent-canvases-title">
                     <div className="td-home-recent-header flex min-w-0 flex-wrap items-end justify-between gap-4">

@@ -331,7 +331,14 @@ export default {
             searchPlaceholder: "Search canvases…",
             collapseSideNav: "Collapse sidebar",
             expandSideNav: "Expand sidebar",
-            heroSlogan: "Where dreams begin",
+            guideTitle: "Start in three steps",
+            guideDescription: "First time here? Finish these three steps and generate your first piece on the canvas.",
+            guideDismiss: "Don't show again",
+            guide: {
+                step1: { label: "Step 1", title: "Configure an AI channel", description: "Add a provider endpoint and API key on the config page." },
+                step2: { label: "Step 2", title: "Prepare ComfyUI", description: "Start a local ComfyUI, or connect a cloud address directly." },
+                step3: { label: "Step 3", title: "Create a canvas", description: "Drop nodes, connect them and start generating." },
+            },            heroSlogan: "Where dreams begin",
             searchEmpty: "No matching canvases",
             searchEmptyDescription: "No canvas name contains \"{{keyword}}\". Try another keyword.",
             selectedCount: "{{count}} selected",
@@ -913,6 +920,11 @@ export default {
         config: "Settings",
     },
     comfyuiLocal: {
+        pack: {
+            import: "Batch import",
+            imported: "Imported {{count}} workflows",
+            failed: "{{name}} failed to import: {{reason}}",
+        },
         cloud: {
             title: "Connect cloud ComfyUI",
             description: "Paste your cloud ComfyUI base URL to connect directly, no local install required. For example a RunningHub proxy URL: https://www.runninghub.cn/proxy/{your-api-key}",

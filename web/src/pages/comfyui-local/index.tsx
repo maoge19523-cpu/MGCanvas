@@ -1,7 +1,7 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { App, Button, Input, Modal } from "antd";
 import { AlertCircle, ArrowRight, ChevronDown, CircleStop, Cloud, Cpu, FileJson, FolderOpen, LoaderCircle, Play, Plus, RefreshCw, TerminalSquare, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
@@ -10,6 +10,7 @@ import { comfyNativeClient, type ComfyEnvironmentDetection, type ComfyEnvironmen
 import { createComfyWorkflowCanvasNode } from "@/integrations/comfyui-local/canvas-node";
 import { createComfyResultNodes } from "@/integrations/comfyui-local/result-nodes";
 import { ComfyWorkflowImportWizard } from "@/integrations/comfyui-local/workflow-import-wizard";
+import { comfyWorkflowPackName, importComfyWorkflowPack, parseComfyWorkflowPack, type ComfyWorkflowPackEntry } from "@/integrations/comfyui-local/workflow-pack";
 import { deleteComfyWorkflowDefinition, listComfyWorkflowDefinitions } from "@/integrations/comfyui-local/workflow-library";
 import { cn } from "@/lib/utils";
 import { isTauriRuntime } from "@/services/platform/desktop-runtime";
@@ -218,6 +219,38 @@ export default function ComfyUiLocalPage() {
         setEditing(false);
     };
 
+    const packInputRef = useRef<HTMLInputElement | null>(null);
+    const [packImporting, setPackImporting] = useState(false);
+
+    /** 批量导入工作流包：支持多选 JSON，或单个包含多个工作流的 .mgpack / 数组 JSON。 */
+    const importWorkflowPack = async (files: FileList | null) => {
+        if (!files?.length || !profile) return;
+        setPackImporting(true);
+        try {
+            const entries: ComfyWorkflowPackEntry[] = [];
+            for (const file of Array.from(files)) {
+                try {
+                    const parsed = parseComfyWorkflowPack(JSON.parse(await file.text()) as unknown);
+                    // 单文件仅含一个工作流时，用文件名作为工作流名称。
+                    if (parsed.length === 1 && !parsed[0].name) parsed[0].name = comfyWorkflowPackName(file.name);
+                    entries.push(...parsed);
+                } catch (error) {
+                    message.error(`${file.name}：${errorMessage(error)}`);
+                }
+            }
+            if (!entries.length) return;
+            const result = await importComfyWorkflowPack(profile.id, entries);
+            setWorkflows(await listComfyWorkflowDefinitions());
+            if (result.imported.length) message.success(t("comfyuiLocal.pack.imported", { count: result.imported.length }));
+            for (const item of result.failed) message.warning(t("comfyuiLocal.pack.failed", { name: item.name, reason: item.reason }));
+        } catch (error) {
+            message.error(errorMessage(error));
+        } finally {
+            setPackImporting(false);
+            if (packInputRef.current) packInputRef.current.value = "";
+        }
+    };
+
     const addWorkflowToCanvas = (definition: ComfyWorkflowDefinition) => {
         const state = useCanvasStore.getState();
         const project = [...state.projects].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
@@ -293,6 +326,8 @@ export default function ComfyUiLocalPage() {
                         onForget={() => void forgetEnvironment()}
                         workflows={workflows}
                         onImport={() => setImportOpen(true)}
+                        onImportPack={() => packInputRef.current?.click()}
+                        importingPack={packImporting}
                         onAddToCanvas={addWorkflowToCanvas}
                         onDeleteWorkflow={removeWorkflow}
                     />
@@ -311,6 +346,7 @@ export default function ComfyUiLocalPage() {
                 <p className="mb-3 text-[12px] leading-6 text-stone-500 dark:text-zinc-400">{t("comfyuiLocal.cloud.description")}</p>
                 <Input value={cloudUrl} onChange={(event) => setCloudUrl(event.target.value)} placeholder="https://www.runninghub.cn/proxy/your-api-key" allowClear />
             </Modal>
+            <input ref={packInputRef} type="file" accept=".json,.mgpack,application/json" multiple hidden onChange={(event) => void importWorkflowPack(event.target.files)} />
             {profile ? (
                 <ComfyWorkflowImportWizard
                     open={importOpen}
@@ -421,11 +457,13 @@ type RuntimeProps = {
     onForget: () => void;
     workflows: ComfyWorkflowDefinition[];
     onImport: () => void;
+    onImportPack: () => void;
+    importingPack: boolean;
     onAddToCanvas: (definition: ComfyWorkflowDefinition) => void;
     onDeleteWorkflow: (definition: ComfyWorkflowDefinition) => void;
 };
 
-function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRefresh, onChangeEnvironment, onConnectCloud, onForget, workflows, onImport, onAddToCanvas, onDeleteWorkflow }: RuntimeProps) {
+function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRefresh, onChangeEnvironment, onConnectCloud, onForget, workflows, onImport, onImportPack, importingPack, onAddToCanvas, onDeleteWorkflow }: RuntimeProps) {
     const { t } = useTranslation();
     const active = status.phase === "running" || status.phase === "starting";
     return (
@@ -497,7 +535,10 @@ function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRe
                     <div>
                         <h3 className="text-[20px] font-semibold tracking-[-0.03em]">{t("comfyuiLocal.library.title")}</h3>
                     </div>
-                    <Button type="primary" size="large" icon={<Plus className="size-4" />} onClick={onImport} disabled={status.phase !== "running"}>
+                    <Button size="large" icon={<FolderOpen className="size-4" />} onClick={onImportPack} loading={importingPack}>
+                            {t("comfyuiLocal.pack.import")}
+                        </Button>
+                        <Button type="primary" size="large" icon={<Plus className="size-4" />} onClick={onImport} disabled={status.phase !== "running"}>
                         {t("comfyuiLocal.library.import")}
                     </Button>
                 </div>

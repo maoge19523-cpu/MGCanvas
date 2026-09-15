@@ -325,7 +325,14 @@ export default {
             searchPlaceholder: "搜索画布…",
             collapseSideNav: "折叠侧边栏",
             expandSideNav: "展开侧边栏",
-            heroSlogan: "梦开始的地方",
+            guideTitle: "三步开始创作",
+            guideDescription: "第一次使用？按顺序完成这三步，就能在画布上生成第一张作品。",
+            guideDismiss: "不再提示",
+            guide: {
+                step1: { label: "第 1 步", title: "配置 AI 渠道", description: "在配置页填入任一服务商的接口地址与 API Key。" },
+                step2: { label: "第 2 步", title: "准备 ComfyUI 环境", description: "启动本地 ComfyUI，或填入云端地址直连。" },
+                step3: { label: "第 3 步", title: "新建画布开始创作", description: "在画布上放置节点并连接，即可开始生成。" },
+            },            heroSlogan: "梦开始的地方",
             searchEmpty: "没有匹配的画布",
             searchEmptyDescription: "没有找到名称包含「{{keyword}}」的画布，换个关键词试试。",
             selectedCount: "已选择 {{count}} 个",
@@ -892,6 +899,11 @@ export default {
         config: "配置",
     },
     comfyuiLocal: {
+        pack: {
+            import: "批量导入",
+            imported: "已导入 {{count}} 个工作流",
+            failed: "{{name}} 导入失败：{{reason}}",
+        },
         cloud: {
             title: "连接云端 ComfyUI",
             description: "填入云端 ComfyUI 地址即可直连，无需本地环境。例如 RunningHub 代理地址：https://www.runninghub.cn/proxy/{你的 API Key}",

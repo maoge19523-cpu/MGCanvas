@@ -22,6 +22,7 @@ import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
 import { runComfyWorkflowNode } from "@/integrations/comfyui-local/execution";
+import { getComfyWorkflowDefinition } from "@/integrations/comfyui-local/workflow-library";
 import { CANVAS_MATERIAL_ACCEPT, CANVAS_MATERIAL_ACCEPT_BY_KIND, validateCanvasMaterialFile, type CanvasMaterialKind } from "@/lib/canvas/canvas-upload-material";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -3434,6 +3435,11 @@ function MGCanvasProjectPage() {
             // ComfyUI 工作流节点：重试就是重跑该工作流，不能落到生成参数面板逻辑上。
             if (node.metadata?.comfyuiLocal) {
                 const target = nodesRef.current.find((item) => item.id === node.id) || node;
+                const workflowId = (target.metadata?.comfyuiLocal as { workflowId?: string } | undefined)?.workflowId;
+                if (!workflowId || !(await getComfyWorkflowDefinition(workflowId))) {
+                    message.error("这个节点引用的工作流已不存在，请在「ComfyUI 本地」页重新导入，或用「参数」里的「更换工作流」另选一个。");
+                    return;
+                }
                 void runComfyWorkflowNode(buildNodeContext(pluginHost, target, theme, viewport.k, true));
                 return;
             }

@@ -142,9 +142,9 @@ function ComfyWorkflowNodeContent({ ctx }: { ctx: CanvasNodeContext }) {
                     {t(runPhase ? `comfyuiLocal.canvasNode.phase.${runPhase}` : snapshot.runnable ? "comfyuiLocal.canvasNode.ready" : "comfyuiLocal.canvasNode.missingDependencies")}
                 </span>
             </div>
-            <div className="grid min-h-0 flex-1 gap-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto]">
-                {/* 右侧留出输出端口标签的空间，避免参数值预览与端口标签重叠。 */}
-                <div className="grid content-start gap-2 overflow-hidden pr-[72px]">
+            {/* 右侧为绝对定位的端口标签留出空间，避免参数值与输出类型标签被覆盖。 */}
+            <div className="grid min-h-0 flex-1 gap-4 py-4 pr-[76px] sm:grid-cols-[minmax(0,1fr)_auto]">
+                <div className="grid content-start gap-2 overflow-hidden">
                     {visibleInputs.map((input) => (
                         <div key={input.id} className="flex min-w-0 items-center justify-between gap-4 text-[11px]">
                             <span className="truncate" style={{ color: ctx.theme.node.muted }}>
@@ -161,7 +161,7 @@ function ComfyWorkflowNodeContent({ ctx }: { ctx: CanvasNodeContext }) {
                         </div>
                     ) : null}
                 </div>
-                <div className="flex items-start gap-1.5">
+                <div className="flex flex-wrap items-start justify-end gap-1.5">
                     {outputTypes.map((type) => (
                         <span key={type} className="rounded-md border px-2 py-1 text-[9px] uppercase tracking-[0.08em]" style={{ borderColor: ctx.theme.toolbar.border, color: ctx.theme.node.muted }}>
                             {type}

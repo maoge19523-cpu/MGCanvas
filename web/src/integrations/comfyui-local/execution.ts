@@ -123,7 +123,10 @@ function applyExecutionResult(ctx: CanvasNodeContext, source: CanvasNodeData, de
     for (const output of outputs) {
         const node = findResultNode(ctx.getNodes(), source.id, output.outputId, output.itemIndex);
         if (!node) continue;
-        operations.push({ type: "update_node", id: node.id, metadata: resultMetadata(node, output, promptId, completedAt) });
+        const metadata = resultMetadata(node, output, promptId, completedAt);
+        operations.push({ type: "update_node", id: node.id, metadata });
+        // 图片结果按原始比例调整节点尺寸，避免被默认固定尺寸拉变形。
+        if (output.resourceType === "image") fitResultNodeToImage(ctx, node, metadata.content ?? "");
     }
     for (const node of ctx.getNodes()) {
         const binding = readComfyResultBinding(node);
@@ -134,6 +137,26 @@ function applyExecutionResult(ctx: CanvasNodeContext, source: CanvasNodeData, de
     ctx.applyOps(operations);
 }
 
+/** 长边基准像素：横图按宽度、竖图按高度对齐，保证比例正确且视觉尺寸一致。 */
+const RESULT_NODE_LONG_EDGE = 420;
+
+/** 读取图片真实尺寸，按原始比例设置结果节点宽高。 */
+function fitResultNodeToImage(ctx: CanvasNodeContext, node: CanvasNodeData, url: string) {
+    // 非浏览器环境（如单元测试）没有可用的图片解码能力，直接跳过。
+    if (!url || typeof Image === "undefined") return;
+    const image = new Image();
+    image.onload = () => {
+        const naturalWidth = image.naturalWidth;
+        const naturalHeight = image.naturalHeight;
+        if (!naturalWidth || !naturalHeight) return;
+        const ratio = naturalHeight / naturalWidth;
+        const width = ratio >= 1 ? Math.round(RESULT_NODE_LONG_EDGE / ratio) : RESULT_NODE_LONG_EDGE;
+        const height = ratio >= 1 ? RESULT_NODE_LONG_EDGE : Math.round(RESULT_NODE_LONG_EDGE * ratio);
+        if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+        ctx.applyOps([{ type: "update_node", id: node.id, patch: { width, height } }]);
+    };
+    image.src = url;
+}
 function resultMetadata(node: CanvasNodeData, output: ComfyExecutionOutput, promptId: string, completedAt: number): CanvasNodeMetadata {
     const content = output.absolutePath ? desktopFileUrl(output.absolutePath) : output.text || (output.raw === undefined ? "" : JSON.stringify(output.raw, null, 2));
     const common: CanvasNodeMetadata = {

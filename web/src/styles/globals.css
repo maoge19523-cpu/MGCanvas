@@ -1374,7 +1374,7 @@ html[data-mgcanvas-image-history-open] [data-canvas-node-hover-toolbar] {
     width: min(47cqi, 650px);
 }
 
-/* 首页 Hero 右侧品牌插画：四周椭圆渐隐，让插画背景与页面背景自然消融。 */
+/* 首页 Hero 右侧品牌插画：透明渐隐已烘焙进图片本身，这里只负责定位与铺满。 */
 .td-home-hero-art {
     position: absolute;
     inset-block: 0;
@@ -1382,8 +1382,6 @@ html[data-mgcanvas-image-history-open] [data-canvas-node-hover-toolbar] {
     width: min(58%, 820px);
     overflow: hidden;
     pointer-events: none;
-    mask-image: radial-gradient(ellipse 72% 86% at 60% 50%, #000 48%, transparent 100%);
-    -webkit-mask-image: radial-gradient(ellipse 72% 86% at 60% 50%, #000 48%, transparent 100%);
 }
 
 .td-home-hero-art img {

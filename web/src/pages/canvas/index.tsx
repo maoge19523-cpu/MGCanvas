@@ -109,7 +109,7 @@ export default function CanvasPage() {
             <div className="td-home-content relative z-[1] mx-auto w-full max-w-[1440px]">
                 <section className="td-home-hero relative flex items-center overflow-hidden border-b border-black/[0.08] dark:border-white/[0.07]">
                     <div className="td-home-hero-art" aria-hidden="true">
-                        <img src="/hero-art.jpg" alt="" />
+                        <img src="/hero-art.png" alt="" />
                         <p className="td-home-hero-slogan">{t("canvas.start.heroSlogan")}</p>
                     </div>
 

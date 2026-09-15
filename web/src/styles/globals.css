@@ -1433,8 +1433,8 @@ body,
 
 .td-home-hero-slogan {
     position: absolute;
-    /* 落在画本上部的留白区域并水平居中，避开小猫的头，按「左高右低」斜排。 */
-    left: 68%;
+    /* 画本纸面上尽量居中，同时避开小猫头部，按「左高右低」斜排。 */
+    left: 61%;
     top: 20%;
     transform: translate(-50%, -50%) rotate(12deg);
     margin: 0;

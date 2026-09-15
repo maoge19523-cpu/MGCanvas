@@ -272,9 +272,8 @@ export default function ComfyUiLocalPage() {
     };
 
     const addWorkflowToCanvas = (definition: ComfyWorkflowDefinition) => {
-        const state = useCanvasStore.getState();
-        const project = [...state.projects].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
-        const projectId = project?.id || createProject(definition.name);
+        // 总是新建画布，避免把工作流节点混进用户正在使用的画布。
+        const projectId = createProject(definition.name);
         const target = useCanvasStore.getState().openProject(projectId);
         if (!target) return;
         const viewport = target.viewport;

@@ -91,7 +91,7 @@ export function DownloadFolderAction({ className, style }: { className: string; 
         <>
             <Dropdown trigger={["contextMenu"]} menu={{ items: menuItems }}>
                 <span className="inline-flex">
-                    <Tooltip title={t("topNav.downloadFolderHint")} mouseEnterDelay={0.2}>
+                    <Tooltip title={t("topNav.downloadFolderHint")} placement="bottom" mouseEnterDelay={0.2}>
                         <button
                             ref={buttonRef}
                             type="button"

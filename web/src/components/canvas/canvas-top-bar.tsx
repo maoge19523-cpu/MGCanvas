@@ -69,7 +69,7 @@ export function CanvasTopBar({
         <>
             <div className="td-canvas-topbar pointer-events-none absolute inset-x-0 top-0 z-50 flex h-16 items-center justify-between px-5">
                 <div className="pointer-events-auto flex min-w-0 items-center gap-1.5 opacity-85 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100">
-                    <Tooltip title={t("canvas.home")}>
+                    <Tooltip title={t("canvas.home")} placement="bottom">
                         <button type="button" onClick={onHome} aria-label={t("canvas.home")} className="mr-1 grid size-9 place-items-center rounded-xl transition duration-150 hover:scale-105">
                             <span className="grid size-7 place-items-center rounded-[9px] bg-gradient-to-br from-emerald-300 via-cyan-300 to-violet-400 text-slate-950 shadow-[0_0_24px_rgba(52,211,153,.18)]">
                                 <Sparkles className="size-4" strokeWidth={2.4} />
@@ -131,7 +131,7 @@ export function CanvasTopBar({
                     <CanvasWalletBalance />
                     <UserStatusActions variant="canvas" onOpenShortcuts={() => setShortcutsOpen(true)} />
                     <span className="h-4 w-px opacity-60" style={{ background: theme.toolbar.border }} />
-                    <Tooltip title="Agent">
+                    <Tooltip title="Agent" placement="bottom">
                         <button
                             type="button"
                             className="grid size-8 place-items-center rounded-[10px] transition-colors duration-150 hover:bg-black/5 dark:hover:bg-white/10"

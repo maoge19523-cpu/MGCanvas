@@ -1452,10 +1452,14 @@ body,
 }
 
 .dark .td-home-hero-slogan {
-    /* 深色主题：顶部落在插画深色底上，用亮色字 + 深色辉光。 */
-    color: #dbeafe;
-    -webkit-text-stroke: 0.3px rgb(15 23 42 / 25%);
-    text-shadow: 0 2px 10px rgb(0 0 0 / 70%), 0 0 22px rgb(129 140 248 / 35%);
+    /* 深色主题：顶部为插画深色底（并可能压到深蓝装饰块），用高亮渐变 + 强辉光保证清晰。 */
+    background-image: linear-gradient(100deg, #a5f3fc 0%, #c7d2fe 46%, #f5d0fe 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-stroke: 0.5px rgb(255 255 255 / 30%);
+    text-shadow: none;
+    filter: drop-shadow(0 2px 8px rgb(0 0 0 / 90%)) drop-shadow(0 0 18px rgb(129 140 248 / 60%));
 }
 
 .td-home-kicker {

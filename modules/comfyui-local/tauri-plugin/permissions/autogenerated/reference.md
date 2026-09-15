@@ -18,6 +18,7 @@ Allows MGCanvas to detect, start, stop, inspect, execute workflows, and cache re
 - `allow-queue-workflow`
 - `allow-wait-for-execution`
 - `allow-interrupt-execution`
+- `allow-connect-remote`
 
 ## Permission Table
 
@@ -27,6 +28,32 @@ Allows MGCanvas to detect, start, stop, inspect, execute workflows, and cache re
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`mgcanvas-comfyui-local:allow-connect-remote`
+
+</td>
+<td>
+
+Enables the connect_remote command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mgcanvas-comfyui-local:deny-connect-remote`
+
+</td>
+<td>
+
+Denies the connect_remote command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>

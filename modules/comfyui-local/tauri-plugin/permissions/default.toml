@@ -17,4 +17,5 @@ permissions = [
     "allow-queue-workflow",
     "allow-wait-for-execution",
     "allow-interrupt-execution",
+    "allow-connect-remote",
 ]

@@ -13,6 +13,7 @@ const COMMANDS: &[&str] = &[
     "queue_workflow",
     "wait_for_execution",
     "interrupt_execution",
+    "connect_remote",
 ];
 
 fn main() {

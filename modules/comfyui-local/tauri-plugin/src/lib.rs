@@ -398,7 +398,15 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             app.manage(EnvironmentRegistry::load(
                 storage_directory.join("environments.json"),
             )?);
-            app.manage(ComfyProcessManager::new(ownership_path));
+            let manager = ComfyProcessManager::new(ownership_path);
+            // 启动时自动恢复上次记住的云端地址，免去每次重连。
+            if let Some(url) = remembered_remote_endpoint(&manager.ownership_path) {
+                let mut inner = manager.inner.lock().expect("ComfyUI process state poisoned");
+                inner.phase = EnvironmentPhase::Running;
+                inner.message = Some(format!("已恢复云端 ComfyUI：{url}"));
+                inner.remote_base_url = Some(url);
+            }
+            app.manage(manager);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -751,8 +759,9 @@ async fn connect_remote(
         inner.started_at = Some(now_millis());
         inner.message = Some(format!("已连接云端 ComfyUI：{url}"));
         inner.profile_id = None;
-        inner.remote_base_url = Some(url);
+        inner.remote_base_url = Some(url.clone());
     }
+    remember_remote_endpoint(&state.ownership_path, &url);
     Ok(state.snapshot())
 }
 
@@ -965,6 +974,31 @@ fn active_base_url(inner: &ProcessInner) -> Result<String, String> {
 fn current_base_url(state: &ComfyProcessManager) -> Result<String, String> {
     let inner = state.inner.lock().expect("ComfyUI process state poisoned");
     active_base_url(&inner)
+}
+/// 云端地址记录文件：与进程归属文件同目录。
+fn remote_endpoint_path(ownership_path: &Path) -> PathBuf {
+    ownership_path.with_file_name("remote-endpoint.json")
+}
+
+/// 记住最近一次成功连接的云端地址，便于下次启动自动恢复。
+fn remember_remote_endpoint(ownership_path: &Path, url: &str) {
+    let path = remote_endpoint_path(ownership_path);
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let _ = fs::write(&path, url.as_bytes());
+}
+
+/// 读取上次记住的云端地址。
+fn remembered_remote_endpoint(ownership_path: &Path) -> Option<String> {
+    let raw = fs::read_to_string(remote_endpoint_path(ownership_path)).ok()?;
+    let url = raw.trim().to_owned();
+    (!url.is_empty()).then_some(url)
+}
+
+/// 清除云端地址记录。
+fn forget_remote_endpoint(ownership_path: &Path) {
+    let _ = fs::remove_file(remote_endpoint_path(ownership_path));
 }
 
 fn running_profile_port(state: &ComfyProcessManager, profile_id: &str) -> Result<u16, String> {

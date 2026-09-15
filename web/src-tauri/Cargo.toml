@@ -1,6 +1,6 @@
 [package]
 name = "mgcanvas"
-version = "0.14.0"
+version = "1.0.0"
 description = "MGCanvas AI infinite canvas desktop client"
 authors = ["MGCanvas"]
 license = "AGPL-3.0-only"

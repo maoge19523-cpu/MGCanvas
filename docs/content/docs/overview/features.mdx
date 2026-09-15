@@ -31,6 +31,17 @@ description: Major features available in the current project
 - Configure multiple channels, fetch or enter model names, and choose default text, image, and video models.
 - Support image count, aspect ratio, quality, transparent backgrounds, reasoning effort, and custom invocation scripts.
 - Support OpenAI-style video endpoints and Volcengine Ark generation tasks.
+- Image and video nodes can use configured channel models directly: the model list is filtered by node capability, and generation is routed by model source (channel protocol or built-in catalogue).
+- Built-in call scripts are matched automatically by channel base URL (initially covering Alibaba Cloud Bailian image and video generation, including async task polling), so no script authoring is required.
+- Channel models accept canvas parameters: image size and count, video resolution and duration.
+
+## Video composition
+
+- A composite node accepts multiple video nodes as segments and one audio node as background music.
+- Each segment supports start/end trimming (clamped to the source duration), segment volume, music volume and fade-out.
+- Output options include resolution (long edge 1080/720/480, aspect follows the first segment), frame rate and global fade in/out.
+- Composition runs through a locally installed FFmpeg (not bundled with the installer); common install locations are detected automatically and a manual path can be set in settings.
+- There is no timeline UI; the node targets light editing such as concatenating generated clips with music.
 
 ## MGCanvas Agent
 

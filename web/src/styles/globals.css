@@ -1433,33 +1433,21 @@ body,
 
 .td-home-hero-slogan {
     position: absolute;
-    inset-inline-start: 50%;
-    /* 放在插画顶部的留白区，避免压在猫的蓝色身体上。 */
-    top: clamp(0.75rem, 6%, 1.75rem);
-    transform: translateX(-50%);
+    /* 落在插画里小猫手中的画本上，随画本一起倾斜。 */
+    left: 63%;
+    top: 21%;
+    transform: translate(-50%, -50%) rotate(-9deg);
     margin: 0;
     /* 楷书系：优先用户已装的霞鹜文楷，其次系统楷体，带出文艺书卷气。 */
     font-family: "LXGW WenKai", "霞鹜文楷", "KaiTi", "楷体", "STKaiti", "Kaiti SC", "Songti SC", serif;
-    font-size: clamp(1.5rem, 2.3cqi, 2.4rem);
+    font-size: clamp(0.95rem, 1.4cqi, 1.5rem);
     font-weight: 700;
-    letter-spacing: 0.2em;
-    text-indent: 0.2em;
+    letter-spacing: 0.14em;
+    text-indent: 0.14em;
     white-space: nowrap;
-    /* 浅色主题：顶部为透明区，落在浅色页面上，用深色字 + 极浅投影。 */
-    color: #1f2937;
-    -webkit-text-stroke: 0;
-    text-shadow: 0 1px 2px rgb(255 255 255 / 55%);
-}
-
-.dark .td-home-hero-slogan {
-    /* 深色主题：顶部为插画深色底（并可能压到深蓝装饰块），用高亮渐变 + 强辉光保证清晰。 */
-    background-image: linear-gradient(100deg, #a5f3fc 0%, #c7d2fe 46%, #f5d0fe 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    -webkit-text-stroke: 0.5px rgb(255 255 255 / 30%);
-    text-shadow: none;
-    filter: drop-shadow(0 2px 8px rgb(0 0 0 / 90%)) drop-shadow(0 0 18px rgb(129 140 248 / 60%));
+    /* 画本是米白纸面，深浅主题下都用深墨色，不再需要描边或辉光。 */
+    color: #33302a;
+    text-shadow: 0 1px 0 rgb(255 255 255 / 45%);
 }
 
 .td-home-kicker {

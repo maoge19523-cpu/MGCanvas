@@ -4,6 +4,21 @@
 >
 > **二次开发**：复用本项目 `web/src/services/api/` 中的接口封装扩展画布节点与生成工作流。接入步骤见[快速开始](docs/content/docs/overview/quick-start.zh-CN.mdx)。生成调用按所选服务商实际计费。
 
+## 许可与商业化
+
+本项目遵循 **GNU Affero General Public License v3.0（AGPL-3.0）**，完整条款见 [LICENSE](LICENSE)。
+
+| 使用方式 | 说明 |
+| --- | --- |
+| **个人使用 / 学习 / 二次开发** | ✅ 自由使用，无需授权 |
+| **销售软件副本** | ✅ 允许。需按 AGPL-3.0 §6 向使用者提供**源代码获取方式**（提供本仓库地址即可，无需随包分发源码） |
+| **修改后分发** | ⚠️ 必须以 AGPL-3.0 开源你的修改 |
+| **作为网络服务提供（SaaS）** | ⚠️ AGPL-3.0 §13 要求向网络用户提供对应源码 |
+| **闭源再发布** | ❌ 不允许 |
+
+**源代码**：<https://github.com/maoge19523-cpu/MGCanvas>
+
+应用内「配置 → 关于」也会展示版本、许可与源代码入口。
 <p align="center">
   <img src="web/public/logo.svg" width="96" alt="MGCanvas logo">
 </p>

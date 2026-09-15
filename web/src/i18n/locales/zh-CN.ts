@@ -1130,6 +1130,13 @@ export default {
         types: { added: "新增", fixed: "修复", changed: "调整", optimized: "优化", docs: "文档" },
     },
     config: {
+        about: {
+            title: "关于",
+            version: "版本",
+            license: "许可协议",
+            source: "源代码",
+            credits: "本软件基于 MGCanvas 开源项目开发，遵循 AGPL-3.0 许可。源代码公开可获取，你可自由使用、修改与再分发。",
+        },
         title: "API 配置",
         invalidFile: "配置文件格式不正确",
         description: "设置 猫歌映画 调用 外部服务所需的唯一密钥",

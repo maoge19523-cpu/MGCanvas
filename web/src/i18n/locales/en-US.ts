@@ -1151,6 +1151,13 @@ export default {
         types: { added: "Added", fixed: "Fixed", changed: "Changed", optimized: "Optimized", docs: "Docs" },
     },
     config: {
+        about: {
+            title: "About",
+            version: "Version",
+            license: "License",
+            source: "Source code",
+            credits: "Built on the open-source MGCanvas project under the AGPL-3.0 license. The source code is publicly available, and you are free to use, modify and redistribute it.",
+        },
         title: "API settings",
         invalidFile: "The settings file format is invalid",
         description: "Set the credential MGCanvas uses for external services",

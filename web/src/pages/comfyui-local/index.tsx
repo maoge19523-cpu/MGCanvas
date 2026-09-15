@@ -1,6 +1,6 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { App, Button } from "antd";
-import { AlertCircle, ArrowRight, ChevronDown, CircleStop, Cpu, FileJson, FolderOpen, LoaderCircle, Play, Plus, RefreshCw, TerminalSquare, Trash2 } from "lucide-react";
+import { App, Button, Input, Modal } from "antd";
+import { AlertCircle, ArrowRight, ChevronDown, CircleStop, Cloud, Cpu, FileJson, FolderOpen, LoaderCircle, Play, Plus, RefreshCw, TerminalSquare, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
@@ -33,6 +33,10 @@ export default function ComfyUiLocalPage() {
     const [loading, setLoading] = useState(desktop);
     const [detecting, setDetecting] = useState(false);
     const [action, setAction] = useState<"start" | "stop" | null>(null);
+    // 云端 ComfyUI（如 RunningHub 代理）：填地址即可直连，无需本地环境
+    const [cloudOpen, setCloudOpen] = useState(false);
+    const [cloudUrl, setCloudUrl] = useState("");
+    const [connecting, setConnecting] = useState(false);
     const [workflows, setWorkflows] = useState<ComfyWorkflowDefinition[]>([]);
     const [importOpen, setImportOpen] = useState(false);
 
@@ -146,6 +150,25 @@ export default function ComfyUiLocalPage() {
         const nextProfile = detection?.profile;
         if (!nextProfile || !detection.ready) return;
         await useEnvironment(nextProfile, true);
+    };
+
+    const connectCloud = async () => {
+        const target = cloudUrl.trim();
+        if (!target) {
+            message.warning(t("comfyuiLocal.cloud.empty"));
+            return;
+        }
+        setConnecting(true);
+        try {
+            setStatus(await comfyNativeClient.connectRemote(target));
+            setCloudOpen(false);
+            message.success(t("comfyuiLocal.cloud.connected"));
+            await refreshRuntime();
+        } catch (error) {
+            message.error(errorMessage(error));
+        } finally {
+            setConnecting(false);
+        }
     };
 
     const startEnvironment = async (target = profile) => {
@@ -266,6 +289,7 @@ export default function ComfyUiLocalPage() {
                         onStop={() => void stopEnvironment()}
                         onRefresh={() => void refreshRuntime().catch((error) => message.error(errorMessage(error)))}
                         onChangeEnvironment={() => void changeEnvironment()}
+                        onConnectCloud={() => setCloudOpen(true)}
                         onForget={() => void forgetEnvironment()}
                         workflows={workflows}
                         onImport={() => setImportOpen(true)}
@@ -274,6 +298,19 @@ export default function ComfyUiLocalPage() {
                     />
                 )}
             </div>
+            <Modal
+                open={cloudOpen}
+                title={t("comfyuiLocal.cloud.title")}
+                okText={t("comfyuiLocal.cloud.connect")}
+                cancelText={t("common.cancel")}
+                confirmLoading={connecting}
+                onOk={() => void connectCloud()}
+                onCancel={() => setCloudOpen(false)}
+                destroyOnHidden
+            >
+                <p className="mb-3 text-[12px] leading-6 text-stone-500 dark:text-zinc-400">{t("comfyuiLocal.cloud.description")}</p>
+                <Input value={cloudUrl} onChange={(event) => setCloudUrl(event.target.value)} placeholder="https://www.runninghub.cn/proxy/your-api-key" allowClear />
+            </Modal>
             {profile ? (
                 <ComfyWorkflowImportWizard
                     open={importOpen}
@@ -380,6 +417,7 @@ type RuntimeProps = {
     onStop: () => void;
     onRefresh: () => void;
     onChangeEnvironment: () => void;
+    onConnectCloud: () => void;
     onForget: () => void;
     workflows: ComfyWorkflowDefinition[];
     onImport: () => void;
@@ -387,7 +425,7 @@ type RuntimeProps = {
     onDeleteWorkflow: (definition: ComfyWorkflowDefinition) => void;
 };
 
-function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRefresh, onChangeEnvironment, onForget, workflows, onImport, onAddToCanvas, onDeleteWorkflow }: RuntimeProps) {
+function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRefresh, onChangeEnvironment, onConnectCloud, onForget, workflows, onImport, onAddToCanvas, onDeleteWorkflow }: RuntimeProps) {
     const { t } = useTranslation();
     const active = status.phase === "running" || status.phase === "starting";
     return (
@@ -406,6 +444,9 @@ function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRe
                 <div className="flex shrink-0 flex-wrap gap-2">
                     <Button icon={<FolderOpen className="size-4" />} onClick={onChangeEnvironment} disabled={busy}>
                         {t("comfyuiLocal.runtime.change")}
+                    </Button>
+                    <Button icon={<Cloud className="size-3.5" />} onClick={onConnectCloud} disabled={busy}>
+                        {t("comfyuiLocal.runtime.cloud")}
                     </Button>
                     <Button icon={<RefreshCw className="size-3.5" />} onClick={onRefresh} disabled={busy}>
                         {t("comfyuiLocal.runtime.refresh")}

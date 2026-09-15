@@ -161,6 +161,7 @@ export type ComfyEnvironmentStatus = {
   startedAt?: number;
   message?: string;
   profileId?: string;
+  remoteBaseUrl?: string;
 };
 
 export type ComfyEnvironmentLogEntry = {

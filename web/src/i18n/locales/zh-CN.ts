@@ -892,6 +892,13 @@ export default {
         config: "配置",
     },
     comfyuiLocal: {
+        cloud: {
+            title: "连接云端 ComfyUI",
+            description: "填入云端 ComfyUI 地址即可直连，无需本地环境。例如 RunningHub 代理地址：https://www.runninghub.cn/proxy/{你的 API Key}",
+            connect: "连接",
+            connected: "已连接云端 ComfyUI",
+            empty: "请先填写云端地址",
+        },
         title: "ComfyUI 本地模式",
         description: "连接并管理电脑上的 ComfyUI 环境，不打开 ComfyUI 浏览器。",
         steps: {

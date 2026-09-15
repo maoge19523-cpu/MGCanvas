@@ -54,6 +54,9 @@ pub struct ComfyEnvironmentProfile {
     #[serde(default)]
     pub extra_args: Vec<String>,
     pub last_port: Option<u16>,
+    /// 云端模式：直接连接给定的 ComfyUI 地址（如 RunningHub 代理），此时不启动本地进程。
+    #[serde(default)]
+    pub remote_base_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -85,6 +88,7 @@ pub struct EnvironmentStatus {
     pub started_at: Option<u64>,
     pub message: Option<String>,
     pub profile_id: Option<String>,
+    pub remote_base_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -321,6 +325,7 @@ struct ProcessInner {
     generation: u64,
     log_bytes: usize,
     logs: VecDeque<EnvironmentLogEntry>,
+    remote_base_url: Option<String>,
 }
 
 impl Default for ProcessInner {
@@ -336,6 +341,7 @@ impl Default for ProcessInner {
             generation: 0,
             log_bytes: 0,
             logs: VecDeque::new(),
+                remote_base_url: None,
         }
     }
 }
@@ -369,6 +375,7 @@ impl ComfyProcessManager {
             inner.generation = inner.generation.wrapping_add(1);
             inner.phase = EnvironmentPhase::Stopped;
             inner.pid = None;
+            inner.remote_base_url = None;
             inner.port = None;
             inner.message = None;
             inner.child.take()
@@ -403,6 +410,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             stop_environment,
             environment_status,
             environment_logs,
+            connect_remote,
             system_stats,
             object_info,
             upload_input,
@@ -705,6 +713,49 @@ async fn object_info(state: State<'_, ComfyProcessManager>) -> Result<Value, Str
     fetch_local_json(&state, "/object_info").await
 }
 
+/// 连接云端 ComfyUI（例如 RunningHub 的 /proxy/{api-key} 地址）：不启动本地进程，直接使用该基址。
+#[tauri::command]
+async fn connect_remote(
+    state: State<'_, ComfyProcessManager>,
+    base_url: String,
+) -> Result<EnvironmentStatus, String> {
+    let url = base_url.trim().trim_end_matches('/').to_owned();
+    if url.is_empty() {
+        return Err("请填写云端 ComfyUI 地址".to_owned());
+    }
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("云端地址需要以 http:// 或 https:// 开头".to_owned());
+    }
+    let response = reqwest::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|error| format!("无法创建云端请求：{error}"))?
+        .get(format!("{url}/system_stats"))
+        .send()
+        .await
+        .map_err(|error| format!("无法连接云端 ComfyUI：{error}"))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "云端 ComfyUI 返回 HTTP {}，请检查地址与密钥",
+            response.status().as_u16()
+        ));
+    }
+
+    {
+        let mut inner = state.inner.lock().expect("ComfyUI process state poisoned");
+        inner.generation = inner.generation.wrapping_add(1);
+        inner.child = None;
+        inner.phase = EnvironmentPhase::Running;
+        inner.pid = None;
+        inner.port = None;
+        inner.started_at = Some(now_millis());
+        inner.message = Some(format!("已连接云端 ComfyUI：{url}"));
+        inner.profile_id = None;
+        inner.remote_base_url = Some(url);
+    }
+    Ok(state.snapshot())
+}
+
 #[tauri::command]
 async fn upload_input(
     state: State<'_, ComfyProcessManager>,
@@ -713,7 +764,8 @@ async fn upload_input(
     mime_type: String,
     bytes: Vec<u8>,
 ) -> Result<UploadedInput, String> {
-    let port = running_profile_port(&state, &profile_id)?;
+    let base = current_base_url(&state)?;
+    let _ = &profile_id;
     if bytes.is_empty() {
         return Err("上传到 ComfyUI 的素材为空".to_owned());
     }
@@ -730,7 +782,7 @@ async fn upload_input(
         .text("type", "input")
         .text("overwrite", "true");
     let response = local_http_client(Duration::from_secs(30))?
-        .post(format!("http://{LOOPBACK_HOST}:{port}/upload/image"))
+        .post(format!("{base}/upload/image"))
         .multipart(form)
         .send()
         .await
@@ -775,13 +827,14 @@ async fn queue_workflow(
     profile_id: String,
     workflow: Value,
 ) -> Result<QueuedPrompt, String> {
-    let port = running_profile_port(&state, &profile_id)?;
+    let base = current_base_url(&state)?;
+    let _ = &profile_id;
     let payload = serde_json::json!({
         "prompt": workflow,
         "client_id": format!("mgcanvas-{}-{}", std::process::id(), now_millis()),
     });
     let response = local_http_client(Duration::from_secs(30))?
-        .post(format!("http://{LOOPBACK_HOST}:{port}/prompt"))
+        .post(format!("{base}/prompt"))
         .json(&payload)
         .send()
         .await
@@ -830,9 +883,10 @@ async fn wait_for_execution<R: Runtime>(
 ) -> Result<ExecutionResult, String> {
     let started = Instant::now();
     loop {
-        let port = running_profile_port(&state, &profile_id)?;
+        let base = current_base_url(&state)?;
+    let _ = &profile_id;
         let history = local_http_client(Duration::from_secs(30))?
-            .get(format!("http://{LOOPBACK_HOST}:{port}/history/{prompt_id}"))
+            .get(format!("{base}/history/{prompt_id}"))
             .send()
             .await
             .map_err(|error| format!("无法查询 ComfyUI 运行结果：{error}"))?
@@ -852,7 +906,7 @@ async fn wait_for_execution<R: Runtime>(
             let node_outputs = entry.get("outputs").and_then(Value::as_object);
             if completed || node_outputs.is_some_and(|items| !items.is_empty()) {
                 let mapped =
-                    collect_execution_outputs(&app, port, &prompt_id, node_outputs, &outputs)
+                    collect_execution_outputs(&app, base.clone(), &prompt_id, node_outputs, &outputs)
                         .await?;
                 return Ok(ExecutionResult {
                     prompt_id,
@@ -874,15 +928,16 @@ async fn interrupt_execution(
     profile_id: String,
     prompt_id: String,
 ) -> Result<(), String> {
-    let port = running_profile_port(&state, &profile_id)?;
+    let base = current_base_url(&state)?;
+    let _ = &profile_id;
     let client = local_http_client(Duration::from_secs(15))?;
     let queue_result = client
-        .post(format!("http://{LOOPBACK_HOST}:{port}/queue"))
+        .post(format!("{base}/queue"))
         .json(&serde_json::json!({ "delete": [prompt_id] }))
         .send()
         .await;
     let interrupt_result = client
-        .post(format!("http://{LOOPBACK_HOST}:{port}/interrupt"))
+        .post(format!("{base}/interrupt"))
         .json(&serde_json::json!({}))
         .send()
         .await;
@@ -890,6 +945,26 @@ async fn interrupt_execution(
         return Err("无法向 ComfyUI 发送停止指令".to_owned());
     }
     Ok(())
+}
+
+/// 当前生效的 ComfyUI 请求基址：云端模式用配置地址，本地模式用进程端口。
+fn active_base_url(inner: &ProcessInner) -> Result<String, String> {
+    if let Some(url) = inner
+        .remote_base_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return Ok(url.trim_end_matches('/').to_owned());
+    }
+    let port = inner.port.ok_or_else(|| "ComfyUI 尚未启动".to_owned())?;
+    Ok(format!("http://{LOOPBACK_HOST}:{port}"))
+}
+
+/// 读取当前基址，供各处 HTTP 请求复用。
+fn current_base_url(state: &ComfyProcessManager) -> Result<String, String> {
+    let inner = state.inner.lock().expect("ComfyUI process state poisoned");
+    active_base_url(&inner)
 }
 
 fn running_profile_port(state: &ComfyProcessManager, profile_id: &str) -> Result<u16, String> {
@@ -945,7 +1020,7 @@ fn execution_error(entry: &Value) -> String {
 
 async fn collect_execution_outputs<R: Runtime>(
     app: &AppHandle<R>,
-    port: u16,
+    base: String,
     prompt_id: &str,
     node_outputs: Option<&serde_json::Map<String, Value>>,
     requested: &[RequestedOutput],
@@ -992,7 +1067,7 @@ async fn collect_execution_outputs<R: Runtime>(
                     &fallback_descriptor
                 };
                 let cached =
-                    cache_comfy_output(app, port, prompt_id, request, item_index, descriptor)
+                    cache_comfy_output(app, base.clone(), prompt_id, request, item_index, descriptor)
                         .await?;
                 results.push(cached);
             } else if request.resource_type == "text" {
@@ -1056,7 +1131,7 @@ fn select_result_value<'a>(node_result: &'a Value, request: &RequestedOutput) ->
 
 async fn cache_comfy_output<R: Runtime>(
     app: &AppHandle<R>,
-    port: u16,
+    base: String,
     prompt_id: &str,
     request: &RequestedOutput,
     item_index: usize,
@@ -1074,7 +1149,7 @@ async fn cache_comfy_output<R: Runtime>(
         .get("type")
         .and_then(Value::as_str)
         .unwrap_or("output");
-    let mut url = reqwest::Url::parse(&format!("http://{LOOPBACK_HOST}:{port}/view"))
+    let mut url = reqwest::Url::parse(&format!("{base}/view"))
         .map_err(|error| format!("无法创建 ComfyUI 输出地址：{error}"))?;
     url.query_pairs_mut()
         .append_pair("filename", filename)
@@ -1226,11 +1301,8 @@ fn compact_error(value: &str) -> String {
 }
 
 async fn fetch_local_json(state: &ComfyProcessManager, path: &str) -> Result<Value, String> {
-    let port = state
-        .snapshot()
-        .port
-        .ok_or_else(|| "ComfyUI 尚未启动".to_owned())?;
-    let url = format!("http://{LOOPBACK_HOST}:{port}{path}");
+    let base = current_base_url(state)?;
+    let url = format!("{base}{path}");
     reqwest::Client::builder()
         .timeout(Duration::from_secs(20))
         .build()
@@ -1544,6 +1616,7 @@ fn detect_environment_at(
             install_kind,
             extra_args: Vec::new(),
             last_port: None,
+            remote_base_url: None,
         }
     });
     Ok(EnvironmentDetection {
@@ -1689,6 +1762,7 @@ fn snapshot(inner: &ProcessInner) -> EnvironmentStatus {
         started_at: inner.started_at,
         message: inner.message.clone(),
         profile_id: inner.profile_id.clone(),
+        remote_base_url: inner.remote_base_url.clone(),
     }
 }
 

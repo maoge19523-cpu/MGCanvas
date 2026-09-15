@@ -913,6 +913,13 @@ export default {
         config: "Settings",
     },
     comfyuiLocal: {
+        cloud: {
+            title: "Connect cloud ComfyUI",
+            description: "Paste your cloud ComfyUI base URL to connect directly, no local install required. For example a RunningHub proxy URL: https://www.runninghub.cn/proxy/{your-api-key}",
+            connect: "Connect",
+            connected: "Connected to cloud ComfyUI",
+            empty: "Please enter the cloud base URL first",
+        },
         title: "ComfyUI Local Mode",
         description: "Connect and manage a local ComfyUI environment without opening its browser UI.",
         steps: {

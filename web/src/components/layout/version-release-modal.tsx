@@ -45,6 +45,8 @@ export function VersionReleaseModal({ className, style }: VersionReleaseModalPro
         hasNewVersion,
         checkLatestRelease,
         desktopUpdaterEnabled,
+        githubReleasesEnabled,
+        openReleasePage,
         updateStatus,
         updateError,
         updateNotes,
@@ -156,10 +158,34 @@ export function VersionReleaseModal({ className, style }: VersionReleaseModalPro
                         )}
                     </div>
                 ) : null}
-                {desktopUpdaterEnabled && updateNotes ? (
+                {(desktopUpdaterEnabled || githubReleasesEnabled) && updateNotes ? (
                     <div className="mb-5 rounded-xl border border-stone-200 p-4 dark:border-stone-800">
                         <div className="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">{t("version.releaseNotes")}</div>
                         <div className="whitespace-pre-wrap text-sm leading-6 text-stone-700 dark:text-stone-300">{updateNotes}</div>
+                    </div>
+                ) : githubReleasesEnabled ? (
+                    <div className="mb-5 rounded-xl border border-stone-200 bg-stone-50/80 p-4 dark:border-stone-800 dark:bg-stone-900/70">
+                        {hasNewVersion ? (
+                            <div className="flex items-center justify-between gap-4">
+                                <div>
+                                    <div className="text-sm font-semibold text-stone-950 dark:text-stone-100">{t("version.available", { version: latestVersion })}</div>
+                                    <div className="mt-1 text-xs text-stone-500 dark:text-stone-400">{t("version.downloadHint")}</div>
+                                </div>
+                                <Button type="primary" icon={<DownloadOutlined />} onClick={() => void openReleasePage()}>
+                                    {t("version.goToDownload")}
+                                </Button>
+                            </div>
+                        ) : (
+                            <div className="flex items-center justify-between gap-4">
+                                <div>
+                                    <div className="text-sm font-semibold text-stone-950 dark:text-stone-100">{t(checking ? "version.checking" : "version.alreadyLatest")}</div>
+                                    <div className="mt-1 text-xs text-stone-500 dark:text-stone-400">{t("version.automaticCheckHint")}</div>
+                                </div>
+                                <Button size="small" onClick={() => void checkLatestRelease(true)} loading={checking}>
+                                    {t("version.retry")}
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 ) : null}
                 <div className="max-h-[56vh] overflow-y-auto pr-2">

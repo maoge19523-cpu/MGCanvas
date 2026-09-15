@@ -93,6 +93,32 @@ fn open_downloads_directory(app: AppHandle, directory: Option<String>) -> Result
     Ok(())
 }
 
+/// 用系统默认浏览器打开外部链接（仅允许 http/https）。
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    let target = url.trim();
+    if !target.starts_with("http://") && !target.starts_with("https://") {
+        return Err("只允许打开 http 或 https 链接".to_owned());
+    }
+
+    #[cfg(target_os = "windows")]
+    let mut command = Command::new("cmd");
+    #[cfg(target_os = "windows")]
+    command.args(["/C", "start", "", target]);
+    #[cfg(target_os = "macos")]
+    let mut command = Command::new("open");
+    #[cfg(target_os = "macos")]
+    command.arg(target);
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let mut command = Command::new("xdg-open");
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    command.arg(target);
+
+    command
+        .spawn()
+        .map_err(|error| format!("无法打开浏览器：{error}"))?;
+    Ok(())
+}
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CanvasMediaExport {
@@ -314,6 +340,7 @@ pub fn run() {
             frontend_ready,
             splash_animation_complete,
             open_downloads_directory,
+            open_external_url,
             allow_download_directory,
             export_canvas_media,
             ffmpeg_compose::detect_ffmpeg,

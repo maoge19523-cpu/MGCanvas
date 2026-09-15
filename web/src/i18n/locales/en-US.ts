@@ -1159,6 +1159,7 @@ export default {
         availableMessage: "Version {{version}} is ready to download",
         alreadyLatest: "You are using the latest version",
         automaticCheckHint: "MGCanvas checks once at startup. You can also check manually at any time.",
+        goToDownload: "Go to download",
         downloadUpdate: "Download update",
         downloadHint: "Keep working while the package downloads, then restart when you are ready.",
         downloading: "Downloading update",

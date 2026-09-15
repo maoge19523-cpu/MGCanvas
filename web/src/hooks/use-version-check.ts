@@ -8,6 +8,10 @@ import { parseChangelog, type ReleaseInfo } from "@/lib/release";
 
 export type DesktopUpdateStatus = "idle" | "available" | "downloading" | "ready" | "installing" | "error";
 
+/** 版本检查仓库：无需自建服务器，直接读 GitHub Releases。 */
+const UPDATE_REPOSITORY = "maoge19523-cpu/MGCanvas";
+const UPDATE_RELEASES_URL = `https://github.com/${UPDATE_REPOSITORY}/releases`;
+
 function readLocalReleases(): ReleaseInfo[] {
     return __APP_RELEASES__ || [];
 }
@@ -36,7 +40,9 @@ export function useVersionCheck() {
     const pendingUpdateRef = useRef<Update | null>(null);
     const desktopUpdaterEnabled = DESKTOP_UPDATER_ENABLED && isTauri();
     const releaseInfoEnabled = Boolean(VERSION_URL && CHANGELOG_URL);
-    const canCheckUpdates = desktopUpdaterEnabled || releaseInfoEnabled;
+    // 未配置签名更新器与自建版本源时，回退到 GitHub Releases。
+    const githubReleasesEnabled = !desktopUpdaterEnabled && !releaseInfoEnabled;
+    const canCheckUpdates = desktopUpdaterEnabled || releaseInfoEnabled || githubReleasesEnabled;
     const [latestVersion, setLatestVersion] = useState(currentVersion);
     const [releases, setReleases] = useState<ReleaseInfo[]>(localReleases);
     const [checking, setChecking] = useState(false);
@@ -46,6 +52,7 @@ export function useVersionCheck() {
     const [totalBytes, setTotalBytes] = useState<number | null>(null);
     const [updateError, setUpdateError] = useState("");
     const [updateNotes, setUpdateNotes] = useState("");
+    const [releasePageUrl, setReleasePageUrl] = useState(UPDATE_RELEASES_URL);
     const hasNativeUpdate = ["available", "downloading", "ready", "installing"].includes(updateStatus);
     const hasNewVersion = hasNativeUpdate || isNewerVersion(latestVersion, currentVersion);
     const downloadProgress = totalBytes && totalBytes > 0 ? Math.min(100, Math.round((downloadedBytes / totalBytes) * 100)) : null;
@@ -125,12 +132,52 @@ export function useVersionCheck() {
         [currentVersion, localReleases, message, releaseInfoEnabled, t],
     );
 
+    const checkGithubRelease = useCallback(
+        async (showMessage = false) => {
+            setChecking(true);
+            try {
+                const response = await fetch(`https://api.github.com/repos/${UPDATE_REPOSITORY}/releases/latest`, {
+                    headers: { Accept: "application/vnd.github+json" },
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = (await response.json()) as { tag_name?: string; body?: string; html_url?: string };
+                const tag = (data.tag_name || "").trim();
+                setLatestVersion(tag || currentVersion);
+                setUpdateNotes((data.body || "").trim());
+                setReleasePageUrl(data.html_url || UPDATE_RELEASES_URL);
+                if (showMessage) {
+                    const newer = Boolean(tag) && isNewerVersion(tag, currentVersion);
+                    if (newer) message.success(t("version.availableMessage", { version: tag }));
+                    else message.success(t("version.alreadyLatest"));
+                }
+                return true;
+            } catch {
+                setLatestVersion(currentVersion);
+                if (showMessage) message.error(t("version.updateFailed"));
+                return false;
+            } finally {
+                setChecking(false);
+            }
+        },
+        [currentVersion, message, t],
+    );
+
+    /** 在系统默认浏览器中打开 Releases 页面下载新版本。 */
+    const openReleasePage = useCallback(async () => {
+        try {
+            const { invokeDesktop } = await import("@/services/platform/desktop-runtime");
+            await invokeDesktop("open_external_url", { url: releasePageUrl });
+        } catch {
+            window.open(releasePageUrl, "_blank", "noreferrer");
+        }
+    }, [releasePageUrl]);
     const checkLatestRelease = useCallback(
         async (showMessage = false) => {
             if (desktopUpdaterEnabled) return checkDesktopUpdate(showMessage);
-            return checkReleaseInformation(showMessage);
+            if (releaseInfoEnabled) return checkReleaseInformation(showMessage);
+            return checkGithubRelease(showMessage);
         },
-        [checkDesktopUpdate, checkReleaseInformation, desktopUpdaterEnabled],
+        [checkDesktopUpdate, checkGithubRelease, checkReleaseInformation, desktopUpdaterEnabled, releaseInfoEnabled],
     );
 
     const downloadUpdate = useCallback(async () => {
@@ -185,9 +232,12 @@ export function useVersionCheck() {
             void checkDesktopUpdate(false);
             return;
         }
-        if (!VERSION_URL) return;
-        void checkReleaseInformation(false);
-    }, [checkDesktopUpdate, checkReleaseInformation, desktopUpdaterEnabled]);
+        if (releaseInfoEnabled) {
+            void checkReleaseInformation(false);
+            return;
+        }
+        void checkGithubRelease(false);
+    }, [checkDesktopUpdate, checkGithubRelease, checkReleaseInformation, desktopUpdaterEnabled, releaseInfoEnabled]);
 
     const openReleaseModal = useCallback(() => {
         setOpen(true);
@@ -214,5 +264,8 @@ export function useVersionCheck() {
         totalBytes,
         downloadUpdate,
         restartAndInstall,
+        releasePageUrl,
+        openReleasePage,
+        githubReleasesEnabled,
     };
 }

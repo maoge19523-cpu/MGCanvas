@@ -1138,6 +1138,7 @@ export default {
         availableMessage: "新版本 {{version}} 已可下载",
         alreadyLatest: "当前已是最新版本",
         automaticCheckHint: "客户端启动时会自动检查一次，也可以随时手动检查。",
+        goToDownload: "前往下载",
         downloadUpdate: "下载更新",
         downloadHint: "可以继续使用客户端，下载完成后再选择重启更新。",
         downloading: "正在下载更新包",

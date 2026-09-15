@@ -325,6 +325,7 @@ export default {
             searchPlaceholder: "搜索画布…",
             collapseSideNav: "折叠侧边栏",
             expandSideNav: "展开侧边栏",
+            resetGuide: "重置引导",
             guideTitle: "三步开始创作",
             guideDescription: "第一次使用？按顺序完成这三步，就能在画布上生成第一张作品。",
             guideDismiss: "不再提示",
@@ -902,12 +903,25 @@ export default {
     },
     navigation: {
         canvas: "我的画布",
+        "comfyui-cloud": "ComfyUI 云端",
         "comfyui-local": "ComfyUI 本地",
         prompts: "提示词库",
         assets: "我的资产",
         config: "配置",
     },
-    comfyuiLocal: {
+    comfyuiCloud: {
+        title: "ComfyUI 云端",
+        description: "连接云端 ComfyUI 服务，无需本地安装即可运行工作流。",
+        endpointTitle: "云端地址",
+        endpointHint: "填入云端 ComfyUI 的代理地址即可直连。例如 RunningHub：https://www.runninghub.cn/proxy/{你的 API Key}（48G 显存用 proxy-plus）。",
+        state: "连接状态",
+        disconnected: "未连接",
+        workflowCount: "工作流数量",
+        libraryTitle: "云端工作流",
+        libraryHint: "这些工作流会通过云端算力运行；点「添加到画布」会新建一个画布并放入节点。",
+        emptyLibrary: "还没有工作流，请先在「ComfyUI 本地」页导入，或用示例工作流。",
+        addToCanvas: "添加到画布",
+    },    comfyuiLocal: {
         pack: {
             import: "批量导入",
             installDemo: "安装示例工作流",

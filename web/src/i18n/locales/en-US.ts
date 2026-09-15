@@ -331,6 +331,7 @@ export default {
             searchPlaceholder: "Search canvases…",
             collapseSideNav: "Collapse sidebar",
             expandSideNav: "Expand sidebar",
+            resetGuide: "Reset guide",
             guideTitle: "Start in three steps",
             guideDescription: "First time here? Finish these three steps and generate your first piece on the canvas.",
             guideDismiss: "Don't show again",
@@ -923,12 +924,25 @@ export default {
     },
     navigation: {
         canvas: "My Canvases",
+        "comfyui-cloud": "ComfyUI Cloud",
         "comfyui-local": "ComfyUI Local",
         prompts: "Prompt Library",
         assets: "My Assets",
         config: "Settings",
     },
-    comfyuiLocal: {
+    comfyuiCloud: {
+        title: "ComfyUI Cloud",
+        description: "Connect a cloud ComfyUI service and run workflows without any local install.",
+        endpointTitle: "Cloud endpoint",
+        endpointHint: "Paste the cloud ComfyUI proxy URL to connect. For example RunningHub: https://www.runninghub.cn/proxy/{your-api-key} (use proxy-plus for 48G VRAM).",
+        state: "Connection",
+        disconnected: "Not connected",
+        workflowCount: "Workflows",
+        libraryTitle: "Cloud workflows",
+        libraryHint: "These workflows run on cloud compute. \"Add to canvas\" creates a new canvas with the nodes placed.",
+        emptyLibrary: "No workflows yet — import one on the ComfyUI page or install the demo workflow.",
+        addToCanvas: "Add to canvas",
+    },    comfyuiLocal: {
         pack: {
             import: "Batch import",
             installDemo: "Install demo workflow",

@@ -31,6 +31,12 @@ export default function CanvasPage() {
     const [searchQuery, setSearchQuery] = useState("");
     // 首次使用的三步引导卡片，用户关闭后本地记住不再显示。
     const [showGuide, setShowGuide] = useState(() => localStorage.getItem(GUIDE_DISMISS_KEY) !== "1");
+    /** 重新显示三步引导（清掉本地的关闭标记）。 */
+    const resetGuide = () => {
+        localStorage.removeItem(GUIDE_DISMISS_KEY);
+        setShowGuide(true);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    };
     const dismissGuide = () => {
         localStorage.setItem(GUIDE_DISMISS_KEY, "1");
         setShowGuide(false);
@@ -206,6 +212,15 @@ export default function CanvasPage() {
                         </div>
 
                         <div className="flex min-w-0 flex-wrap items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={resetGuide}
+                                title={t("canvas.start.resetGuide")}
+                                className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full border border-black/[0.08] bg-white/55 px-3 text-[11px] text-stone-500 backdrop-blur-xl transition hover:text-stone-800 dark:border-white/[0.09] dark:bg-white/[0.04] dark:text-zinc-400 dark:hover:text-zinc-200"
+                            >
+                                <Sparkles className="size-3" strokeWidth={2} />
+                                {t("canvas.start.resetGuide")}
+                            </button>
                             <div className="flex h-9 items-center gap-2 rounded-full border border-black/[0.08] bg-white/55 px-3 text-stone-500 backdrop-blur-xl transition focus-within:border-black/[0.16] dark:border-white/[0.09] dark:bg-white/[0.04] dark:text-zinc-400 dark:focus-within:border-white/[0.18]">
                                 <Search className="size-3.5 shrink-0 opacity-60" />
                                 <input

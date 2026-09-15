@@ -335,13 +335,6 @@ export default function ComfyUiLocalPage() {
                         onChoosePython={choosePython}
                         onSaveAndStart={() => void saveEnvironment()}
                         onCancel={profile ? () => setEditing(false) : undefined}
-                        cloudUrl={cloudUrl}
-                        onCloudUrlChange={setCloudUrl}
-                        onConnectCloud={() => void connectCloud()}
-                        connecting={connecting}
-                        cloudConnected={Boolean(status.remoteBaseUrl)}
-                        onInstallDemo={() => void installDemoWorkflow()}
-                        installingDemo={packImporting}
                     />
                 ) : (
                     <EnvironmentRuntime
@@ -402,17 +395,11 @@ type SetupProps = {
     onChoosePython: () => void;
     onSaveAndStart: () => void;
     onCancel?: () => void;
-    cloudUrl: string;
-    onCloudUrlChange: (value: string) => void;
-    onConnectCloud: () => void;
-    connecting: boolean;
-    cloudConnected: boolean;
-    onInstallDemo: () => void;
-    installingDemo: boolean;
 };
 
-function EnvironmentSetup({ detection, selectedRoot, detecting, onChooseRoot, onChoosePython, onSaveAndStart, onCancel, cloudUrl, onCloudUrlChange, onConnectCloud, connecting, cloudConnected, onInstallDemo, installingDemo }: SetupProps) {
+function EnvironmentSetup({ detection, selectedRoot, detecting, onChooseRoot, onChoosePython, onSaveAndStart, onCancel }: SetupProps) {
     const { t } = useTranslation();
+    const navigate = useNavigate();
     return (
         <section className="py-8 sm:py-12">
             <div className="mb-7 flex items-end justify-between gap-4">
@@ -427,40 +414,25 @@ function EnvironmentSetup({ detection, selectedRoot, detecting, onChooseRoot, on
                 ) : null}
             </div>
 
-            <div className="mb-7 border border-violet-500/25 bg-violet-500/[0.035] p-5">
-                <div className="flex flex-wrap items-center gap-2">
-                    <Cloud className="size-4 text-violet-500" strokeWidth={2} />
-                    <h3 className="text-[15px] font-semibold text-stone-950 dark:text-zinc-100">{t("comfyuiLocal.setup.cloudTitle")}</h3>
-                    <span className="rounded-md bg-violet-500/[0.14] px-2 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-300">
-                        {t("comfyuiLocal.setup.cloudRecommended")}
-                    </span>
-                    {cloudConnected ? (
-                        <span className="ml-auto flex items-center gap-1.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-                            <span className="size-1.5 rounded-full bg-emerald-500" />
-                            {t("comfyuiLocal.setup.cloudConnected")}
+            <button
+                type="button"
+                onClick={() => navigate("/comfyui-cloud")}
+                className="mb-7 flex w-full cursor-pointer items-center gap-4 border border-violet-500/25 bg-violet-500/[0.035] p-5 text-left transition-colors hover:border-violet-500/45 hover:bg-violet-500/[0.06]"
+            >
+                <span className="grid size-10 shrink-0 place-items-center rounded-[12px] bg-violet-500/[0.14] text-violet-500">
+                    <Cloud className="size-5" strokeWidth={2} />
+                </span>
+                <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-2">
+                        <span className="text-[15px] font-semibold text-stone-950 dark:text-zinc-100">{t("comfyuiLocal.setup.cloudTitle")}</span>
+                        <span className="rounded-md bg-violet-500/[0.14] px-2 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-300">
+                            {t("comfyuiLocal.setup.cloudRecommended")}
                         </span>
-                    ) : null}
-                </div>
-                <p className="mt-2 max-w-3xl text-[12px] leading-6 text-stone-500 dark:text-zinc-400">{t("comfyuiLocal.setup.cloudHint")}</p>
-                <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <Input
-                        value={cloudUrl}
-                        onChange={(event) => onCloudUrlChange(event.target.value)}
-                        placeholder="https://www.runninghub.cn/proxy/your-api-key"
-                        allowClear
-                        className="min-w-[260px] flex-1"
-                    />
-                    <Button type="primary" onClick={onConnectCloud} loading={connecting}>
-                        {t("comfyuiLocal.cloud.connect")}
-                    </Button>
-                    {cloudConnected ? (
-                        <Button icon={<Sparkles className="size-4" />} onClick={onInstallDemo} loading={installingDemo}>
-                            {t("comfyuiLocal.pack.installDemo")}
-                        </Button>
-                    ) : null}
-                </div>
-            </div>
-
+                    </span>
+                    <span className="mt-1.5 block text-[12px] leading-6 text-stone-500 dark:text-zinc-400">{t("comfyuiLocal.setup.cloudHint")}</span>
+                </span>
+                <ArrowRight className="size-4 shrink-0 text-violet-500" strokeWidth={2} />
+            </button>
             <div className="min-w-0 border-y border-black/[0.08] dark:border-white/[0.08]">
                 <div className="py-6">
                     <button
@@ -557,9 +529,7 @@ function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRe
                     <Button icon={<FolderOpen className="size-4" />} onClick={onChangeEnvironment} disabled={busy}>
                         {t("comfyuiLocal.runtime.change")}
                     </Button>
-                    <Button icon={<Cloud className="size-3.5" />} onClick={onConnectCloud} disabled={busy}>
-                        {t("comfyuiLocal.runtime.cloud")}
-                    </Button>
+
                     <Button icon={<RefreshCw className="size-3.5" />} onClick={onRefresh} disabled={busy}>
                         {t("comfyuiLocal.runtime.refresh")}
                     </Button>

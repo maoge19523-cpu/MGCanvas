@@ -55,7 +55,11 @@ export async function importComfyWorkflowPack(environmentId: string, entries: Co
         try {
             const workflow = parseComfyApiWorkflow(entry.workflow);
             const inspection = inspectComfyWorkflow(workflow, objectInfo);
-            const outputs = inspection.outputs.filter((output) => output.exposable && output.outputNode);
+            // 只保留可视媒体输出：SaveImage 之类的节点还会暴露 image_urls 等 json 输出，
+            // 对普通用户没有意义，批量导入时直接跳过。
+            const outputs = inspection.outputs.filter(
+                (output) => output.exposable && output.outputNode && output.resourceType !== "json" && output.resourceType !== "text",
+            );
             if (!outputs.length) throw new Error("没有可作为输出的节点");
             const outputIds = outputs.map((output) => output.id);
             const inputIds = new Set(smartDefaultComfyInputIds(inspection.inputs));

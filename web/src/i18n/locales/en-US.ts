@@ -922,6 +922,9 @@ export default {
     comfyuiLocal: {
         pack: {
             import: "Batch import",
+            installDemo: "Install demo workflow",
+            demoName: "Demo: basic text-to-image",
+            demoInstalled: "Demo workflow installed — add it to the canvas to try it out
             imported: "Imported {{count}} workflows",
             failed: "{{name}} failed to import: {{reason}}",
         },

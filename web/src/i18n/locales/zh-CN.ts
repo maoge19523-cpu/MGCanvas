@@ -901,6 +901,9 @@ export default {
     comfyuiLocal: {
         pack: {
             import: "批量导入",
+            installDemo: "安装示例工作流",
+            demoName: "示例：基础文生图",
+            demoInstalled: "示例工作流已安装，可直接添加到画布体验
             imported: "已导入 {{count}} 个工作流",
             failed: "{{name}} 导入失败：{{reason}}",
         },

@@ -470,9 +470,7 @@ function ToolbarButton({
                     : active
                       ? activeStyle
                       : hovered === id && !disabled
-                        ? danger
-                            ? { background: "rgba(248,113,113,.1)", color: "#f87171" }
-                            : hoverStyle
+                        ? { color: "#111827" }
                         : { color: theme.toolbar.item, opacity: disabled ? 0.28 : danger ? 0.58 : 0.82 }
             }
             onMouseEnter={(event) => {

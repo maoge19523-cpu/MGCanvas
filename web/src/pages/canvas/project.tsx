@@ -66,6 +66,7 @@ import { CanvasSidePanel } from "@/components/canvas/canvas-side-panel";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { CanvasEmptyGuide } from "@/components/canvas/canvas-empty-guide";
 import { useAgentStore } from "@/stores/use-agent-store";
+import { watermarkImageBlob } from "@/lib/canvas/canvas-watermark";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
@@ -97,8 +98,9 @@ import { registerBuiltinNodes, COMPOSITE_SEGMENTS_PORT_ID, COMPOSITE_MUSIC_PORT_
 import { CanvasCompositePanel } from "@/components/canvas/canvas-composite-panel";
 import { composeVideo, readFfmpegPath, resolveCanvasMediaLocalPath } from "@/services/platform/desktop-ffmpeg";
 import { open } from "@tauri-apps/plugin-dialog";
+import { writeFile } from "@tauri-apps/plugin-fs";
 
-import { desktopFileUrl, invokeDesktop, isTauriRuntime } from "@/services/platform/desktop-runtime";
+import { desktopFileUrl, invokeDesktop, isTauriRuntime, readDesktopFileBlob } from "@/services/platform/desktop-runtime";
 import { CanvasRefreshShell } from "@/components/canvas/canvas-refresh-shell";
 import { CanvasTopBar } from "@/components/canvas/canvas-top-bar";
 import { ConnectionCreateMenu, NodeCreateMenu, type PendingConnectionCreate } from "@/components/canvas/canvas-create-menus";
@@ -2859,6 +2861,39 @@ function MGCanvasProjectPage() {
             message.error(error instanceof Error ? error.message : String(error));
         }
     }, [message, t]);
+    /** 导出带品牌水印的作品图，便于用户直接分享。 */
+    const exportWatermarkedMedia = useCallback(async () => {
+        if (!isTauriRuntime()) {
+            message.warning(t("canvas.exportMedia.desktopOnly"));
+            return;
+        }
+        const sources = nodesRef.current
+            .filter((node) => node.type === CanvasNodeType.Image && node.metadata?.localPath)
+            .map((node) => ({ path: node.metadata!.localPath!, name: node.metadata?.filename || node.title || "mgcanvas" }));
+        if (!sources.length) {
+            message.warning(t("canvas.exportMedia.empty"));
+            return;
+        }
+        const selected = await open({ directory: true, multiple: false, title: t("canvas.exportMedia.pickDirectory") });
+        if (typeof selected !== "string" || !selected) return;
+        try {
+            await invokeDesktop("allow_download_directory", { directory: selected });
+            const label = t("meta.title");
+            const paths: string[] = [];
+            for (const source of sources) {
+                const blob = await readDesktopFileBlob(source.path);
+                if (!blob) continue;
+                const watermarked = await watermarkImageBlob(blob, label);
+                const target = `${selected.replace(/[\\/]+$/, "")}\\${source.name.replace(/\.[^.]+$/, "")}-watermark.png`;
+                await writeFile(target, new Uint8Array(await watermarked.arrayBuffer()));
+                paths.push(target);
+            }
+            message.success(t("canvas.exportMedia.watermarkDone", { count: paths.length }));
+            await invokeDesktop("open_downloads_directory", { directory: selected });
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : String(error));
+        }
+    }, [message, t]);
     const handleUploadRequest = useCallback((nodeId?: string, position?: Position) => {
         const targetNode = nodeId ? nodesRef.current.find((node) => node.id === nodeId) : undefined;
         const isEmptyGenericMaterial = targetNode?.metadata?.sourceOrigin === "upload" && !targetNode.metadata.content;
@@ -3913,6 +3948,7 @@ function MGCanvasProjectPage() {
                     onDeleteProject={deleteCurrentProject}
                     onImportImage={() => handleUploadRequest()}
                     onExportMedia={() => void exportCanvasMedia()}
+                    onExportWatermarked={() => void exportWatermarkedMedia()}
                     onUndo={undoCanvas}
                     onRedo={redoCanvas}
                     agentOpen={agentPanelOpen}

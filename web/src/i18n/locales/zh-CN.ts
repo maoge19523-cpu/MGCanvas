@@ -371,7 +371,8 @@ export default {
         deleteCurrent: "删除当前画布",
         exportMedia: {
             menu: "导出全部素材",
-            pickDirectory: "选择导出目录",
+            watermarkMenu: "导出作品集（带水印）",
+            watermarkDone: "已导出 {{count}} 张带水印图片",            pickDirectory: "选择导出目录",
             desktopOnly: "批量导出仅在桌面客户端可用",
             empty: "当前画布还没有可导出的生成结果",
             done: "已导出 {{count}} 个文件",

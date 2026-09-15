@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BookOpen, Bot, Download, Home, Images, Menu, Plus, Redo2, Sparkles, Trash2, Undo2, Upload } from "lucide-react";
+import { BookOpen, Bot, Download, Home, Image as ImageIcon, Images, Menu, Plus, Redo2, Sparkles, Trash2, Undo2, Upload } from "lucide-react";
 import { Dropdown, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -25,6 +25,7 @@ export function CanvasTopBar({
     onDeleteProject,
     onImportImage,
     onExportMedia,
+    onExportWatermarked,
     onUndo,
     onRedo,
     agentOpen,
@@ -46,6 +47,7 @@ export function CanvasTopBar({
     onDeleteProject: () => void;
     onImportImage: () => void;
     onExportMedia: () => void;
+    onExportWatermarked: () => void;
     onUndo: () => void;
     onRedo: () => void;
     agentOpen: boolean;
@@ -91,6 +93,7 @@ export function CanvasTopBar({
                                 { type: "divider" },
                                 { key: "import", icon: <Upload className="size-4" />, label: t("canvas.importAsset"), onClick: onImportImage },
                                     { key: "exportMedia", icon: <Download className="size-4" />, label: t("canvas.exportMedia.menu"), onClick: onExportMedia },
+                                    { key: "exportWatermarked", icon: <ImageIcon className="size-4" />, label: t("canvas.exportMedia.watermarkMenu"), onClick: onExportWatermarked },
                                 { type: "divider" },
                                 { key: "undo", disabled: !canUndo, icon: <Undo2 className="size-4" />, label: <MenuLabel text={t("canvas.undo")} shortcut="Ctrl / Cmd + Z" />, onClick: onUndo },
                                 { key: "redo", disabled: !canRedo, icon: <Redo2 className="size-4" />, label: <MenuLabel text={t("canvas.redo")} shortcut="Ctrl / Cmd + Shift + Z" />, onClick: onRedo },

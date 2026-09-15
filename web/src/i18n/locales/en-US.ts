@@ -377,7 +377,8 @@ export default {
         deleteCurrent: "Delete current canvas",
         exportMedia: {
             menu: "Export all media",
-            pickDirectory: "Choose export folder",
+            watermarkMenu: "Export portfolio (watermarked)",
+            watermarkDone: "Exported {{count}} watermarked images",            pickDirectory: "Choose export folder",
             desktopOnly: "Batch export is only available in the desktop app",
             empty: "This canvas has no generated results to export yet",
             done: "Exported {{count}} files",

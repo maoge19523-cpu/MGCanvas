@@ -96,7 +96,9 @@ import { getNodeDefinition, isBuiltinNodeType as isBuiltinType, useNodeRegistryV
 import { registerBuiltinNodes, COMPOSITE_SEGMENTS_PORT_ID, COMPOSITE_MUSIC_PORT_ID, COMPOSITE_VIDEO_OUTPUT_PORT_ID } from "@/components/canvas/nodes/builtin-nodes";
 import { CanvasCompositePanel } from "@/components/canvas/canvas-composite-panel";
 import { composeVideo, readFfmpegPath, resolveCanvasMediaLocalPath } from "@/services/platform/desktop-ffmpeg";
-import { desktopFileUrl, isTauriRuntime } from "@/services/platform/desktop-runtime";
+import { open } from "@tauri-apps/plugin-dialog";
+
+import { desktopFileUrl, invokeDesktop, isTauriRuntime } from "@/services/platform/desktop-runtime";
 import { CanvasRefreshShell } from "@/components/canvas/canvas-refresh-shell";
 import { CanvasTopBar } from "@/components/canvas/canvas-top-bar";
 import { ConnectionCreateMenu, NodeCreateMenu, type PendingConnectionCreate } from "@/components/canvas/canvas-create-menus";
@@ -2834,6 +2836,29 @@ function MGCanvasProjectPage() {
         setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, fontSize } } : node)));
     }, []);
 
+    /** 把画布上所有生成结果批量导出到用户选择的目录。 */
+    const exportCanvasMedia = useCallback(async () => {
+        if (!isTauriRuntime()) {
+            message.warning(t("canvas.exportMedia.desktopOnly"));
+            return;
+        }
+        const paths = nodesRef.current.map((node) => node.metadata?.localPath).filter((value): value is string => Boolean(value));
+        if (!paths.length) {
+            message.warning(t("canvas.exportMedia.empty"));
+            return;
+        }
+        const selected = await open({ directory: true, multiple: false, title: t("canvas.exportMedia.pickDirectory") });
+        if (typeof selected !== "string" || !selected) return;
+        try {
+            await invokeDesktop("allow_download_directory", { directory: selected });
+            const result = await invokeDesktop<{ exported: number; failed: string[]; directory: string }>("export_canvas_media", { paths, directory: selected });
+            message.success(t("canvas.exportMedia.done", { count: result.exported }));
+            if (result.failed.length) message.warning(t("canvas.exportMedia.partial", { count: result.failed.length }));
+            await invokeDesktop("open_downloads_directory", { directory: selected });
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : String(error));
+        }
+    }, [message, t]);
     const handleUploadRequest = useCallback((nodeId?: string, position?: Position) => {
         const targetNode = nodeId ? nodesRef.current.find((node) => node.id === nodeId) : undefined;
         const isEmptyGenericMaterial = targetNode?.metadata?.sourceOrigin === "upload" && !targetNode.metadata.content;
@@ -3887,6 +3912,7 @@ function MGCanvasProjectPage() {
                     onCreateProject={createAndOpenProject}
                     onDeleteProject={deleteCurrentProject}
                     onImportImage={() => handleUploadRequest()}
+                    onExportMedia={() => void exportCanvasMedia()}
                     onUndo={undoCanvas}
                     onRedo={redoCanvas}
                     agentOpen={agentPanelOpen}

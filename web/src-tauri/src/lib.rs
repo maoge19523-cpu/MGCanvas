@@ -93,6 +93,78 @@ fn open_downloads_directory(app: AppHandle, directory: Option<String>) -> Result
     Ok(())
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CanvasMediaExport {
+    exported: usize,
+    failed: Vec<String>,
+    directory: String,
+}
+
+/// 批量导出画布生成结果到指定目录：同名文件自动追加序号避免覆盖。
+#[tauri::command]
+fn export_canvas_media(paths: Vec<String>, directory: String) -> Result<CanvasMediaExport, String> {
+    let trimmed = directory.trim();
+    if trimmed.is_empty() {
+        return Err("请先选择导出目录".to_owned());
+    }
+    let target = std::path::PathBuf::from(trimmed);
+    if !target.is_dir() {
+        return Err("导出目录不存在".to_owned());
+    }
+
+    let mut exported = 0usize;
+    let mut failed: Vec<String> = Vec::new();
+    for raw in paths {
+        let source = std::path::PathBuf::from(raw.trim());
+        if !source.is_file() {
+            failed.push(raw);
+            continue;
+        }
+        let name = source
+            .file_name()
+            .map(|value| value.to_owned())
+            .unwrap_or_else(|| std::ffi::OsString::from("mgcanvas-output"));
+        let destination = unique_export_path(&target, &name);
+        match std::fs::copy(&source, &destination) {
+            Ok(_) => exported += 1,
+            Err(_) => failed.push(raw),
+        }
+    }
+
+    Ok(CanvasMediaExport {
+        exported,
+        failed,
+        directory: target.to_string_lossy().to_string(),
+    })
+}
+
+/// 生成不冲突的目标路径：已存在时在文件名后追加 -1、-2 …
+fn unique_export_path(directory: &std::path::Path, name: &std::ffi::OsStr) -> std::path::PathBuf {
+    let candidate = directory.join(name);
+    if !candidate.exists() {
+        return candidate;
+    }
+    let stem = std::path::Path::new(name)
+        .file_stem()
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_else(|| "mgcanvas-output".to_owned());
+    let extension = std::path::Path::new(name)
+        .extension()
+        .map(|value| value.to_string_lossy().to_string());
+    for index in 1..10_000 {
+        let file_name = match extension.as_deref() {
+            Some(ext) if !ext.is_empty() => format!("{stem}-{index}.{ext}"),
+            _ => format!("{stem}-{index}"),
+        };
+        let next = directory.join(file_name);
+        if !next.exists() {
+            return next;
+        }
+    }
+    candidate
+}
+
 #[tauri::command]
 fn allow_download_directory(app: AppHandle, directory: String) -> Result<String, String> {
     let path = resolve_download_directory(&app, Some(directory))?;
@@ -243,6 +315,7 @@ pub fn run() {
             splash_animation_complete,
             open_downloads_directory,
             allow_download_directory,
+            export_canvas_media,
             ffmpeg_compose::detect_ffmpeg,
             ffmpeg_compose::compose_video,
             media_cache::cache_remote_media,

@@ -297,6 +297,36 @@ function ComfyWorkflowPicker({ currentWorkflowId, onSelect, onClose }: { current
     );
 }
 
+/** 常用比例预设；换算时以当前短边为基准，避免放大到模型不擅长的分辨率。 */
+const ASPECT_PRESETS = [
+    { key: "square", label: "1:1", ratio: 1 },
+    { key: "portrait", label: "3:4", ratio: 0.75 },
+    { key: "landscape", label: "4:3", ratio: 4 / 3 },
+    { key: "tall", label: "9:16", ratio: 0.5625 },
+    { key: "wide", label: "16:9", ratio: 16 / 9 },
+] as const;
+
+/** 尺寸取 8 的倍数：多数采样器要求分辨率对齐。 */
+function align8(value: number) {
+    return Math.max(64, Math.round(value / 8) * 8);
+}
+
+/** 找出工作流里成对的宽高参数（不同工作流的字段名大小写可能不同）。 */
+function resolveSizePair(snapshot: ComfyCanvasNodeSnapshot) {
+    const width = snapshot.inputs.find((input) => input.field.toLowerCase() === "width");
+    const height = snapshot.inputs.find((input) => input.field.toLowerCase() === "height");
+    if (!width || !height) return null;
+    return { width, height };
+}
+
+/** 读取当前宽高数值，非有效数字时返回 null。 */
+function readSizeValue(snapshot: ComfyCanvasNodeSnapshot, pair: { width: ComfyExposedInput; height: ComfyExposedInput }) {
+    const width = Number(snapshot.values[pair.width.id] ?? pair.width.defaultValue);
+    const height = Number(snapshot.values[pair.height.id] ?? pair.height.defaultValue);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+    return { width, height };
+}
+
 function ComfyWorkflowParameters({ ctx, snapshot, onChangeWorkflow, onClose }: { ctx: CanvasNodeContext; snapshot: ComfyCanvasNodeSnapshot; onChangeWorkflow: () => void; onClose: () => void }) {
     const { t } = useTranslation();
     const updateValue = (id: string, value: unknown) => ctx.updateMetadata({ comfyuiLocal: { ...snapshot, values: { ...snapshot.values, [id]: value } } });
@@ -313,6 +343,23 @@ function ComfyWorkflowParameters({ ctx, snapshot, onChangeWorkflow, onClose }: {
     const seedField = snapshot.inputs.find((input) => input.field === "seed" || input.field === "noise_seed");
     const seedRandom = snapshot.values.__seedRandom !== "0";
     const visibleInputs = snapshot.inputs.filter((input) => (seedRandom ? input.field !== "seed" && input.field !== "noise_seed" : true));
+
+    // 尺寸比例预设：任何工作流只要有成对的宽高参数就会自动出现，
+    // 换算时以当前尺寸的短边为基准，只改比例、不改用户的整体规模。
+    const sizePair = resolveSizePair(snapshot);
+    const applyRatio = (ratio: number) => {
+        if (!sizePair) return;
+        const current = readSizeValue(snapshot, sizePair);
+        if (!current) return;
+        const base = Math.min(current.width, current.height);
+        const next = ratio >= 1
+            ? { width: Math.round(base * ratio), height: base }
+            : { width: base, height: Math.round(base / ratio) };
+        // 统一取 8 的倍数，避免模型对非对齐尺寸报错。
+        const aligned = { width: align8(next.width), height: align8(next.height) };
+        updateValue(sizePair.width.id, aligned.width);
+        updateValue(sizePair.height.id, aligned.height);
+    };
     return (
         <div>
             <div className="flex items-start justify-between gap-4 border-b pb-4" style={{ borderColor: ctx.theme.toolbar.border }}>
@@ -336,6 +383,25 @@ function ComfyWorkflowParameters({ ctx, snapshot, onChangeWorkflow, onClose }: {
                         <span className="mt-0.5 block text-[10px] opacity-50">{t("comfyuiLocal.canvasNode.randomSeedHint")}</span>
                     </span>
                     <Switch size="small" checked={seedRandom} onChange={(checked) => updateValue("__seedRandom", checked ? "1" : "0")} />
+                </div>
+            ) : null}
+            {sizePair ? (
+                <div className="border-b py-3" style={{ borderColor: ctx.theme.node.stroke }}>
+                    <div className="mb-2 text-[12px] font-medium">{t("comfyuiLocal.canvasNode.aspectRatio")}</div>
+                    <div className="flex flex-wrap gap-1.5">
+                        {ASPECT_PRESETS.map((preset) => (
+                            <button
+                                key={preset.key}
+                                type="button"
+                                onClick={() => applyRatio(preset.ratio)}
+                                title={t(`comfyuiLocal.canvasNode.ratio.${preset.key}`)}
+                                className="cursor-pointer rounded-[8px] border px-2.5 py-1 text-[11px] transition-colors hover:border-[#756bff]/50 hover:bg-[#756bff]/[0.08]"
+                                style={{ borderColor: ctx.theme.node.stroke }}
+                            >
+                                {preset.label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             ) : null}
             <div className="thin-scrollbar grid max-h-[430px] gap-4 overflow-y-auto py-5 pr-1 sm:grid-cols-2">

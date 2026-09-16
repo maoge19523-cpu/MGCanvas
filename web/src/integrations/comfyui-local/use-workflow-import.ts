@@ -13,6 +13,8 @@ export const CLOUD_ENVIRONMENT_ID = "cloud-remote";
 export type ComfyWorkflowImportTarget = {
     /** 本地环境 ID；为空时视为尚未准备环境。 */
     localEnvironmentId?: string | null;
+    /** 声明调用方所在场景：云端页面必须传 "cloud"，避免未连接时回退到本地环境。 */
+    scope?: "local" | "cloud";
     /** 导入成功后刷新列表。 */
     onImported?: () => void | Promise<void>;
 };
@@ -21,7 +23,7 @@ export type ComfyWorkflowImportTarget = {
  * 共用的工作流导入能力：批量导入 JSON 与安装内置示例工作流。
  * 已连接云端时自动使用云端环境标识，无需本地 profile。
  */
-export function useComfyWorkflowImport({ localEnvironmentId, onImported }: ComfyWorkflowImportTarget = {}) {
+export function useComfyWorkflowImport({ localEnvironmentId, scope, onImported }: ComfyWorkflowImportTarget = {}) {
     const { message } = App.useApp();
     const { t } = useTranslation();
     const packInputRef = useRef<HTMLInputElement | null>(null);
@@ -33,13 +35,15 @@ export function useComfyWorkflowImport({ localEnvironmentId, onImported }: Comfy
         try {
             const status = await comfyNativeClient.status();
             if (status.remoteBaseUrl) return CLOUD_ENVIRONMENT_ID;
+            // 云端场景下不能用本地环境顶替：否则云端页会装成本地示例。
+            if (scope === "cloud") return "";
             // 本地环境：取当前保存的活动环境，首页没有页面上下文时也要能解析出来。
             const saved = await comfyNativeClient.savedEnvironments();
             return saved.activeProfileId || saved.profiles[0]?.id || "";
         } catch {
             return "";
         }
-    }, [localEnvironmentId]);
+    }, [localEnvironmentId, scope]);
 
     const openPicker = useCallback(() => packInputRef.current?.click(), []);
 
@@ -91,12 +95,13 @@ export function useComfyWorkflowImport({ localEnvironmentId, onImported }: Comfy
         async (demo?: ComfyDemoWorkflow) => {
             const environmentId = await resolveEnvironmentId();
             if (!environmentId) {
-                message.warning(t("comfyuiLocal.pack.needsEnvironment"));
+                // 云端未连接时明确提示填地址，而不是沿用本地环境的「尚未启动」。
+                message.warning(t(scope === "cloud" ? "comfyuiCloud.needEndpoint" : "comfyuiLocal.pack.needsEnvironment"));
                 return null;
             }
             // 按当前环境挑选示例：本地一个通用示例，云端按用途分类。
-            const scope = environmentId === CLOUD_ENVIRONMENT_ID ? "cloud" : "local";
-            const target = demo ?? demosForScope(scope)[0];
+            const resolvedScope = scope ?? (environmentId === CLOUD_ENVIRONMENT_ID ? "cloud" : "local");
+            const target = demo ?? demosForScope(resolvedScope)[0];
             if (!target) {
                 message.warning(t("comfyuiLocal.pack.noDemo"));
                 return null;
@@ -135,8 +140,8 @@ export function useComfyWorkflowImport({ localEnvironmentId, onImported }: Comfy
     const availableDemos = useCallback(async () => {
         const environmentId = await resolveEnvironmentId();
         if (!environmentId) return [];
-        return demosForScope(environmentId === CLOUD_ENVIRONMENT_ID ? "cloud" : "local");
-    }, [resolveEnvironmentId]);
+        return demosForScope(scope ?? (environmentId === CLOUD_ENVIRONMENT_ID ? "cloud" : "local"));
+    }, [resolveEnvironmentId, scope]);
 
     return { packInputRef, importing, openPicker, importFiles, installDemo, availableDemos, resolveEnvironmentId, reload };
 }

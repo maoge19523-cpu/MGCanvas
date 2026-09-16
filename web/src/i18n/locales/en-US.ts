@@ -946,6 +946,7 @@ export default {
         disconnect: "Disconnect",
         disconnectDone: "Cloud connection closed",
         refreshed: "Cloud status refreshed",
+        needEndpoint: "Connect a cloud endpoint first, then install demo workflows",
         refreshConnected: "Cloud connection is healthy: {{url}}",
         refreshDisconnected: "Cloud is not connected — paste an endpoint and click Connect",        emptyLibraryCloud: "No workflows yet — install the demo workflow or import JSON files above.",    },
     comfyuiLocal: {

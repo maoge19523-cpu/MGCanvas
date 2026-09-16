@@ -33,7 +33,8 @@ export default function ComfyUiCloudPage() {
 
     // 云端示例由运营方提供；未配置时不显示安装按钮，避免点击后没有结果。
     const cloudDemos = demosForScope("cloud");
-    const workflowImport = useComfyWorkflowImport({ onImported: () => loadWorkflows() });
+    // 明确声明云端场景：未连接云端时不会回退到本地环境，避免装成本地示例。
+    const workflowImport = useComfyWorkflowImport({ scope: "cloud", onImported: () => loadWorkflows() });
 
     const loadWorkflows = useCallback(async () => {
         // 只展示云端环境的工作流：本地导入的工作流不在云端列表出现。
@@ -153,16 +154,16 @@ export default function ComfyUiCloudPage() {
                                     {t("comfyuiCloud.disconnect")}
                                 </Button>
                             </div>
-                            <dl className="mt-5 grid gap-3 text-[11px] sm:grid-cols-2">
-                                <div className="flex items-center justify-between gap-3">
+                            <dl className="mt-5 grid gap-4 border-t border-black/[0.06] pt-4 text-[11px] dark:border-white/[0.06] sm:grid-cols-2">
+                                <div className="min-w-0">
                                     <dt className="text-stone-400 dark:text-zinc-600">{t("comfyuiCloud.state")}</dt>
-                                    <dd className="tabular-nums text-stone-700 dark:text-zinc-300">
+                                    <dd className="mt-1 truncate text-stone-700 dark:text-zinc-300" title={connected ? (status.remoteBaseUrl ?? undefined) : undefined}>
                                         {connected ? status.remoteBaseUrl : t("comfyuiCloud.disconnected")}
                                     </dd>
                                 </div>
-                                <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
                                     <dt className="text-stone-400 dark:text-zinc-600">{t("comfyuiCloud.workflowCount")}</dt>
-                                    <dd className="tabular-nums text-stone-700 dark:text-zinc-300">{workflows.length}</dd>
+                                    <dd className="mt-1 tabular-nums text-stone-700 dark:text-zinc-300">{workflows.length}</dd>
                                 </div>
                             </dl>
                         </div>
@@ -171,7 +172,7 @@ export default function ComfyUiCloudPage() {
                             <div className="flex flex-wrap items-center justify-between gap-3">
                                 <h3 className="text-[15px] font-semibold text-stone-950 dark:text-zinc-100">{t("comfyuiCloud.libraryTitle")}</h3>
                                 <div className="flex flex-wrap gap-2">
-                                    <Button icon={<Sparkles className="size-4" />} onClick={() => void workflowImport.installDemo(cloudDemos[0])} loading={workflowImport.importing}>
+                                    <Button icon={<Sparkles className="size-4" />} onClick={() => void workflowImport.installDemo()} loading={workflowImport.importing}>
                                         {t("comfyuiLocal.pack.installDemo")}
                                     </Button>
                                     <Button icon={<Upload className="size-4" />} onClick={() => workflowImport.openPicker()} loading={workflowImport.importing}>

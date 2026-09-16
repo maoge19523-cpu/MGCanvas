@@ -925,6 +925,7 @@ export default {
         disconnect: "断开连接",
         disconnectDone: "已断开云端连接",
         refreshed: "云端状态已刷新",
+        needEndpoint: "请先填写云端地址并点击「连接」，再安装示例工作流",
         refreshConnected: "云端连接正常：{{url}}",
         refreshDisconnected: "云端未连接，请填入地址后点「连接」",        emptyLibraryCloud: "还没有工作流，点上方按钮安装示例工作流或批量导入 JSON。",    },
     comfyuiLocal: {

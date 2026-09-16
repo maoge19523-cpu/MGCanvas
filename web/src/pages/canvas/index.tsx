@@ -7,7 +7,6 @@ import { useTranslation } from "react-i18next";
 
 import { CanvasDeleteProjectsDialog } from "@/components/canvas/canvas-delete-projects-dialog";
 import { CanvasProjectCard } from "@/components/canvas/canvas-project-card";
-import { openWorkflowInNewCanvas } from "@/integrations/comfyui-local/open-workflow-canvas";
 import { useComfyWorkflowImport } from "@/integrations/comfyui-local/use-workflow-import";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
 import { latestCanvasProjectId, sortCanvasProjectsByRecent } from "@/lib/canvas/canvas-home";
@@ -36,17 +35,6 @@ export default function CanvasPage() {
     // 首次使用的三步引导卡片，用户关闭后本地记住不再显示。
     const [showGuide, setShowGuide] = useState(() => localStorage.getItem(GUIDE_DISMISS_KEY) !== "1");
     const workflowImport = useComfyWorkflowImport();
-    // 当前环境可用的示例数量：本地一个通用示例，云端为分类示例（由运营方提供）。
-    const [demoCount, setDemoCount] = useState(0);
-    useEffect(() => {
-        let active = true;
-        void workflowImport.availableDemos().then((items) => {
-            if (active) setDemoCount(items.length);
-        });
-        return () => {
-            active = false;
-        };
-    }, [workflowImport]);
 
     /** 首页导入入口：没有可用环境时直接跳到「ComfyUI 云端」页配置。 */
     const requireEnvironment = useCallback(async () => {
@@ -57,12 +45,6 @@ export default function CanvasPage() {
         return false;
     }, [message, navigate, t, workflowImport]);
 
-    const handleInstallDemo = useCallback(async () => {
-        if (!(await requireEnvironment())) return;
-        const installed = await workflowImport.installDemo();
-        // 安装完成后直接打开带该工作流的新画布，省去让用户再去云端页手动添加。
-        if (installed) navigate(`/canvas/${openWorkflowInNewCanvas(installed)}`);
-    }, [navigate, requireEnvironment, workflowImport]);
 
     const handleImportPack = useCallback(async () => {
         if (!(await requireEnvironment())) return;

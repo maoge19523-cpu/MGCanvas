@@ -156,8 +156,17 @@ export async function runModelPlugin<T = unknown>(args: RunPluginArgs): Promise<
         if (error instanceof DOMException && error.name === "AbortError") throw error;
         if (axios.isCancel(error)) throw error;
         const message = error instanceof Error ? error.message : String(error);
-        throw new Error(i18n.t("modelPlugin.executionFailed", { message }));
+        throw new Error(i18n.t("modelPlugin.executionFailed", { message: `${message}${batchLimitHint(message)}` }));
     }
+}
+
+/**
+ * 部分接口不支持一次生成多张（例如百炼的 parameters.n 上限为 1），
+ * 命中时补充可操作的提示，避免用户只看到一段原始报错。
+ */
+function batchLimitHint(message: string) {
+    if (!/parameters\.n/.test(message) || !/less than or equal to 1|小于等于\s*1/i.test(message)) return "";
+    return "\n提示：该接口一次只允许生成 1 张。请把「生成数量」改为 1；若该模型自定义了调用脚本，脚本需要把它拆成多次请求（内置脚本已支持）。";
 }
 
 export type PluginVariable = { name: string; type: string; desc: string; capabilities?: ModelCapability[] };

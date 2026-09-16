@@ -100,3 +100,5 @@ The Chinese version contains the complete item-by-item acceptance checklist.
 - 修复渠道模型尺寸失效（回归）：此前的 Seedream 字段清理会把渠道模型用于传尺寸的 metadata.width/height 一起删掉；改为只对内置模型清理，并让校验放过渠道模型。
 - 停止按钮改为按节点实际状态显示（此前只依据面板标志，渠道模型运行时按钮不出现）；节点菜单也提供「粘贴到输入框」。
 - 失败与部分成功都会记录完成时间，运行耗时不再缺失。
+- 内置百炼图像脚本改为「每次请求 n=1、按数量发起多次请求」，修复生成数量调到 2 时报 HTTP 400（parameters.n 上限为 1）。
+- 命中「parameters.n 上限为 1」这类错误时补充可操作提示。

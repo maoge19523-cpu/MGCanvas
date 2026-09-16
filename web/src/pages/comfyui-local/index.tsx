@@ -8,6 +8,7 @@ import { useNavigate } from "react-router-dom";
 import { WorkspacePage } from "@/components/layout/workspace-page";
 import { comfyNativeClient, type ComfyEnvironmentDetection, type ComfyEnvironmentLogEntry, type ComfyEnvironmentProfile, type ComfyEnvironmentStatus, type ComfyWorkflowDefinition } from "@/integrations/comfyui-local";
 import { upgradeLegacyDemoWorkflows } from "@/integrations/comfyui-local/demo-sync";
+import { useComfyWorkflowImport } from "@/integrations/comfyui-local/use-workflow-import";
 import { openWorkflowInNewCanvas } from "@/integrations/comfyui-local/open-workflow-canvas";
 import { createComfyResultNodes } from "@/integrations/comfyui-local/result-nodes";
 import { ComfyWorkflowImportWizard } from "@/integrations/comfyui-local/workflow-import-wizard";
@@ -122,6 +123,11 @@ export default function ComfyUiLocalPage() {
 
     // 老版本随包分发的示例引用了本机不存在的模型，首次在本机环境就绪时就地升级，
     // 这样库里和画布上已引用的节点都会换成当前示例。
+    const demoImport = useComfyWorkflowImport({
+        localEnvironmentId: profile?.id,
+        onImported: async () => setWorkflows(await listComfyWorkflowDefinitions()),
+    });
+
     const legacyDemoChecked = useRef(false);
     useEffect(() => {
         if (legacyDemoChecked.current || !desktop || !profile || status.phase !== "running") return;
@@ -313,22 +319,11 @@ export default function ComfyUiLocalPage() {
     };
 
     /** 安装内置示例工作流：直接读取随包分发的演示 JSON，省去新用户自己找文件。 */
+    /** 安装内置示例工作流：统一走示例清单，确保用的是随包分发的最新版本。 */
     const installDemoWorkflow = async () => {
-        // 云端模式没有本地 profile，使用固定的远端环境标识即可（运行时不校验环境一致性）。
-        const environmentId = profile?.id || (status.remoteBaseUrl ? CLOUD_ENVIRONMENT_ID : "");
-        if (!environmentId) return;
         setPackImporting(true);
         try {
-            const response = await fetch("/workflows/demo-text-to-image.json");
-            if (!response.ok) throw new Error(`读取示例工作流失败（HTTP ${response.status}）`);
-            const parsed = parseComfyWorkflowPack(await response.json() as unknown);
-            if (parsed.length === 1 && !parsed[0].name) parsed[0].name = t("comfyuiLocal.pack.demoName");
-            const result = await importComfyWorkflowPack(environmentId, parsed);
-            setWorkflows(await listComfyWorkflowDefinitions());
-            if (result.imported.length) message.success(t("comfyuiLocal.pack.demoInstalled"));
-            for (const item of result.failed) message.warning(t("comfyuiLocal.pack.failed", { name: item.name, reason: item.reason }));
-        } catch (error) {
-            message.error(errorMessage(error));
+            await demoImport.installDemo();
         } finally {
             setPackImporting(false);
         }
@@ -666,9 +661,15 @@ function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRe
                         <h3 className="text-[20px] font-semibold tracking-[-0.03em]">{t("comfyuiLocal.library.title")}</h3>
                     </div>
 
+                    <div className="flex flex-wrap gap-2">
+                        {/* 示例要跑在本机 ComfyUI 上，未启动成功前不提供安装入口。 */}
+                        <Button size="large" icon={<Sparkles className="size-4" />} onClick={onInstallDemo} loading={importingPack} disabled={status.phase !== "running"}>
+                            {t("comfyuiLocal.pack.installDemo")}
+                        </Button>
                         <Button type="primary" size="large" icon={<Plus className="size-4" />} onClick={onImport} disabled={status.phase !== "running"}>
-                        {t("comfyuiLocal.library.import")}
-                    </Button>
+                            {t("comfyuiLocal.library.import")}
+                        </Button>
+                    </div>
                 </div>
                 {workflows.length ? (
                     <div className="mt-6 divide-y divide-black/[0.07] border-y border-black/[0.08] dark:divide-white/[0.07] dark:border-white/[0.08]">

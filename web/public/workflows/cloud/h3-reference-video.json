@@ -222,7 +222,7 @@
     },
     "class_type": "LoadImage",
     "_meta": {
-      "title": "加载图像"
+      "title": "图片一"
     }
   },
   "69": {
@@ -269,7 +269,7 @@
     },
     "class_type": "LoadImage",
     "_meta": {
-      "title": "加载图像"
+      "title": "图片二"
     }
   },
   "78": {
@@ -278,7 +278,7 @@
     },
     "class_type": "LoadImage",
     "_meta": {
-      "title": "加载图像"
+      "title": "图片三"
     }
   },
   "93": {
@@ -323,6 +323,30 @@
       "ref_images.ref_image_2": [
         "78",
         0
+      ],
+      "ref_images.ref_image_3": [
+        "130",
+        0
+      ],
+      "ref_images.ref_image_4": [
+        "131",
+        0
+      ],
+      "ref_images.ref_image_5": [
+        "132",
+        0
+      ],
+      "ref_audios.ref_audio_0": [
+        "140",
+        0
+      ],
+      "ref_audios.ref_audio_1": [
+        "141",
+        0
+      ],
+      "ref_audios.ref_audio_2": [
+        "142",
+        0
       ]
     },
     "class_type": "MiniMaxH3ReferenceToVideo",
@@ -342,6 +366,60 @@
     "class_type": "LoraLoaderModelOnly",
     "_meta": {
       "title": "LoRA加载器(仅模型)"
+    }
+  },
+  "130": {
+    "inputs": {
+      "image": "ae1bcbb33ab77f74aed8da185099a2413ed7d1ca5350735ec0f96c8e1b196555.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "图片四"
+    }
+  },
+  "131": {
+    "inputs": {
+      "image": "ae1bcbb33ab77f74aed8da185099a2413ed7d1ca5350735ec0f96c8e1b196555.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "图片五"
+    }
+  },
+  "132": {
+    "inputs": {
+      "image": "ae1bcbb33ab77f74aed8da185099a2413ed7d1ca5350735ec0f96c8e1b196555.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "图片六"
+    }
+  },
+  "140": {
+    "inputs": {
+      "audio": "None"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "音频一"
+    }
+  },
+  "141": {
+    "inputs": {
+      "audio": "None"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "音频二"
+    }
+  },
+  "142": {
+    "inputs": {
+      "audio": "None"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "音频三"
     }
   }
 }

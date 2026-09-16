@@ -100,7 +100,7 @@ export function inspectComfyWorkflow(
   return {
     workflow,
     nodes,
-    inputs: nodes.flatMap((node) => node.inputs),
+    inputs: nodes.flatMap((node) => node.inputs).sort((left, right) => promptRank(left) - promptRank(right)),
     outputs: nodes.flatMap((node) => node.outputs),
     missingClassTypes,
     runnable: missingClassTypes.length === 0,
@@ -195,15 +195,16 @@ function inspectInputs(nodeId: string,
         exposable &&
         isRecommendedCanvasInput(node.class_type, field, valueType, options),
       options,
-      enumValues: Array.isArray(spec?.spec?.[0])
-        ? [...spec.spec[0]]
-        : undefined,
+      enumValues: resolveEnumValues(node.class_type, field, spec),
     };
   });
 }
 
 /** 参数占位节点：值由用户在画布上填写。 */
 const PARAMETER_HOLDER_CLASSES = new Set(["PrimitiveFloat", "PrimitiveInt", "PrimitiveNumber", "PrimitiveString", "PrimitiveStringMultiline", "Float", "Int"]);
+
+/** 画面比例只保留竖屏与宽屏两档，避免新手在 8 个比例里挑花眼。 */
+const ASPECT_RATIO_OPTIONS = ["9:16 (Portrait Widescreen)", "16:9 (Widescreen)"];
 
 /** 分辨率选择器节点：其枚举值本身就是给用户挑的。 */
 const RESOLUTION_SELECTOR_CLASSES = new Set(["TTResolutionSelector", "ResolutionSelector"]);
@@ -224,6 +225,27 @@ const RECOMMENDED_NUMERIC_FIELDS = new Set([
   "noise_seed",
 ]);
 
+/** 画面比例只保留常用两档；其余枚举原样返回。 */
+function resolveEnumValues(
+  classType: string,
+  field: string,
+  spec: { spec?: unknown[] } | undefined,
+) {
+  const declared = (spec as { spec?: [unknown, unknown] } | undefined)?.spec?.[0];
+  if (!Array.isArray(declared)) return undefined;
+  if (classType === "ResolutionSelector" && field === "aspect_ratio") {
+    return ASPECT_RATIO_OPTIONS.filter((option) => declared.includes(option));
+  }
+  return [...declared];
+}
+
+/** 提示词排序：正向在前、负向在最后，其余保持原顺序（Array.sort 稳定）。 */
+function promptRank(input: ComfyInspectedInput) {
+  if (input.label === "正向提示词") return 0;
+  if (input.label === "负向提示词") return 2;
+  return 1;
+}
+
 function isRecommendedCanvasInput(
   classType: string,
   field: string,
@@ -231,6 +253,8 @@ function isRecommendedCanvasInput(
   options: ComfyInputOptions,
 ) {
   if (options.forceInput || options.defaultInput) return false;
+  // 系统提示词属于技术字段，暴露出来只会和真正的「提示词」重复。
+  if (field === "system_prompt") return false;
   if (valueType === "image" || valueType === "video" || valueType === "audio")
     return true;
   // 尺寸、生成数量等数值参数也要能被用户设置，否则示例工作流只能改提示词。
@@ -239,6 +263,8 @@ function isRecommendedCanvasInput(
   if (RESOLUTION_SELECTOR_CLASSES.has(classType) && (field === "resolution" || field === "aspect_ratio")) return true;
   // 参数占位节点的数值（例如 PrimitiveFloat 的时长）由运营方命名，应当可调。
   if (field === "value" && PARAMETER_HOLDER_CLASSES.has(classType)) return true;
+  // 分辨率档位（百万像素）直接决定清晰度，必须可调。
+  if (classType === "ResolutionSelector" && field === "megapixels") return true;
   if (valueType !== "string") return false;
   const signal =
     `${classType} ${field} ${typeof options.label === "string" ? options.label : ""}`.toLowerCase();

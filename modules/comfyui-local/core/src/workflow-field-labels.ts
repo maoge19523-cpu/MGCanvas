@@ -117,6 +117,9 @@ export function resolveComfyFieldLabel(
   // value 这类字段本身没有语义（PrimitiveFloat 等参数节点），
   // 直接用节点标题，运营方在工作流里把标题写成中文即可。
   if (field === "value" && nodeTitle) return nodeTitle;
+  // 素材加载节点（LoadImage / LoadAudio / LoadVideo）同样用节点标题，
+  // 这样一个工作流里的多张参考图能各自命名（图片一、图片二…）。
+  if (nodeTitle && /^load(image|audio|video)$/i.test(classType)) return nodeTitle;
 
   // 文本编码器被采样器引用时，直接按方向命名，比字段名更直观。
   if (promptRole === "positive" && (field === "text" || field === "prompt")) return "正向提示词";

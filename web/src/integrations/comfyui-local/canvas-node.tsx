@@ -7,6 +7,7 @@ import { nanoid } from "nanoid";
 import i18n from "@/i18n";
 import { comfyNativeClient, type ComfyExposedInput, type ComfyWorkflowDefinition } from "./index";
 import { isComfyWorkflowRunning, runComfyWorkflowNode, stopComfyWorkflowNode } from "./execution";
+import { comfyInputPreviewUrl } from "./media-preview";
 import { ensureComfyResultNodeOps, replaceComfyResultNodeOps } from "./result-nodes";
 import { listComfyWorkflowDefinitions } from "./workflow-library";
 import { createCanvasNode } from "@/lib/canvas/canvas-node-factory";
@@ -357,7 +358,7 @@ function ComfyWorkflowParameters({ ctx, snapshot, onChangeWorkflow, onClose }: {
                 file.type || "application/octet-stream",
                 Array.from(new Uint8Array(await file.arrayBuffer())),
             );
-            updateValue(inputId, uploaded.subfolder ? `${uploaded.subfolder.replace(/\\\\/g, "/")}/${uploaded.name}` : uploaded.name);
+            updateValue(inputId, uploaded.subfolder ? `${uploaded.subfolder.replace(/\\/g, "/")}/${uploaded.name}` : uploaded.name);
             message.success(t("comfyuiLocal.canvasNode.mediaUploaded", { name: uploaded.name }));
         } catch (error) {
             message.error(error instanceof Error ? error.message : String(error));
@@ -480,6 +481,43 @@ function ComfyWorkflowParameters({ ctx, snapshot, onChangeWorkflow, onClose }: {
     );
 }
 
+/** 分辨率档位：数值为百万像素，对应常见的 480p / 720p / 1080p。 */
+const MEGAPIXEL_PRESETS = [
+    { value: 0.4, label: "480p" },
+    { value: 0.9, label: "720p" },
+    { value: 2.0, label: "1080p" },
+];
+
+/** 解析已上传素材在当前环境的预览地址。 */
+function useComfyInputPreview(filename: string) {
+    const [url, setUrl] = useState("");
+    useEffect(() => {
+        let active = true;
+        if (!filename) {
+            setUrl("");
+            return undefined;
+        }
+        void comfyInputPreviewUrl(filename)
+            .then((next) => {
+                if (active) setUrl(next);
+            })
+            .catch(() => undefined);
+        return () => {
+            active = false;
+        };
+    }, [filename]);
+    return url;
+}
+
+/** 已上传素材的预览：图片看缩略图、音频可试听、视频可播放。 */
+function MediaPreview({ name, kind }: { name: string; kind: string }) {
+    const url = useComfyInputPreview(name);
+    if (!url) return null;
+    if (kind === "image") return <img src={url} alt={name} className="mt-2 max-h-32 w-full rounded-lg object-contain" style={{ background: "rgba(0,0,0,.18)" }} />;
+    if (kind === "audio") return <audio src={url} controls className="mt-2 w-full" />;
+    if (kind === "video") return <video src={url} controls className="mt-2 max-h-40 w-full rounded-lg" />;
+    return null;
+}
 function ParameterControl({ input, value, onChange, onPickMedia, uploadingMedia, referencePicker }: { input: ComfyExposedInput; value: unknown; onChange: (value: unknown) => void; onPickMedia: () => void; uploadingMedia: boolean; referencePicker?: ReactNode }) {
     const { t } = useTranslation();
     const label = (
@@ -512,6 +550,7 @@ function ParameterControl({ input, value, onChange, onPickMedia, uploadingMedia,
                         <span className="text-[11px] opacity-45">{t("comfyuiLocal.canvasNode.noMedia", { type: input.valueType })}</span>
                     )}
                 </div>
+                <MediaPreview name={mediaName} kind={input.valueType} />
             </div>
         );
     }
@@ -527,6 +566,20 @@ function ParameterControl({ input, value, onChange, onPickMedia, uploadingMedia,
             <div className="block">
                 {label}
                 <Select className="w-full" size="small" value={typeof value === "string" ? value : undefined} options={(input.enumValues || []).map((item) => ({ value: item, label: item }))} onChange={onChange} />
+            </div>
+        );
+    // 分辨率档位用固定三档下拉，比让用户填百万像素直观。
+    if (input.classType === "ResolutionSelector" && input.field === "megapixels")
+        return (
+            <div className="block">
+                {label}
+                <Select
+                    className="w-full"
+                    size="small"
+                    value={typeof value === "number" ? value : undefined}
+                    options={MEGAPIXEL_PRESETS.map((preset) => ({ value: preset.value, label: preset.label }))}
+                    onChange={onChange}
+                />
             </div>
         );
     if (input.control === "number")

@@ -106,6 +106,7 @@ function exposedInput(
   return {
     id: input.id,
     nodeId: input.nodeId,
+    classType: input.classType,
     field: input.field,
     label: label?.trim() || input.label,
     valueType: input.valueType,

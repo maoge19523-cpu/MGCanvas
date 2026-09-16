@@ -87,6 +87,7 @@ describe("ComfyUI canvas execution", () => {
                 {
                     id: "4:image",
                     nodeId: "4",
+                    classType: "LoadImage",
                     field: "image",
                     label: "参考图",
                     valueType: "image",

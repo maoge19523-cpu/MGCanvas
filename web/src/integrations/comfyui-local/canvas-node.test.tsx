@@ -19,6 +19,7 @@ const definition: ComfyWorkflowDefinition = {
         {
             id: "6:text",
             nodeId: "6",
+            classType: "CLIPTextEncode",
             field: "text",
             label: "Prompt",
             valueType: "string",
@@ -30,6 +31,7 @@ const definition: ComfyWorkflowDefinition = {
         {
             id: "3:seed",
             nodeId: "3",
+            classType: "KSampler",
             field: "seed",
             label: "Seed",
             valueType: "integer",

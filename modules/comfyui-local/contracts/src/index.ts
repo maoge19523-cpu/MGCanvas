@@ -189,6 +189,7 @@ export type ComfyInputControl =
 export type ComfyExposedInput = {
   id: string;
   nodeId: string;
+  classType: string;
   field: string;
   label: string;
   valueType: ComfyInputValueType;

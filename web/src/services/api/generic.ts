@@ -354,19 +354,21 @@ export function validateGenericPayload(operation: GenericOperationDefinition, pa
     if (operation.id === "image.generate") {
         const model = String(payload.model || "").toLowerCase();
         const isSeedream = model.includes("seedream");
+        // 渠道模型（channelId::model）的参数由渠道脚本定义，不受内置 Seedream 规则约束。
+        const isChannelModel = model.includes("::");
         const width = getPath(payload, ["metadata", "width"]);
         const height = getPath(payload, ["metadata", "height"]);
         const hasWidth = !isMissing(width);
         const hasHeight = !isMissing(height);
         const outputFormat = getPath(payload, ["metadata", "output_format"]);
         if (!isMissing(outputFormat)) {
-            if (!isSeedream) throw new Error("metadata.output_format 按官方文档仅适用于 Seedream 模型。");
+            if (!isSeedream && !isChannelModel) throw new Error("metadata.output_format 按官方文档仅适用于 Seedream 模型。");
             if (typeof outputFormat !== "string" || !["jpeg", "png"].includes(outputFormat.toLowerCase())) throw new Error("Seedream 的 metadata.output_format 只允许 jpeg 或 png。");
         }
         for (const field of ["width", "height"] as const) {
             const value = getPath(payload, ["metadata", field]);
             if (isMissing(value)) continue;
-            if (!isSeedream) throw new Error(`metadata.${field} 按官方文档仅适用于 Seedream 模型。`);
+            if (!isSeedream && !isChannelModel) throw new Error(`metadata.${field} 按官方文档仅适用于 Seedream 模型。`);
             assertIntegerRange(value, `metadata.${field}`, 240, 8192);
         }
         if (isSeedream && hasWidth !== hasHeight) throw new Error("Seedream 的 metadata.width 与 metadata.height 必须成对提供。");

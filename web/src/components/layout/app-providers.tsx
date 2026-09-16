@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useEffect } from "react";
+import { trackFocusedEditable } from "@/lib/last-focused-editable";
 import { ProConfigProvider } from "@ant-design/pro-components";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App, ConfigProvider } from "antd";
@@ -46,6 +47,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
         document.querySelector('meta[name="description"]')?.setAttribute("content", t("meta.description"));
         dayjs.locale(locale === "zh-CN" ? "zh-cn" : "en");
     }, [locale, t]);
+
+    // 记录最后一次聚焦的输入框，供画布右键菜单提供粘贴等文本操作。
+    useEffect(() => trackFocusedEditable(), []);
 
     return (
         <ConfigProvider locale={locale === "zh-CN" ? zhCN : enUS} theme={getAntThemeConfig(dark)}>

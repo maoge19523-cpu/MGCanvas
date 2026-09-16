@@ -242,6 +242,9 @@ export function GenericNativeGenerationPanel({
     const connectedSummary = referenceSummary(referenceCounts);
     const automaticMode = nativeAutomaticMode(kind, operation.id, referenceCounts);
     const progress = node.metadata?.providerTask?.progress;
+    // 任务是否进行中：面板标志可能未及时同步（渠道模型尤其明显），
+    // 因此同时参考节点状态与任务阶段，保证停止按钮一定出现。
+    const taskActive = isRunning || isPolling || node.metadata?.status === "loading" || node.metadata?.providerTask?.phase === "queued" || node.metadata?.providerTask?.phase === "running";
     // 运行耗时：由任务的提交与完成时间计算。
     const elapsed = formatGenericTaskDuration(node.metadata?.providerTask?.submittedAt, node.metadata?.providerTask?.completedAt);
     const pricingContext = useMemo(() => ({ imageReferences: referenceCounts.image, videoReferences: referenceCounts.video, audioReferences: referenceCounts.audio }), [referenceCounts.audio, referenceCounts.image, referenceCounts.video]);
@@ -522,7 +525,7 @@ export function GenericNativeGenerationPanel({
                 </Tooltip>
                 )}
                 {/* 停止按钮与运行按钮并存：运行中随时可以停下来改参数。 */}
-                {(isRunning || isPolling) ? (
+                {taskActive ? (
                     <Tooltip title="停止等待当前任务（远端任务可能仍在继续）">
                         <Button danger shape="circle" className="!size-9 shrink-0" icon={<CircleStop className="size-4" />} disabled={!onStopPolling} onClick={() => onStopPolling?.(node)} />
                     </Tooltip>
@@ -536,7 +539,7 @@ export function GenericNativeGenerationPanel({
                         type="primary"
                         shape="circle"
                         className="!size-9 shrink-0"
-                        disabled={isRunning || isPolling || hasUnresolvedTask || !onRun || Boolean(validationError) || !modelPinned}
+                        disabled={taskActive || hasUnresolvedTask || !onRun || Boolean(validationError) || !modelPinned}
                         aria-label={`开始生成，${formattedPrice}`}
                         icon={isRunning ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
                         onClick={() => void run()}

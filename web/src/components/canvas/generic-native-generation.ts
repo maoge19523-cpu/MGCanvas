@@ -404,8 +404,7 @@ export function readGenericNativeModelChoice(kind: GenericNativeNodeKind, operat
 
 /**
  * 清掉仅适用于 Seedream 的 metadata 字段。
- * 渠道模型不经过内置目录的参数规范化，若不清理，
- * 切到其它模型后会被校验拦下（提示"仅适用于 Seedream 模型"）而无法运行。
+ * 注意：只对内置模型使用；渠道模型需要用 metadata.width/height 传尺寸，清理会导致尺寸失效。
  */
 function stripSeedreamOnlyParameters(payload: Record<string, unknown>) {
     setPath(payload, "metadata.width", undefined);
@@ -429,7 +428,6 @@ export function changeGenericNativeModelChoice(
         writeGenericNativePrompt(nextOperationId, nextPayload, currentPrompt);
         nextPayload.model = choice;
         if (currentOutputCount > 1) nextPayload.n = currentOutputCount;
-        if (!choice.toLowerCase().includes("seedream")) stripSeedreamOnlyParameters(nextPayload);
         return { operationId: nextOperationId, payload: nextPayload };
     }
     if (kind === "image" && choice.startsWith("midjourney:")) {
@@ -526,11 +524,7 @@ export function createGenericNativePayload(operationId: string, currentPayload?:
         sanitizeModelParameters(payload, model);
         injectConnectedReferences(payload, operationId, model, referenceCounts);
     }
-    // 当前模型不支持 Seedream 专有字段时自动清理：
-    // 从 Seedream 切到其它模型后残留的 metadata.width/height 会让校验失败、无法运行。
-    if (typeof payload.model === "string" && !payload.model.toLowerCase().includes("seedream")) {
-        stripSeedreamOnlyParameters(payload);
-    }
+
     if (operationId === "midjourney.imagine") sanitizeMidjourneyImaginePayload(payload);
     injectOperationReferences(payload, operationId, referenceCounts);
     if (usesPrompt(operation)) {

@@ -2048,6 +2048,8 @@ function MGCanvasProjectPage() {
                                       status: state.status,
                                       progress: state.progress,
                                       message: state.message,
+                                      // 失败等终态也要记录完成时间，否则界面算不出运行耗时。
+                                      completedAt: state.phase === "failed" || state.phase === "succeeded" || state.phase === "attention" ? new Date().toISOString() : node.metadata?.providerTask?.completedAt,
                                       raw: state.raw,
                                   },
                               },
@@ -2081,8 +2083,8 @@ function MGCanvasProjectPage() {
             status: hasPollingInterruption ? "partial_interrupted" : result.status === "partial" ? "partial" : primaryState?.status || result.status,
             progress: primaryState?.progress ?? (result.status === "succeeded" || (result.status === "partial" && !hasPollingInterruption) ? 100 : source.metadata?.providerTask?.progress),
             message: result.status === "partial" ? genericPartialSummary(result) : primaryState?.message,
-            // 部分成功同样算本次运行结束：否则界面算不出运行耗时。
-            completedAt: result.status === "succeeded" || result.status === "partial" ? new Date().toISOString() : undefined,
+            // 本次运行已经结束（成功 / 部分成功 / 失败）就要记录完成时间，界面据此算运行耗时。
+            completedAt: new Date().toISOString(),
             raw: primaryState?.raw || result.raw,
         };
         const buttons = extractGenericButtons(result.raw);

@@ -4,6 +4,7 @@ import { ClipboardCopy, ClipboardPaste, Copy, Plus, Redo2, Scissors, Trash2, Und
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
+import { insertIntoEditable, lastFocusedEditable, readEditableSelection, writeEditableValue } from "@/lib/last-focused-editable";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { ContextMenuState } from "@/types/canvas";
 
@@ -57,8 +58,9 @@ export function CanvasNodeContextMenu({ menu, canUndo, canRedo, canCopyAll, onCl
 
     // 在输入框 / 文本域上右键时给出文本编辑菜单（剪切、复制、粘贴、全选），
     // 而不是节点菜单，符合用户对右键的预期。
-    const [textTarget] = useState<HTMLInputElement | HTMLTextAreaElement | null>(() => {
-        // 右键时输入框不一定获得焦点，因此优先取光标位置的元素。
+    // 右键位置下的输入框优先；取不到时回退到「最后一次获得焦点的输入框」，
+    // 这样即使在面板空白处右键也能粘贴到刚才编辑的提示词框里。
+    const [clickTarget] = useState<HTMLInputElement | HTMLTextAreaElement | null>(() => {
         const under = document.elementFromPoint(menu.x, menu.y);
         for (const candidate of [under, document.activeElement]) {
             if (candidate instanceof HTMLTextAreaElement || candidate instanceof HTMLInputElement) return candidate;
@@ -67,45 +69,29 @@ export function CanvasNodeContextMenu({ menu, canUndo, canRedo, canCopyAll, onCl
         }
         return null;
     });
+    const pasteTarget = clickTarget ?? lastFocusedEditable();
 
-    /** 写入受控输入框：必须用原生 setter 再派发 input 事件，React 才能感知变化。 */
-    const writeValue = (target: HTMLInputElement | HTMLTextAreaElement, nextValue: string) => {
-        const prototype = target instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-        const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
-        if (setter) setter.call(target, nextValue);
-        else target.value = nextValue;
-        target.dispatchEvent(new Event("input", { bubbles: true }));
+    const replaceSelection = (target: HTMLInputElement | HTMLTextAreaElement, text: string) => {
+        if (!text) return;
+        insertIntoEditable(target, text);
     };
 
-    const replaceSelection = (text: string) => {
-        if (!textTarget) return;
-        const start = textTarget.selectionStart ?? textTarget.value.length;
-        const end = textTarget.selectionEnd ?? start;
-        writeValue(textTarget, textTarget.value.slice(0, start) + text + textTarget.value.slice(end));
-        const caret = start + text.length;
-        textTarget.setSelectionRange(caret, caret);
-    };
-
-    const copySelection = async () => {
-        if (!textTarget) return;
-        const start = textTarget.selectionStart ?? 0;
-        const end = textTarget.selectionEnd ?? 0;
-        const selected = textTarget.value.slice(start, end);
+    const copySelection = async (target: HTMLInputElement | HTMLTextAreaElement | null) => {
+        if (!target) return;
+        const selected = readEditableSelection(target);
         if (selected) await navigator.clipboard.writeText(selected).catch(() => undefined);
     };
 
-    const pasteClipboard = async () => {
+    const pasteClipboard = async (target: HTMLInputElement | HTMLTextAreaElement | null) => {
+        if (!target) return;
         const text = await navigator.clipboard.readText().catch(() => "");
-        if (text) replaceSelection(text);
+        if (text) replaceSelection(target, text);
     };
 
-    const cutSelection = async () => {
-        await copySelection();
-        replaceSelection("");
-    };
-
-    const selectAllText = () => {
-        textTarget?.select();
+    const cutSelection = async (target: HTMLInputElement | HTMLTextAreaElement | null) => {
+        if (!target) return;
+        await copySelection(target);
+        writeEditableValue(target, target.value.slice(0, target.selectionStart ?? 0) + target.value.slice(target.selectionEnd ?? 0));
     };
 
     const run = (action: () => void) => {
@@ -121,13 +107,13 @@ export function CanvasNodeContextMenu({ menu, canUndo, canRedo, canCopyAll, onCl
             style={{ ...position, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
             onPointerDown={(event) => event.stopPropagation()}
         >
-            {textTarget ? (
+            {clickTarget ? (
                 <>
-                    <MenuButton icon={<Scissors className="size-4" />} label="剪切" shortcut="Ctrl+X" onClick={() => run(() => void cutSelection())} />
-                    <MenuButton icon={<Copy className="size-4" />} label="复制" shortcut="Ctrl+C" onClick={() => run(() => void copySelection())} />
-                    <MenuButton icon={<ClipboardPaste className="size-4" />} label="粘贴" shortcut="Ctrl+V" onClick={() => run(() => void pasteClipboard())} />
+                    <MenuButton icon={<Scissors className="size-4" />} label="剪切" shortcut="Ctrl+X" onClick={() => run(() => void cutSelection(clickTarget))} />
+                    <MenuButton icon={<Copy className="size-4" />} label="复制" shortcut="Ctrl+C" onClick={() => run(() => void copySelection(clickTarget))} />
+                    <MenuButton icon={<ClipboardPaste className="size-4" />} label="粘贴" shortcut="Ctrl+V" onClick={() => run(() => void pasteClipboard(clickTarget))} />
                     <MenuDivider />
-                    <MenuButton icon={<ClipboardCopy className="size-4" />} label="全选" shortcut="Ctrl+A" onClick={() => run(selectAllText)} />
+                    <MenuButton icon={<ClipboardCopy className="size-4" />} label="全选" shortcut="Ctrl+A" onClick={() => run(() => clickTarget.select())} />
                 </>
             ) : menu.type === "canvas" ? (
                 <>
@@ -144,6 +130,12 @@ export function CanvasNodeContextMenu({ menu, canUndo, canRedo, canCopyAll, onCl
                 <>
                     {menu.type === "node" ? <MenuButton icon={<Plus className="size-4" />} label={t("canvas.controls.duplicate")} onClick={() => run(onDuplicate)} /> : null}
                     <MenuButton icon={<Trash2 className="size-4" />} label={t("canvas.controls.delete")} onClick={() => run(onDelete)} danger />
+                    {pasteTarget ? (
+                        <>
+                            <MenuDivider />
+                            <MenuButton icon={<ClipboardPaste className="size-4" />} label="粘贴到输入框" shortcut="Ctrl+V" onClick={() => run(() => void pasteClipboard(pasteTarget))} />
+                        </>
+                    ) : null}
                 </>
             )}
         </div>

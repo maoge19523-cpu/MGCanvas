@@ -140,7 +140,8 @@ function applyExecutionResult(ctx: CanvasNodeContext, source: CanvasNodeData, de
         if (!binding || binding.sourceNodeId !== source.id || completedKeys.has(`${binding.outputId}:${binding.itemIndex}`)) continue;
         operations.push({ type: "update_node", id: node.id, metadata: { status: "error", errorDetails: i18n.t("comfyuiLocal.execution.outputMissing") } });
     }
-    operations.push({ type: "update_node", id: source.id, metadata: { status: "success", errorDetails: undefined, comfyuiRun: { phase: "succeeded", promptId, completedAt } } });
+    // 保留 startedAt：节点底部要显示本次运行耗时。
+    operations.push({ type: "update_node", id: source.id, metadata: { status: "success", errorDetails: undefined, comfyuiRun: { ...readComfyRun(source.metadata), phase: "succeeded", promptId, completedAt } } });
     ctx.applyOps(operations);
 }
 

@@ -84,3 +84,5 @@ The Chinese version contains the complete item-by-item acceptance checklist.
 - 修复工作流画布上出现多余的调试结果节点：调试/可视化输出（如采样曲线 SigmasGraph）不再作为结果节点，存在落盘输出（SaveImage / VHS_VideoCombine 等）时优先使用它们。
 - 修复 VHS_VideoCombine 的视频输出被当成普通文件、只显示文件名路径的问题，现在按视频处理可正常播放。
 - 工作流节点底部新增运行耗时显示（例：用时 1 分 23 秒）。
+- 修复运行耗时不显示：成功时未保留 startedAt，导致无法计算耗时。
+- 新增：单击已上传的素材图片可放大查看原尺寸，再点图片或空白处收起。

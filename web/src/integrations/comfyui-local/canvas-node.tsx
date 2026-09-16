@@ -1,6 +1,7 @@
 import { App, Button, Input, InputNumber, Select, Switch } from "antd";
 import { ArrowRight, CheckCircle2, Cpu, FileJson, Link2, LoaderCircle, Play, Search, SlidersHorizontal, Square, Trash2, Upload, Workflow } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { nanoid } from "nanoid";
 
@@ -531,11 +532,41 @@ function useComfyInputPreview(filename: string) {
     return url;
 }
 
-/** 已上传素材的预览：图片看缩略图、音频可试听、视频可播放。 */
+/** 已上传素材的预览：图片看缩略图（可点击放大）、音频可试听、视频可播放。 */
 function MediaPreview({ name, kind }: { name: string; kind: string }) {
     const url = useComfyInputPreview(name);
+    const [expanded, setExpanded] = useState(false);
     if (!url) return null;
-    if (kind === "image") return <img src={url} alt={name} className="mt-2 max-h-32 w-full rounded-lg object-contain" style={{ background: "rgba(0,0,0,.18)" }} />;
+    if (kind === "image")
+        return (
+            <>
+                <img
+                    src={url}
+                    alt={name}
+                    className="mt-2 max-h-32 w-full cursor-zoom-in rounded-lg object-contain transition-opacity hover:opacity-90"
+                    style={{ background: "rgba(0,0,0,.18)" }}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        setExpanded(true);
+                    }}
+                />
+                {/* 放大层挂到 body：画布节点带缩放变换，直接定位会被一起缩放 */}
+                {expanded
+                    ? createPortal(
+                          <div
+                              className="fixed inset-0 z-[9999] flex cursor-zoom-out items-center justify-center bg-black/75 p-6"
+                              onClick={(event) => {
+                                  event.stopPropagation();
+                                  setExpanded(false);
+                              }}
+                          >
+                              <img src={url} alt={name} className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" />
+                          </div>,
+                          document.body,
+                      )
+                    : null}
+            </>
+        );
     if (kind === "audio") return <audio src={url} controls className="mt-2 w-full" />;
     if (kind === "video") return <video src={url} controls className="mt-2 max-h-40 w-full rounded-lg" />;
     return null;

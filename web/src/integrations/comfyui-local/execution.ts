@@ -184,7 +184,8 @@ function markSourceAndResults(ctx: CanvasNodeContext, status: "idle" | "loading"
     const operations: CanvasAgentOp[] = [{ type: "update_node", id: ctx.node.id, metadata: { status, errorDetails: undefined, comfyuiRun: run } }];
     for (const node of ctx.getNodes()) {
         const binding = readComfyResultBinding(node);
-        if (binding?.sourceNodeId === ctx.node.id) operations.push({ type: "update_node", id: node.id, metadata: { status, errorDetails: undefined } });
+        // 结果节点也要带上运行阶段与起始时间，遮罩层才能显示百分比进度。
+        if (binding?.sourceNodeId === ctx.node.id) operations.push({ type: "update_node", id: node.id, metadata: { status, errorDetails: undefined, comfyuiRun: run } });
     }
     ctx.applyOps(operations);
 }

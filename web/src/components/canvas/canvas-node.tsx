@@ -631,8 +631,8 @@ function MediaGeneratingContent(props: NodeContentRendererProps) {
 
 export function MediaGenerationGlassOverlay({ node, theme }: Pick<NodeContentRendererProps, "node" | "theme">) {
     const { t } = useTranslation();
-    const progress = node.metadata?.providerTask?.progress;
-    const percent = typeof progress === "number" && Number.isFinite(progress) ? Math.min(99, Math.max(0, Math.round(progress))) : undefined;
+    // 与服务商上报进度共用同一套算法：ComfyUI 工作流没有上报值时按阶段推进。
+    const percent = useGenerationProgress(node);
     const isDark = theme.canvas.background === "#0d0d0d";
 
     return (
@@ -646,7 +646,7 @@ export function MediaGenerationGlassOverlay({ node, theme }: Pick<NodeContentRen
             }}
             data-canvas-media-generation-glass
             aria-live="polite"
-            aria-label={percent === undefined ? t("canvas.node.generating") : `${t("canvas.node.generating")} ${percent}%`}
+            aria-label={`${t("canvas.node.generating")} ${percent}%`}
         >
             <div
                 className="relative z-10 inline-flex items-center gap-2 rounded-full border px-3 py-2 text-[11px] font-medium tracking-[0.08em] shadow-[0_10px_28px_rgba(0,0,0,.16)] backdrop-blur-md"
@@ -654,7 +654,7 @@ export function MediaGenerationGlassOverlay({ node, theme }: Pick<NodeContentRen
             >
                 <LoaderCircle className="size-3.5 animate-spin" style={{ color: theme.node.activeStroke }} />
                 <span>{t("canvas.node.generating")}</span>
-                {percent !== undefined ? <span className="tabular-nums opacity-65">{percent}%</span> : null}
+                <span className="tabular-nums opacity-65">{percent}%</span>
             </div>
         </div>
     );

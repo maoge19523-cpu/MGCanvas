@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Boxes, ChevronRight, CircleAlert, Clapperboard, FileText, Group, History, Image as ImageIcon, LoaderCircle, Music2, Puzzle, RefreshCw, Star, UploadCloud, Video } from "lucide-react";
 
@@ -520,7 +520,9 @@ function NodeContent(props: NodeContentRendererProps) {
     if (props.node.type === CanvasNodeType.Config && props.renderNodeContent) return props.renderNodeContent(props.node);
     if (shouldShowMediaGenerationGlass(props.node)) return <MediaGeneratingContent {...props} />;
     if (props.isBatchRoot) return <ImageNodeContent {...props} />;
-    if (props.node.metadata?.status === "loading") return <LoadingContent node={props.node} theme={props.theme} />;
+    // ComfyUI 工作流节点本身不显示运行转圈：进度已经在结果节点上呈现，
+    // 源节点保持参数可见更有用，也不会和结果节点重复动效。
+    if (props.node.metadata?.status === "loading" && !props.node.metadata?.comfyuiLocal) return <LoadingContent node={props.node} theme={props.theme} />;
     if (props.node.metadata?.status === "error") return <ErrorContent node={props.node} theme={props.theme} onRetry={props.onRetry} onShowErrorDetails={props.onShowErrorDetails} />;
 
     const Renderer = nodeContentRenderers[props.node.type as CanvasNodeType];
@@ -567,30 +569,73 @@ function GroupNodeContent({ node, theme, groupChildCount }: NodeContentRendererP
     );
 }
 
+/** 彩虹色流动光晕：给生成中的空白区域一点动感。 */
+function GenerationAurora({ className }: { className?: string }) {
+    return (
+        <div
+            className={`pointer-events-none absolute animate-spin rounded-full opacity-25 blur-2xl ${className ?? ""}`}
+            style={{
+                background: "conic-gradient(from 0deg, #f43f5e, #f97316, #eab308, #22c55e, #3b82f6, #a855f7, #f43f5e)",
+                animationDuration: "7s",
+            }}
+        />
+    );
+}
+
+/** 彩虹进度环：渐变随时间旋转，文字与描边同步取色。 */
+function RainbowProgressRing({ percent, size = 56 }: { percent: number; size?: number }) {
+    const gradientId = useId();
+    return (
+        <div className="relative grid place-items-center" style={{ width: size, height: size }}>
+            <svg className="absolute inset-0 -rotate-90" viewBox="0 0 36 36" fill="none">
+                <defs>
+                    <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stopColor="#f43f5e" />
+                        <stop offset="20%" stopColor="#f97316" />
+                        <stop offset="40%" stopColor="#eab308" />
+                        <stop offset="60%" stopColor="#22c55e" />
+                        <stop offset="80%" stopColor="#3b82f6" />
+                        <stop offset="100%" stopColor="#a855f7" />
+                        <animateTransform attributeName="gradientTransform" type="rotate" from="0 0.5 0.5" to="360 0.5 0.5" dur="2.6s" repeatCount="indefinite" />
+                    </linearGradient>
+                </defs>
+                <circle cx="18" cy="18" r="15.5" stroke="currentColor" strokeOpacity={0.16} strokeWidth="2.6" />
+                <circle
+                    cx="18"
+                    cy="18"
+                    r="15.5"
+                    stroke={`url(#${gradientId})`}
+                    strokeWidth="2.6"
+                    strokeLinecap="round"
+                    pathLength={100}
+                    strokeDasharray={`${percent} 100`}
+                    className="transition-[stroke-dasharray] duration-300 ease-out"
+                />
+            </svg>
+            <span
+                className="text-[11px] font-semibold tabular-nums"
+                style={{
+                    backgroundImage: "linear-gradient(90deg, #f43f5e, #f97316, #eab308, #22c55e, #3b82f6, #a855f7)",
+                    backgroundClip: "text",
+                    WebkitBackgroundClip: "text",
+                    color: "transparent",
+                }}
+            >
+                {Math.round(percent)}%
+            </span>
+        </div>
+    );
+}
+
 function LoadingContent({ node, theme }: Pick<NodeContentRendererProps, "node" | "theme">) {
     const { t } = useTranslation();
     const percent = useGenerationProgress(node);
     const running = percent < 100;
     return (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-3" style={{ color: theme.node.activeStroke }}>
-            <div className="relative grid size-14 place-items-center">
-                <svg className="absolute inset-0 -rotate-90" viewBox="0 0 36 36" fill="none">
-                    <circle cx="18" cy="18" r="15.5" stroke={theme.node.stroke} strokeWidth="2.5" />
-                    <circle
-                        cx="18"
-                        cy="18"
-                        r="15.5"
-                        stroke={theme.node.activeStroke}
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        pathLength={100}
-                        strokeDasharray={`${percent} 100`}
-                        className="transition-[stroke-dasharray] duration-300 ease-out"
-                    />
-                </svg>
-                <span className="text-[11px] font-semibold tabular-nums">{Math.round(percent)}%</span>
-            </div>
-            <span className="text-[10px] tracking-[0.2em]">{running ? t("canvas.node.generating") : t("canvas.node.generated")}</span>
+        <div className="relative flex h-full w-full flex-col items-center justify-center gap-3 overflow-hidden" style={{ color: theme.node.text }}>
+            <GenerationAurora className="-inset-1/4" />
+            <RainbowProgressRing percent={percent} />
+            <span className="relative text-[10px] tracking-[0.2em] opacity-70">{running ? t("canvas.node.generating") : t("canvas.node.generated")}</span>
         </div>
     );
 }
@@ -650,13 +695,10 @@ export function MediaGenerationGlassOverlay({ node, theme }: Pick<NodeContentRen
             aria-live="polite"
             aria-label={`${t("canvas.node.generating")} ${percent}%`}
         >
-            <div
-                className="relative z-10 inline-flex items-center gap-2 rounded-full border px-3 py-2 text-[11px] font-medium tracking-[0.08em] shadow-[0_10px_28px_rgba(0,0,0,.16)] backdrop-blur-md"
-                style={{ background: isDark ? "rgba(19,22,23,.55)" : "rgba(255,255,255,.55)", borderColor: isDark ? "rgba(255,255,255,.13)" : "rgba(41,37,36,.1)", color: theme.node.text }}
-            >
-                <LoaderCircle className="size-3.5 animate-spin" style={{ color: theme.node.activeStroke }} />
-                <span>{t("canvas.node.generating")}</span>
-                <span className="tabular-nums opacity-65">{percent}%</span>
+            <GenerationAurora className="-inset-1/3" />
+            <div className="relative z-10 flex flex-col items-center gap-2" style={{ color: theme.node.text }}>
+                <RainbowProgressRing percent={percent} size={64} />
+                <span className="text-[10px] tracking-[0.2em] opacity-80">{t("canvas.node.generating")}</span>
             </div>
         </div>
     );

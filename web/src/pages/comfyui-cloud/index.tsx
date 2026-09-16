@@ -9,7 +9,7 @@ import { comfyNativeClient, type ComfyEnvironmentStatus, type ComfyWorkflowDefin
 import { createComfyWorkflowCanvasNode } from "@/integrations/comfyui-local/canvas-node";
 import { openWorkflowInNewCanvas } from "@/integrations/comfyui-local/open-workflow-canvas";
 import { deleteComfyWorkflowDefinition, listComfyWorkflowDefinitions } from "@/integrations/comfyui-local/workflow-library";
-import { demosForScope } from "@/integrations/comfyui-local/demo-workflows";
+import { demosForScope, isCloudWorkflow } from "@/integrations/comfyui-local/demo-workflows";
 import { useComfyWorkflowImport } from "@/integrations/comfyui-local/use-workflow-import";
 import { isTauriRuntime } from "@/services/platform/desktop-runtime";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
@@ -36,7 +36,8 @@ export default function ComfyUiCloudPage() {
     const workflowImport = useComfyWorkflowImport({ onImported: () => loadWorkflows() });
 
     const loadWorkflows = useCallback(async () => {
-        setWorkflows(await listComfyWorkflowDefinitions());
+        // 只展示云端环境的工作流：本地导入的工作流不在云端列表出现。
+        setWorkflows((await listComfyWorkflowDefinitions()).filter(isCloudWorkflow));
     }, []);
 
     useEffect(() => {
@@ -170,11 +171,9 @@ export default function ComfyUiCloudPage() {
                             <div className="flex flex-wrap items-center justify-between gap-3">
                                 <h3 className="text-[15px] font-semibold text-stone-950 dark:text-zinc-100">{t("comfyuiCloud.libraryTitle")}</h3>
                                 <div className="flex flex-wrap gap-2">
-                                    {cloudDemos.length ? (
-                                        <Button icon={<Sparkles className="size-4" />} onClick={() => void workflowImport.installDemo(cloudDemos[0])} loading={workflowImport.importing}>
-                                            {t("comfyuiLocal.pack.installDemo")}
-                                        </Button>
-                                    ) : null}
+                                    <Button icon={<Sparkles className="size-4" />} onClick={() => void workflowImport.installDemo(cloudDemos[0])} loading={workflowImport.importing}>
+                                        {t("comfyuiLocal.pack.installDemo")}
+                                    </Button>
                                     <Button icon={<Upload className="size-4" />} onClick={() => workflowImport.openPicker()} loading={workflowImport.importing}>
                                         {t("comfyuiLocal.pack.import")}
                                     </Button>

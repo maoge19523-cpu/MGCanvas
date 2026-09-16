@@ -219,11 +219,11 @@ export default function CanvasPage() {
                                 { key: "environment", to: "/comfyui-local" },
                                 { key: "canvas", to: "" },
                             ].map((step, index) => (
-                                <li key={step.key}>
+                                <li key={step.key} className="flex">
                                     <button
                                         type="button"
                                         onClick={() => (step.to ? navigate(step.to) : void createProject())}
-                                        className="flex w-full cursor-pointer flex-col gap-2 rounded-[14px] border border-black/[0.08] bg-black/[0.015] p-4 text-left transition-colors hover:border-[#756bff]/40 hover:bg-[#756bff]/[0.04] dark:border-white/[0.08] dark:bg-white/[0.025]"
+                                        className="flex h-full min-h-[126px] w-full cursor-pointer flex-col gap-2 rounded-[14px] border border-black/[0.08] bg-black/[0.015] p-4 text-left transition-colors hover:border-[#756bff]/40 hover:bg-[#756bff]/[0.04] dark:border-white/[0.08] dark:bg-white/[0.025]"
                                     >
                                         <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400 dark:text-zinc-600">
                                             <Sparkles className="size-3 text-[#756bff]" strokeWidth={2} />
@@ -251,18 +251,6 @@ export default function CanvasPage() {
                         </div>
 
                         <div className="flex min-w-0 flex-wrap items-center gap-2">
-                            {demoCount > 0 ? (
-                            <button
-                                type="button"
-                                onClick={() => void handleInstallDemo()}
-                                disabled={workflowImport.importing}
-                                title={t("comfyuiLocal.pack.installDemo")}
-                                className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full border border-black/[0.08] bg-white/55 px-3 text-[11px] text-stone-500 backdrop-blur-xl transition hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-45 dark:border-white/[0.09] dark:bg-white/[0.04] dark:text-zinc-400 dark:hover:text-zinc-200"
-                            >
-                                <Sparkles className="size-3" strokeWidth={2} />
-                                {t("comfyuiLocal.pack.installDemo")}
-                            </button>
-                        ) : null}
                             <button
                                 type="button"
                                 onClick={() => void handleImportPack()}

@@ -7,6 +7,7 @@ import { useNavigate } from "react-router-dom";
 
 import { WorkspacePage } from "@/components/layout/workspace-page";
 import { comfyNativeClient, type ComfyEnvironmentDetection, type ComfyEnvironmentLogEntry, type ComfyEnvironmentProfile, type ComfyEnvironmentStatus, type ComfyWorkflowDefinition } from "@/integrations/comfyui-local";
+import { isCloudWorkflow } from "@/integrations/comfyui-local/demo-workflows";
 import { upgradeLegacyDemoWorkflows } from "@/integrations/comfyui-local/demo-sync";
 import { useComfyWorkflowImport } from "@/integrations/comfyui-local/use-workflow-import";
 import { openWorkflowInNewCanvas } from "@/integrations/comfyui-local/open-workflow-canvas";
@@ -123,6 +124,9 @@ export default function ComfyUiLocalPage() {
 
     // 老版本随包分发的示例引用了本机不存在的模型，首次在本机环境就绪时就地升级，
     // 这样库里和画布上已引用的节点都会换成当前示例。
+    // 本地页只展示本地环境的工作流，云端导入的工作流不在本地列表出现。
+    const localWorkflows = useMemo(() => workflows.filter((item) => !isCloudWorkflow(item)), [workflows]);
+
     const demoImport = useComfyWorkflowImport({
         localEnvironmentId: profile?.id,
         onImported: async () => setWorkflows(await listComfyWorkflowDefinitions()),
@@ -388,7 +392,7 @@ export default function ComfyUiLocalPage() {
                         onChangeEnvironment={() => void changeEnvironment()}
                         onConnectCloud={() => setCloudOpen(true)}
                         onForget={() => void forgetEnvironment()}
-                        workflows={workflows}
+                        workflows={localWorkflows}
                         onImport={() => setImportOpen(true)}
                         onImportPack={() => packInputRef.current?.click()}
                         onInstallDemo={() => void installDemoWorkflow()}

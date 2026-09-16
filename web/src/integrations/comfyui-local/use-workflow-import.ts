@@ -32,7 +32,10 @@ export function useComfyWorkflowImport({ localEnvironmentId, onImported }: Comfy
         if (localEnvironmentId) return localEnvironmentId;
         try {
             const status = await comfyNativeClient.status();
-            return status.remoteBaseUrl ? CLOUD_ENVIRONMENT_ID : "";
+            if (status.remoteBaseUrl) return CLOUD_ENVIRONMENT_ID;
+            // 本地环境：取当前保存的活动环境，首页没有页面上下文时也要能解析出来。
+            const saved = await comfyNativeClient.savedEnvironments();
+            return saved.activeProfileId || saved.profiles[0]?.id || "";
         } catch {
             return "";
         }

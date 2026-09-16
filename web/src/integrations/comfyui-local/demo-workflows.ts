@@ -71,3 +71,11 @@ export function groupDemosByCategory(items: ComfyDemoWorkflow[]) {
         items: items.filter((item) => item.category === category),
     })).filter((group) => group.items.length > 0);
 }
+
+/** 云端环境使用固定标识绑定工作流（与 use-workflow-import 中的 CLOUD_ENVIRONMENT_ID 一致）。 */
+const CLOUD_WORKFLOW_ENVIRONMENT_ID = "cloud-remote";
+
+/** 判断工作流是否属于云端环境；本地页与云端页各自只展示自己环境的工作流。 */
+export function isCloudWorkflow(definition: { environmentId: string }) {
+    return definition.environmentId === CLOUD_WORKFLOW_ENVIRONMENT_ID;
+}

@@ -921,7 +921,10 @@ export default {
         libraryHint: "这些工作流会通过云端算力运行；点「添加到画布」会新建一个画布并放入节点。",
         emptyLibrary: "还没有工作流，请先在「ComfyUI 本地」页导入，或用示例工作流。",
         addToCanvas: "添加到画布",
-    },    comfyuiLocal: {
+        disconnect: "断开连接",
+        disconnectDone: "已断开云端连接",
+        emptyLibraryCloud: "还没有工作流，点上方按钮安装示例工作流或批量导入 JSON。",    },
+    comfyuiLocal: {
         pack: {
             import: "批量导入",
             installDemo: "安装示例工作流",

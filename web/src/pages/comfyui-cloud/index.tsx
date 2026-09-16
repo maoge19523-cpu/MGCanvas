@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { App, Button, Input, Tag } from "antd";
-import { Cloud, Link2, LoaderCircle, Play, RefreshCw, Sparkles, Trash2, Upload } from "lucide-react";
+import { Cloud, Link2, LoaderCircle, Play, RefreshCw, Sparkles, Square, Trash2, Upload } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
@@ -53,6 +53,19 @@ export default function ComfyUiCloudPage() {
             setStatus(await comfyNativeClient.connectRemote(target));
             message.success(t("comfyuiLocal.cloud.connected"));
             await loadWorkflows();
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : String(error));
+        } finally {
+            setConnecting(false);
+        }
+    };
+
+    /** 断开云端连接（同时清掉本地运行态）。 */
+    const disconnect = async () => {
+        setConnecting(true);
+        try {
+            setStatus(await comfyNativeClient.stopEnvironment());
+            message.success(t("comfyuiCloud.disconnectDone"));
         } catch (error) {
             message.error(error instanceof Error ? error.message : String(error));
         } finally {
@@ -138,6 +151,9 @@ export default function ComfyUiCloudPage() {
                                 <Button icon={<RefreshCw className="size-4" />} onClick={() => void refresh()}>
                                     {t("comfyuiLocal.runtime.refresh")}
                                 </Button>
+                                <Button danger icon={<Square className="size-4" />} onClick={() => void disconnect()} disabled={!connected} loading={connecting}>
+                                    {t("comfyuiCloud.disconnect")}
+                                </Button>
                             </div>
                             <dl className="mt-5 grid gap-3 text-[11px] sm:grid-cols-2">
                                 <div className="flex items-center justify-between gap-3">
@@ -189,7 +205,7 @@ export default function ComfyUiCloudPage() {
                             ) : (
                                 <div className="mt-4 flex min-h-[140px] items-center gap-3 border-y border-black/[0.07] text-[12px] text-stone-400 dark:border-white/[0.07] dark:text-zinc-600">
                                     <LoaderCircle className="size-4 animate-spin" />
-                                    {t("comfyuiCloud.emptyLibrary")}
+                                    {t("comfyuiCloud.emptyLibraryCloud")}
                                 </div>
                             )}
                         </div>

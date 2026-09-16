@@ -942,7 +942,10 @@ export default {
         libraryHint: "These workflows run on cloud compute. \"Add to canvas\" creates a new canvas with the nodes placed.",
         emptyLibrary: "No workflows yet — import one on the ComfyUI page or install the demo workflow.",
         addToCanvas: "Add to canvas",
-    },    comfyuiLocal: {
+        disconnect: "Disconnect",
+        disconnectDone: "Cloud connection closed",
+        emptyLibraryCloud: "No workflows yet — install the demo workflow or import JSON files above.",    },
+    comfyuiLocal: {
         pack: {
             import: "Batch import",
             installDemo: "Install demo workflow",

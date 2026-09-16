@@ -222,6 +222,10 @@ export default function ComfyUiLocalPage() {
         setEditing(false);
     };
 
+    // 本地页只反映本机环境状态：已连接云端时本地进程并没有在跑，
+    // 因此这里把状态重置为未启动，避免误显示"运行中"。
+    const localStatus: ComfyEnvironmentStatus = status.remoteBaseUrl ? EMPTY_STATUS : status;
+
     const packInputRef = useRef<HTMLInputElement | null>(null);
     const [packImporting, setPackImporting] = useState(false);
 
@@ -310,7 +314,7 @@ export default function ComfyUiLocalPage() {
     };
 
     return (
-        <WorkspacePage icon={Cpu} title={t("comfyuiLocal.title")} actions={<RuntimePill status={status} />}>
+        <WorkspacePage icon={Cpu} title={t("comfyuiLocal.title")} actions={<RuntimePill status={localStatus} />}>
             <div className="mx-auto max-w-[1080px]">
                 {!desktop ? (
                     <section className="border-y border-amber-500/20 bg-amber-500/[0.04] px-5 py-8 sm:px-8">
@@ -339,7 +343,7 @@ export default function ComfyUiLocalPage() {
                 ) : (
                     <EnvironmentRuntime
                         profile={profile}
-                        status={status}
+                        status={localStatus}
                         logs={recentLogs}
                         busy={busy}
                         onStart={() => void startEnvironment()}

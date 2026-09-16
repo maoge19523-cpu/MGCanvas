@@ -44,6 +44,21 @@ export function materializeComfyWorkflow(
  * 参考素材被清空时（加载节点的取值为 "None"），把对应引用从工作流里去掉，
  * 起到「绕过」的效果：不用的参考图 / 音频 / 视频不会影响运行。
  */
+/**
+ * 读取素材加载节点的取值。
+ * LoadImage 用 image、LoadAudio 用 audio、LoadVideo 用 file，
+ * 必须逐个字段判断，否则会被误判成「空素材」而把有效引用删掉。
+ */
+function readLoadedMediaValue(source: { inputs?: Record<string, unknown> } | undefined) {
+  const inputs = source?.inputs;
+  if (!inputs) return undefined;
+  for (const field of ["image", "audio", "file", "video"]) {
+    const value = inputs[field];
+    if (typeof value === "string") return value;
+  }
+  return undefined;
+}
+
 function stripEmptyReferenceInputs(workflow: ComfyApiWorkflow) {
   for (const node of Object.values(workflow)) {
     const inputs = node?.inputs;
@@ -53,8 +68,8 @@ function stripEmptyReferenceInputs(workflow: ComfyApiWorkflow) {
       const link = inputs[key];
       const sourceId = Array.isArray(link) ? String(link[0]) : "";
       const source = sourceId ? workflow[sourceId] : undefined;
-      const value = source?.inputs?.audio ?? source?.inputs?.file;
-      if (source && (value === "None" || value === "" || value === undefined)) delete inputs[key];
+      const value = readLoadedMediaValue(source);
+      if (value === "None" || value === "") delete inputs[key];
     }
   }
 }

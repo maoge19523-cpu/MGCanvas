@@ -49,7 +49,7 @@ export async function runComfyWorkflowNode(ctx: CanvasNodeContext) {
 
         const result = await comfyNativeClient.waitForExecution(snapshot.environmentId, queued.promptId, definition.outputs);
         if (active.canceled) return;
-        applyExecutionResult(ctx, source, definition, result.outputs, result.promptId, result.completedAt);
+        applyExecutionResult(ctx, source, definition, result.outputs, result.promptId, result.completedAt, startedAt);
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (active.canceled) {
@@ -122,7 +122,7 @@ function ensureResultNodes(ctx: CanvasNodeContext, source: CanvasNodeData, defin
     if (ops.length) ctx.applyOps(ops);
 }
 
-function applyExecutionResult(ctx: CanvasNodeContext, source: CanvasNodeData, definition: ComfyWorkflowDefinition, outputs: ComfyExecutionOutput[], promptId: string, completedAt: number) {
+function applyExecutionResult(ctx: CanvasNodeContext, source: CanvasNodeData, definition: ComfyWorkflowDefinition, outputs: ComfyExecutionOutput[], promptId: string, completedAt: number, startedAt: number) {
     if (!outputs.length) throw new Error(i18n.t("comfyuiLocal.execution.noResults"));
     ensureResultNodes(ctx, source, definition, outputs);
     const operations: CanvasAgentOp[] = [];
@@ -140,8 +140,8 @@ function applyExecutionResult(ctx: CanvasNodeContext, source: CanvasNodeData, de
         if (!binding || binding.sourceNodeId !== source.id || completedKeys.has(`${binding.outputId}:${binding.itemIndex}`)) continue;
         operations.push({ type: "update_node", id: node.id, metadata: { status: "error", errorDetails: i18n.t("comfyuiLocal.execution.outputMissing") } });
     }
-    // 保留 startedAt：节点底部要显示本次运行耗时。
-    operations.push({ type: "update_node", id: source.id, metadata: { status: "success", errorDetails: undefined, comfyuiRun: { ...readComfyRun(source.metadata), phase: "succeeded", promptId, completedAt } } });
+    // 带上 startedAt：节点底部要显示本次运行耗时。
+    operations.push({ type: "update_node", id: source.id, metadata: { status: "success", errorDetails: undefined, comfyuiRun: { phase: "succeeded", promptId, startedAt, completedAt } } });
     ctx.applyOps(operations);
 }
 

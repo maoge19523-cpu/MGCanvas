@@ -614,9 +614,11 @@ function useGenerationProgress(node: CanvasNodeData) {
     if (!phase) return node.metadata?.status === "error" ? 0 : 8;
 
     const elapsed = startedAt ? Math.max(0, tick - startedAt) / 1000 : 0;
-    // 各阶段给出起点与上限，运行阶段随时间长推，避免出现"卡住不动"的观感。
-    const [floor, ceiling, seconds] = phase === "preparing" ? [5, 22, 12] : phase === "queued" ? [22, 38, 20] : [38, 96, 90];
-    const ratio = Math.min(1, elapsed / seconds);
+    // 各阶段给出起点、上限与预期耗时；用平方根曲线让进度前段推进明显、后段放缓，
+    // 避免短任务（十几秒）只走到一半就突然跳到 100%。
+    const [floor, ceiling, seconds] =
+      phase === "preparing" ? [8, 26, 6] : phase === "queued" ? [26, 42, 10] : [42, 96, 30];
+    const ratio = Math.min(1, Math.sqrt(elapsed / seconds));
     return Math.round(floor + (ceiling - floor) * ratio);
 }
 

@@ -924,6 +924,7 @@ export default {
         addToCanvas: "添加到画布",
         disconnect: "断开连接",
         disconnectDone: "已断开云端连接",
+        refreshed: "云端状态已刷新",
         emptyLibraryCloud: "还没有工作流，点上方按钮安装示例工作流或批量导入 JSON。",    },
     comfyuiLocal: {
         pack: {

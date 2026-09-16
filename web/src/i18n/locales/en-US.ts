@@ -945,6 +945,7 @@ export default {
         addToCanvas: "Add to canvas",
         disconnect: "Disconnect",
         disconnectDone: "Cloud connection closed",
+        refreshed: "Cloud status refreshed",
         emptyLibraryCloud: "No workflows yet — install the demo workflow or import JSON files above.",    },
     comfyuiLocal: {
         pack: {

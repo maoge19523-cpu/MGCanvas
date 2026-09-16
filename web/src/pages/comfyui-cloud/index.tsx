@@ -26,6 +26,7 @@ export default function ComfyUiCloudPage() {
     const [url, setUrl] = useState("");
     const [status, setStatus] = useState<ComfyEnvironmentStatus>(EMPTY_STATUS);
     const [connecting, setConnecting] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
     const [workflows, setWorkflows] = useState<ComfyWorkflowDefinition[]>([]);
 
 
@@ -73,12 +74,17 @@ export default function ComfyUiCloudPage() {
         }
     };
 
+    /** 刷新云端状态：给出 loading 与结果提示，避免"点了没反应"。 */
     const refresh = async () => {
+        setRefreshing(true);
         try {
             setStatus(await comfyNativeClient.status());
             await loadWorkflows();
+            message.success(t("comfyuiCloud.refreshed"));
         } catch (error) {
             message.error(error instanceof Error ? error.message : String(error));
+        } finally {
+            setRefreshing(false);
         }
     };
 
@@ -148,7 +154,7 @@ export default function ComfyUiCloudPage() {
                                 <Button type="primary" icon={<Play className="size-4" />} onClick={() => void connect()} loading={connecting}>
                                     {t("comfyuiLocal.cloud.connect")}
                                 </Button>
-                                <Button icon={<RefreshCw className="size-4" />} onClick={() => void refresh()}>
+                                <Button icon={<RefreshCw className="size-4" />} onClick={() => void refresh()} loading={refreshing}>
                                     {t("comfyuiLocal.runtime.refresh")}
                                 </Button>
                                 <Button danger icon={<Square className="size-4" />} onClick={() => void disconnect()} disabled={!connected} loading={connecting}>

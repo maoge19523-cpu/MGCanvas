@@ -1,3 +1,4 @@
+import { resolveComfyFieldLabel } from "./workflow-field-labels";
 import type {
   ComfyApiLink,
   ComfyApiNode,
@@ -84,10 +85,12 @@ export function inspectComfyWorkflow(
   objectInfo: ComfyObjectInfo,
 ): ComfyWorkflowInspection {
   const nodeIds = new Set(Object.keys(workflow));
+  // 先解析提示词方向，让文本编码器参数直接显示为「正向/负向提示词」。
+  const promptRoles = resolvePromptRoles(workflow);
   const nodes = Object.entries(workflow)
     .sort(([left], [right]) => compareNodeIds(left, right))
     .map(([nodeId, node]) =>
-      inspectNode(nodeId, node, objectInfo[node.class_type], nodeIds),
+      inspectNode(nodeId, node, objectInfo[node.class_type], nodeIds, promptRoles),
     );
   const missingClassTypes = [
     ...new Set(
@@ -122,6 +125,7 @@ function inspectNode(
   node: ComfyApiNode,
   info: ComfyObjectInfoNode | undefined,
   nodeIds: ReadonlySet<string>,
+  promptRoles: ReadonlyMap<string, "positive" | "negative">,
 ): ComfyInspectedNode {
   const title =
     node._meta?.title || info?.display_name || info?.name || node.class_type;
@@ -132,18 +136,34 @@ function inspectNode(
     category: info?.category,
     pythonModule: info?.python_module,
     missing: !info,
-    inputs: inspectInputs(nodeId, node, title, info, nodeIds),
+    inputs: inspectInputs(nodeId, node, title, info, nodeIds, promptRoles.get(nodeId)),
     outputs: inspectOutputs(nodeId, node, title, info),
   };
 }
 
-function inspectInputs(
-  nodeId: string,
+/** 分析采样器的 positive / negative 连接，判断文本编码器的提示词方向。 */
+function resolvePromptRoles(workflow: ComfyApiWorkflow) {
+  const roles = new Map<string, "positive" | "negative">();
+  for (const node of Object.values(workflow)) {
+    const inputs = node?.inputs;
+    if (!inputs || typeof inputs !== "object") continue;
+    for (const [key, value] of Object.entries(inputs)) {
+      if (key !== "positive" && key !== "negative") continue;
+      if (!Array.isArray(value) || !value.length) continue;
+      const sourceId = String(value[0]);
+      if (!roles.has(sourceId)) {
+        roles.set(sourceId, key === "positive" ? "positive" : "negative");
+      }
+    }
+  }
+  return roles;
+}
+function inspectInputs(nodeId: string,
   node: ComfyApiNode,
   nodeTitle: string,
   info: ComfyObjectInfoNode | undefined,
   nodeIds: ReadonlySet<string>,
-) {
+  promptRole?: "positive" | "negative",) {
   const specs = inputSpecs(info);
   const orderedFields = orderedInputFields(node, info);
   return orderedFields.map((field): ComfyInspectedInput => {
@@ -164,10 +184,8 @@ function inspectInputs(
       classType: node.class_type,
       nodeTitle,
       field,
-      label:
-        typeof options.label === "string" && options.label.trim()
-          ? options.label
-          : field,
+      // 优先给中文标签：英文原始字段名对普通用户不可读。
+      label: resolveComfyFieldLabel(node.class_type, field, promptRole),
       section: spec?.section || "unknown",
       currentValue,
       valueType,

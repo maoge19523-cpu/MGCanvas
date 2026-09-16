@@ -77,13 +77,15 @@ export default function ComfyUiCloudPage() {
         }
     };
 
-    /** 刷新云端状态：给出 loading 与结果提示，避免"点了没反应"。 */
+    /** 刷新云端状态：明确告知云端连接是否成功。 */
     const refresh = async () => {
         setRefreshing(true);
         try {
-            setStatus(await comfyNativeClient.status());
+            const next = await comfyNativeClient.status();
+            setStatus(next);
             await loadWorkflows();
-            message.success(t("comfyuiCloud.refreshed"));
+            if (next.remoteBaseUrl) message.success(t("comfyuiCloud.refreshConnected", { url: next.remoteBaseUrl }));
+            else message.warning(t("comfyuiCloud.refreshDisconnected"));
         } catch (error) {
             message.error(error instanceof Error ? error.message : String(error));
         } finally {

@@ -50,15 +50,19 @@ export default function ComfyUiLocalPage() {
         const [nextStatus, nextLogs] = await Promise.all([comfyNativeClient.status(), comfyNativeClient.logs()]);
         setStatus(nextStatus);
         setLogs(nextLogs);
+        return nextStatus;
     }, [desktop]);
 
-    /** 手动刷新：给出 loading 与结果提示，避免"点了没反应"。 */
+    /** 手动刷新：报告真实的连接 / 启动结果，而不是笼统的"已刷新"。 */
     const refreshFromButton = async () => {
         if (!desktop) return;
         setRefreshing(true);
         try {
-            await refreshRuntime();
-            message.success(t("comfyuiLocal.runtime.refreshed"));
+            const next = await refreshRuntime();
+            if (next?.remoteBaseUrl) message.success(t("comfyuiLocal.runtime.refreshCloud", { url: next.remoteBaseUrl }));
+            else if (next?.phase === "running") message.success(t("comfyuiLocal.runtime.refreshRunning", { port: next.port ? `127.0.0.1:${next.port}` : "—" }));
+            else if (next?.phase === "starting") message.info(t("comfyuiLocal.runtime.refreshStarting"));
+            else message.warning(t("comfyuiLocal.runtime.refreshIdle"));
         } catch (error) {
             message.error(errorMessage(error));
         } finally {

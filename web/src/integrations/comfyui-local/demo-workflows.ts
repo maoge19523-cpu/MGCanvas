@@ -34,8 +34,8 @@ export const COMFY_DEMO_WORKFLOWS: ComfyDemoWorkflow[] = [
         scope: "local",
         category: "image",
         file: "local/text-to-image.json",
-        name: "基础文生图",
-        description: "标准 SD1.5 文生图，用于确认本地环境可以正常出图。模型可在参数面板替换。",
+        name: "Z-Image Turbo 文生图",
+        description: "Z-Image Turbo 基础文生图，与本地 ComfyUI 默认工作流一致。模型可在参数面板替换。",
     },
     // 云端示例：由运营方导出 API JSON 后在此登记，例如
     // {

@@ -946,7 +946,8 @@ export default {
         disconnect: "Disconnect",
         disconnectDone: "Cloud connection closed",
         refreshed: "Cloud status refreshed",
-        emptyLibraryCloud: "No workflows yet — install the demo workflow or import JSON files above.",    },
+        refreshConnected: "Cloud connection is healthy: {{url}}",
+        refreshDisconnected: "Cloud is not connected — paste an endpoint and click Connect",        emptyLibraryCloud: "No workflows yet — install the demo workflow or import JSON files above.",    },
     comfyuiLocal: {
         pack: {
             import: "Batch import",
@@ -1031,7 +1032,10 @@ export default {
             change: "Change environment",
             forget: "Remove configuration",
             refreshed: "Status refreshed",
-            openConsole: "Open ComfyUI UI",
+            refreshRunning: "ComfyUI is running ({{port}})",
+            refreshStarting: "ComfyUI is still starting…",
+            refreshIdle: "ComfyUI is not running",
+            refreshCloud: "Connected to cloud ComfyUI: {{url}}",            openConsole: "Open ComfyUI UI",
             consoleUnavailable: "ComfyUI is not running yet — start it first to open the UI.",
         },
         logs: {

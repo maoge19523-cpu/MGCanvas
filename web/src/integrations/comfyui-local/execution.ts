@@ -31,8 +31,9 @@ export async function runComfyWorkflowNode(ctx: CanvasNodeContext) {
         if (!definition) throw new Error(i18n.t("comfyuiLocal.execution.workflowMissing"));
         const status = await comfyNativeClient.status();
         if (status.phase !== "running") throw new Error(i18n.t("comfyuiLocal.execution.environmentStopped"));
-        // 云端模式（已连接远程地址）下工作流不绑定本地环境，跳过环境一致性校验。
-        if (!status.remoteBaseUrl && status.profileId !== snapshot.environmentId) throw new Error(i18n.t("comfyuiLocal.execution.environmentMismatch"));
+        // 说明：不再校验工作流绑定的环境 ID。后端执行只依据当前可用环境
+        // （本地端口或云端地址），更换过 ComfyUI 目录 / 在云端安装的工作流
+        // 同样可以运行，避免误报"环境不一致"。
 
         const source = ctx.getNode(ctx.node.id) || ctx.node;
         ensureResultNodes(ctx, source, definition);

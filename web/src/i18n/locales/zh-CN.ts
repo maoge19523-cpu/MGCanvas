@@ -925,7 +925,8 @@ export default {
         disconnect: "断开连接",
         disconnectDone: "已断开云端连接",
         refreshed: "云端状态已刷新",
-        emptyLibraryCloud: "还没有工作流，点上方按钮安装示例工作流或批量导入 JSON。",    },
+        refreshConnected: "云端连接正常：{{url}}",
+        refreshDisconnected: "云端未连接，请填入地址后点「连接」",        emptyLibraryCloud: "还没有工作流，点上方按钮安装示例工作流或批量导入 JSON。",    },
     comfyuiLocal: {
         pack: {
             import: "批量导入",
@@ -1010,7 +1011,10 @@ export default {
             change: "更换环境",
             forget: "移除配置",
             refreshed: "状态已刷新",
-            openConsole: "打开 ComfyUI 界面",
+            refreshRunning: "ComfyUI 已启动成功（{{port}}）",
+            refreshStarting: "ComfyUI 正在启动中，请稍候…",
+            refreshIdle: "ComfyUI 尚未启动",
+            refreshCloud: "当前连接的是云端 ComfyUI：{{url}}",            openConsole: "打开 ComfyUI 界面",
             consoleUnavailable: "ComfyUI 还没有启动，启动成功后即可打开界面。",
         },
         logs: {

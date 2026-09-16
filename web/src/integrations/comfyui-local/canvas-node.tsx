@@ -1,6 +1,6 @@
 import { Button, Input, InputNumber, Select, Switch } from "antd";
 import { ArrowRight, CheckCircle2, Cpu, FileJson, Link2, LoaderCircle, Play, Search, SlidersHorizontal, Square, Workflow } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { nanoid } from "nanoid";
 
@@ -330,6 +330,8 @@ function readSizeValue(snapshot: ComfyCanvasNodeSnapshot, pair: { width: ComfyEx
 function ComfyWorkflowParameters({ ctx, snapshot, onChangeWorkflow, onClose }: { ctx: CanvasNodeContext; snapshot: ComfyCanvasNodeSnapshot; onChangeWorkflow: () => void; onClose: () => void }) {
     const { t } = useTranslation();
     const updateValue = (id: string, value: unknown) => ctx.updateMetadata({ comfyuiLocal: { ...snapshot, values: { ...snapshot.values, [id]: value } } });
+    // 一次写入多个参数：连续调用 updateValue 会基于同一份旧快照，后者覆盖前者的修改。
+    const updateValues = (patch: Record<string, unknown>) => ctx.updateMetadata({ comfyuiLocal: { ...snapshot, values: { ...snapshot.values, ...patch } } });
     const updateObjectReference = (inputId: string, sourceNodeId: string) => {
         const connectedIds = ctx.getInputConnections(inputId).map((connection) => connection.id);
         if (connectedIds.length) ctx.applyOps([{ type: "delete_connections", ids: connectedIds }]);
@@ -347,18 +349,21 @@ function ComfyWorkflowParameters({ ctx, snapshot, onChangeWorkflow, onClose }: {
     // 尺寸比例预设：任何工作流只要有成对的宽高参数就会自动出现，
     // 换算时以当前尺寸的短边为基准，只改比例、不改用户的整体规模。
     const sizePair = resolveSizePair(snapshot);
+    // 换算锚点：以用户最后手动编辑的那一边为准，只调整另一边，避免改动他刚填的数字。
+    const sizeAnchor = useRef<"width" | "height">("width");
     const applyRatio = (ratio: number) => {
         if (!sizePair) return;
         const current = readSizeValue(snapshot, sizePair);
         if (!current) return;
-        const base = Math.min(current.width, current.height);
-        const next = ratio >= 1
-            ? { width: Math.round(base * ratio), height: base }
-            : { width: base, height: Math.round(base / ratio) };
+        const next =
+            sizeAnchor.current === "width"
+                ? { width: current.width, height: Math.round(current.width / ratio) }
+                : { width: Math.round(current.height * ratio), height: current.height };
         // 统一取 8 的倍数，避免模型对非对齐尺寸报错。
-        const aligned = { width: align8(next.width), height: align8(next.height) };
-        updateValue(sizePair.width.id, aligned.width);
-        updateValue(sizePair.height.id, aligned.height);
+        updateValues({
+            [sizePair.width.id]: align8(next.width),
+            [sizePair.height.id]: align8(next.height),
+        });
     };
     return (
         <div>
@@ -412,7 +417,11 @@ function ComfyWorkflowParameters({ ctx, snapshot, onChangeWorkflow, onClose }: {
                             key={input.id}
                             input={input}
                             value={snapshot.values[input.id]}
-                            onChange={(value) => updateValue(input.id, value)}
+                            onChange={(value) => {
+                                if (input.id === sizePair?.width.id) sizeAnchor.current = "width";
+                                else if (input.id === sizePair?.height.id) sizeAnchor.current = "height";
+                                updateValue(input.id, value);
+                            }}
                             referencePicker={
                                 input.canvasPort && allowedKinds.length ? (
                                     <CanvasObjectReferencePicker

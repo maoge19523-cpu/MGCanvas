@@ -206,16 +206,6 @@ function inspectInputs(nodeId: string,
  * 只暴露尺寸、数量与帧率这类「调了不会变差」的参数。
  * 采样步数 / 引导强度 / 重绘幅度等专业参数刻意不暴露，避免用户误调导致结果变差。
  */
-/** 模型类枚举参数：用户必须能自己切换，否则模型缺失时无法补救。 */
-const MODEL_ENUM_FIELDS = new Set([
-  "ckpt_name",
-  "unet_name",
-  "lora_name",
-  "vae_name",
-  "clip_name",
-  "control_net_name",
-]);
-
 const RECOMMENDED_NUMERIC_FIELDS = new Set([
   "width",
   "height",
@@ -239,8 +229,6 @@ function isRecommendedCanvasInput(
     return true;
   // 尺寸、生成数量等数值参数也要能被用户设置，否则示例工作流只能改提示词。
   if (RECOMMENDED_NUMERIC_FIELDS.has(field)) return true;
-  // 模型类参数必须暴露：模型缺失时用户要能在参数面板里换成环境里已有的模型。
-  if (MODEL_ENUM_FIELDS.has(field)) return true;
   if (valueType !== "string") return false;
   const signal =
     `${classType} ${field} ${typeof options.label === "string" ? options.label : ""}`.toLowerCase();

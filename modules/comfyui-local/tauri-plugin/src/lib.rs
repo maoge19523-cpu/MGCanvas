@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     ffi::OsString,
     fs,
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener},
@@ -351,6 +351,8 @@ pub struct ComfyProcessManager {
     lifecycle: tokio::sync::Mutex<()>,
     accepting_starts: AtomicBool,
     ownership_path: PathBuf,
+    /// 已被用户停止的任务：等待结果的循环据此提前退出，避免无限轮询。
+    canceled_prompts: Mutex<HashSet<String>>,
 }
 
 impl ComfyProcessManager {
@@ -360,6 +362,7 @@ impl ComfyProcessManager {
             lifecycle: tokio::sync::Mutex::new(()),
             accepting_starts: AtomicBool::new(true),
             ownership_path,
+            canceled_prompts: Mutex::new(HashSet::new()),
         }
     }
 
@@ -916,6 +919,14 @@ async fn wait_for_execution<R: Runtime>(
 ) -> Result<ExecutionResult, String> {
     let started = Instant::now();
     loop {
+        if state
+            .canceled_prompts
+            .lock()
+            .expect("ComfyUI cancel set poisoned")
+            .remove(&prompt_id)
+        {
+            return Err("工作流已停止".to_owned());
+        }
         let base = current_base_url(&state)?;
     let _ = &profile_id;
         let history = local_http_client(Duration::from_secs(30))?
@@ -963,6 +974,12 @@ async fn interrupt_execution(
 ) -> Result<(), String> {
     let base = current_base_url(&state)?;
     let _ = &profile_id;
+    // 先登记取消，让正在等待结果的循环尽快退出。
+    state
+        .canceled_prompts
+        .lock()
+        .expect("ComfyUI cancel set poisoned")
+        .insert(prompt_id.clone());
     let client = local_http_client(Duration::from_secs(15))?;
     let queue_result = client
         .post(format!("{base}/queue"))

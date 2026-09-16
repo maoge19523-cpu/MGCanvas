@@ -66,10 +66,15 @@ export async function runComfyWorkflowNode(ctx: CanvasNodeContext) {
 export async function stopComfyWorkflowNode(ctx: CanvasNodeContext) {
     const active = activeRuns.get(ctx.node.id);
     const snapshot = readComfySnapshot(ctx.node.metadata);
-    if (!active || !snapshot) return;
+    if (!active) return;
     active.canceled = true;
-    if (active.promptId) await comfyNativeClient.interruptExecution(snapshot.environmentId, active.promptId).catch(() => undefined);
+    // 立即恢复界面与运行状态，不等云端确认：中断请求在云端无响应时
+    // 会让节点一直卡在「停止」，用户也无法重新运行。
+    activeRuns.delete(ctx.node.id);
     markSourceAndResults(ctx, "idle", { phase: "canceled", promptId: active.promptId, completedAt: Date.now() });
+    if (active.promptId && snapshot) {
+        void comfyNativeClient.interruptExecution(snapshot.environmentId, active.promptId).catch(() => undefined);
+    }
 }
 
 async function collectConnectedValues(ctx: CanvasNodeContext, definition: ComfyWorkflowDefinition) {

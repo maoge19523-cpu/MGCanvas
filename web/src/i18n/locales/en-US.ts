@@ -1107,7 +1107,7 @@ export default {
             port: "Port",
             connectMedia: "Connect or globally reference a {{type}} asset",
             randomSeed: "Randomize each run",
-            randomSeedHint: "Turn off to keep a fixed seed and reproduce the same image",            noParameters: "This workflow exposes no input parameters",
+            randomSeedHint: "Turn off to keep a fixed seed; local runs reproduce exactly, cloud runs re-randomize each time",            noParameters: "This workflow exposes no input parameters",
             ready: "Ready",
             missingDependencies: "Missing dependencies",
             dependencyError: "The current environment is missing workflow dependencies",

@@ -1086,7 +1086,7 @@ export default {
             port: "端口",
             connectMedia: "连接或全局引用 {{type}} 素材",
             randomSeed: "每次生成随机结果",
-            randomSeedHint: "关闭后使用固定种子，可复现同一张图",            noParameters: "这个工作流没有暴露输入参数",
+            randomSeedHint: "关闭后写入固定种子；本地环境可精确复现，云端算力每次会重新随机",            noParameters: "这个工作流没有暴露输入参数",
             ready: "已就绪",
             missingDependencies: "缺少依赖",
             dependencyError: "当前环境缺少工作流依赖",

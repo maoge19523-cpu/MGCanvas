@@ -37,6 +37,7 @@ export default function ComfyUiLocalPage() {
     const [loading, setLoading] = useState(desktop);
     const [detecting, setDetecting] = useState(false);
     const [action, setAction] = useState<"start" | "stop" | null>(null);
+    const [refreshing, setRefreshing] = useState(false);
     // 云端 ComfyUI（如 RunningHub 代理）：填地址即可直连，无需本地环境
     const [cloudOpen, setCloudOpen] = useState(false);
     const [cloudUrl, setCloudUrl] = useState("");
@@ -50,6 +51,20 @@ export default function ComfyUiLocalPage() {
         setStatus(nextStatus);
         setLogs(nextLogs);
     }, [desktop]);
+
+    /** 手动刷新：给出 loading 与结果提示，避免"点了没反应"。 */
+    const refreshFromButton = async () => {
+        if (!desktop) return;
+        setRefreshing(true);
+        try {
+            await refreshRuntime();
+            message.success(t("comfyuiLocal.runtime.refreshed"));
+        } catch (error) {
+            message.error(errorMessage(error));
+        } finally {
+            setRefreshing(false);
+        }
+    };
 
     useEffect(() => {
         let disposed = false;
@@ -83,6 +98,8 @@ export default function ComfyUiLocalPage() {
             unlisten.forEach((dispose) => dispose());
         };
     }, [desktop, message, refreshRuntime]);
+
+    /** 手动刷新：给出 loading 与结果提示，避免"点了没反应"。 */
 
     useEffect(() => {
         let disposed = false;
@@ -365,7 +382,8 @@ export default function ComfyUiLocalPage() {
                         busy={busy}
                         onStart={() => void startEnvironment()}
                         onStop={() => void stopEnvironment()}
-                        onRefresh={() => void refreshRuntime().catch((error) => message.error(errorMessage(error)))}
+                        onRefresh={() => void refreshFromButton()}
+                        refreshing={refreshing}
                         onOpenConsole={() => void openConsole()}
                         onChangeEnvironment={() => void changeEnvironment()}
                         onConnectCloud={() => setCloudOpen(true)}
@@ -519,6 +537,7 @@ type RuntimeProps = {
     onStart: () => void;
     onStop: () => void;
     onRefresh: () => void;
+    refreshing: boolean;
     onOpenConsole: () => void;
     onChangeEnvironment: () => void;
     onConnectCloud: () => void;
@@ -532,7 +551,7 @@ type RuntimeProps = {
     onDeleteWorkflow: (definition: ComfyWorkflowDefinition) => void;
 };
 
-function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRefresh, onOpenConsole, onChangeEnvironment, onConnectCloud, onForget, workflows, onImport, onImportPack, onInstallDemo, importingPack, onAddToCanvas, onDeleteWorkflow }: RuntimeProps) {
+function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRefresh, refreshing, onOpenConsole, onChangeEnvironment, onConnectCloud, onForget, workflows, onImport, onImportPack, onInstallDemo, importingPack, onAddToCanvas, onDeleteWorkflow }: RuntimeProps) {
     const { t } = useTranslation();
 
     // 启动进度：ComfyUI 不提供进度信息，这里按时间平滑推进到 92%，
@@ -574,7 +593,7 @@ function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRe
                         {t("comfyuiLocal.runtime.change")}
                     </Button>
 
-                    <Button icon={<RefreshCw className="size-3.5" />} onClick={onRefresh} disabled={busy}>
+                    <Button icon={<RefreshCw className="size-3.5" />} onClick={onRefresh} disabled={busy} loading={refreshing}>
                         {t("comfyuiLocal.runtime.refresh")}
                     </Button>
 

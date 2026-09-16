@@ -1027,7 +1027,9 @@ export default {
             loopbackOnly: "Local access only; the ComfyUI browser will not open",
             change: "Change environment",
             forget: "Remove configuration",
+            refreshed: "Status refreshed",
             openConsole: "Open ComfyUI UI",
+            consoleUnavailable: "ComfyUI is not running yet — start it first to open the UI.",
         },
         logs: {
             title: "Startup logs",

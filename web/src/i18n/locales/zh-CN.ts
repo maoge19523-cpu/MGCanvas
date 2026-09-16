@@ -1006,7 +1006,9 @@ export default {
             loopbackOnly: "仅允许本机访问，不会打开 ComfyUI 浏览器",
             change: "更换环境",
             forget: "移除配置",
+            refreshed: "状态已刷新",
             openConsole: "打开 ComfyUI 界面",
+            consoleUnavailable: "ComfyUI 还没有启动，启动成功后即可打开界面。",
         },
         logs: {
             title: "启动日志",

@@ -2081,7 +2081,8 @@ function MGCanvasProjectPage() {
             status: hasPollingInterruption ? "partial_interrupted" : result.status === "partial" ? "partial" : primaryState?.status || result.status,
             progress: primaryState?.progress ?? (result.status === "succeeded" || (result.status === "partial" && !hasPollingInterruption) ? 100 : source.metadata?.providerTask?.progress),
             message: result.status === "partial" ? genericPartialSummary(result) : primaryState?.message,
-            completedAt: result.status === "succeeded" ? new Date().toISOString() : undefined,
+            // 部分成功同样算本次运行结束：否则界面算不出运行耗时。
+            completedAt: result.status === "succeeded" || result.status === "partial" ? new Date().toISOString() : undefined,
             raw: primaryState?.raw || result.raw,
         };
         const buttons = extractGenericButtons(result.raw);

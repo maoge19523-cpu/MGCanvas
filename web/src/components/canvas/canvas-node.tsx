@@ -645,20 +645,31 @@ function useGenerationProgress(node: CanvasNodeData) {
     const reported = node.metadata?.providerTask?.progress;
     const run = node.metadata?.comfyuiRun as { phase?: string; startedAt?: number } | undefined;
     const phase = run?.phase;
-    const startedAt = run?.startedAt;
+    const status = node.metadata?.status;
+    const submittedAt = node.metadata?.providerTask?.submittedAt;
+    // 原生生成节点没有 comfyuiRun，用任务提交时间作为计时起点。
+    const startedAt = run?.startedAt ?? (submittedAt ? Date.parse(submittedAt) : undefined);
     const [tick, setTick] = useState(() => Date.now());
 
     useEffect(() => {
-        if (phase !== "preparing" && phase !== "queued" && phase !== "running") return undefined;
+        if (phase !== "preparing" && phase !== "queued" && phase !== "running" && status !== "loading") return undefined;
         const timer = setInterval(() => setTick(Date.now()), 500);
         return () => clearInterval(timer);
-    }, [phase]);
+    }, [phase, status]);
 
-    if (typeof reported === "number" && Number.isFinite(reported)) return Math.min(99, Math.max(0, Math.round(reported)));
-    if (phase === "succeeded") return 100;
-    if (!phase) return node.metadata?.status === "error" ? 0 : 8;
+    // 上报值为 0 视为「未上报」：否则进度环会一直停在 0%，看着像卡住。
+    if (typeof reported === "number" && Number.isFinite(reported) && reported > 0) return Math.min(99, Math.max(0, Math.round(reported)));
+    if (phase === "succeeded" || status === "success") return 100;
+    if (phase !== "preparing" && phase !== "queued" && phase !== "running" && status !== "loading") return status === "error" ? 0 : 8;
+    if (!startedAt || !Number.isFinite(startedAt)) return 8;
 
-    const elapsed = startedAt ? Math.max(0, tick - startedAt) / 1000 : 0;
+    const elapsed = Math.max(0, tick - startedAt) / 1000;
+    // 原生节点没有阶段信息时按已用时间推断阶段，保证进度持续推进。
+    const effectivePhase = phase ?? (elapsed < 6 ? "preparing" : elapsed < 16 ? "queued" : "running");
+    if (effectivePhase !== phase) {
+        const [f, c, s] = effectivePhase === "preparing" ? [8, 26, 6] : effectivePhase === "queued" ? [26, 42, 10] : [42, 96, 30];
+        return Math.round(f + (c - f) * Math.min(1, Math.sqrt(elapsed / s)));
+    }
     // 各阶段给出起点、上限与预期耗时；用平方根曲线让进度前段推进明显、后段放缓，
     // 避免短任务（十几秒）只走到一半就突然跳到 100%。
     const [floor, ceiling, seconds] =

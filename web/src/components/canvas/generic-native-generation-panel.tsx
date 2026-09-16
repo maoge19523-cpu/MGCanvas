@@ -521,27 +521,27 @@ export function GenericNativeGenerationPanel({
                     </span>
                 </Tooltip>
                 )}
-                {isPolling ? (
-                    <Tooltip title="仅停止本地查询，远端任务仍会继续">
+                {/* 停止按钮与运行按钮并存：运行中随时可以停下来改参数。 */}
+                {(isRunning || isPolling) ? (
+                    <Tooltip title="停止等待当前任务（远端任务可能仍在继续）">
                         <Button danger shape="circle" className="!size-9 shrink-0" icon={<CircleStop className="size-4" />} disabled={!onStopPolling} onClick={() => onStopPolling?.(node)} />
                     </Tooltip>
                 ) : hasUnresolvedTask ? (
                     <Tooltip title="恢复查询远端任务">
                         <Button shape="circle" className="!size-9 shrink-0" icon={<RefreshCw className="size-4" />} disabled={!onStartPolling} onClick={() => void onStartPolling?.(node)} />
                     </Tooltip>
-                ) : (
-                    <Tooltip title={!modelPinned ? "请先选择模型" : validationError || `开始生成 · ${formattedPrice}`}>
-                        <Button
-                            type="primary"
-                            shape="circle"
-                            className="!size-9 shrink-0"
-                            disabled={isRunning || !onRun || Boolean(validationError) || !modelPinned}
-                            aria-label={`开始生成，${formattedPrice}`}
-                            icon={isRunning ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
-                            onClick={() => void run()}
-                        />
-                    </Tooltip>
-                )}
+                ) : null}
+                <Tooltip title={!modelPinned ? "请先选择模型" : validationError || `开始生成 · ${formattedPrice}`}>
+                    <Button
+                        type="primary"
+                        shape="circle"
+                        className="!size-9 shrink-0"
+                        disabled={isRunning || isPolling || hasUnresolvedTask || !onRun || Boolean(validationError) || !modelPinned}
+                        aria-label={`开始生成，${formattedPrice}`}
+                        icon={isRunning ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
+                        onClick={() => void run()}
+                    />
+                </Tooltip>
             </div>
 
             {modelProfile?.constraints?.notes?.length ? (

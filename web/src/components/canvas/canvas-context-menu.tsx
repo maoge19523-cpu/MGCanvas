@@ -58,8 +58,14 @@ export function CanvasNodeContextMenu({ menu, canUndo, canRedo, canCopyAll, onCl
     // 在输入框 / 文本域上右键时给出文本编辑菜单（剪切、复制、粘贴、全选），
     // 而不是节点菜单，符合用户对右键的预期。
     const [textTarget] = useState<HTMLInputElement | HTMLTextAreaElement | null>(() => {
-        const active = document.activeElement;
-        return active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement ? active : null;
+        // 右键时输入框不一定获得焦点，因此优先取光标位置的元素。
+        const under = document.elementFromPoint(menu.x, menu.y);
+        for (const candidate of [under, document.activeElement]) {
+            if (candidate instanceof HTMLTextAreaElement || candidate instanceof HTMLInputElement) return candidate;
+            const editable = candidate instanceof Element ? candidate.closest("textarea, input") : null;
+            if (editable instanceof HTMLTextAreaElement || editable instanceof HTMLInputElement) return editable;
+        }
+        return null;
     });
 
     /** 写入受控输入框：必须用原生 setter 再派发 input 事件，React 才能感知变化。 */

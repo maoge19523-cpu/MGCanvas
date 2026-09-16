@@ -64,7 +64,7 @@ export default function ComfyUiCloudPage() {
     const disconnect = async () => {
         setConnecting(true);
         try {
-            setStatus(await comfyNativeClient.stopEnvironment());
+            setStatus(await comfyNativeClient.disconnectRemote());
             message.success(t("comfyuiCloud.disconnectDone"));
         } catch (error) {
             message.error(error instanceof Error ? error.message : String(error));

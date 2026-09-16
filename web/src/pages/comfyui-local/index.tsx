@@ -176,7 +176,10 @@ export default function ComfyUiLocalPage() {
     };
 
     const startEnvironment = async (target = profile) => {
-        if (!target) return;
+        if (!target) {
+            message.warning(t("comfyuiLocal.setup.needEnvironment"));
+            return;
+        }
         setAction("start");
         try {
             const result = await comfyNativeClient.startEnvironment(target.id);
@@ -537,6 +540,9 @@ function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRe
                     <Button icon={<RefreshCw className="size-3.5" />} onClick={onRefresh} disabled={busy}>
                         {t("comfyuiLocal.runtime.refresh")}
                     </Button>
+                    <Button icon={<Trash2 className="size-3.5" />} danger onClick={onForget} disabled={busy}>
+                        {t("comfyuiLocal.runtime.forget")}
+                    </Button>
                     {active ? (
                         <Button danger icon={<CircleStop className="size-3.5" />} onClick={onStop} loading={busy}>
                             {t("comfyuiLocal.runtime.stop")}
@@ -583,9 +589,6 @@ function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRe
                     <div>
                         <h3 className="text-[20px] font-semibold tracking-[-0.03em]">{t("comfyuiLocal.library.title")}</h3>
                     </div>
-                    <Button size="large" icon={<Sparkles className="size-4" />} onClick={onInstallDemo} loading={importingPack}>
-                            {t("comfyuiLocal.pack.installDemo")}
-                        </Button>
 
                         <Button type="primary" size="large" icon={<Plus className="size-4" />} onClick={onImport} disabled={status.phase !== "running"}>
                         {t("comfyuiLocal.library.import")}
@@ -624,11 +627,6 @@ function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRe
                     </div>
                 )}
             </section>
-            {!active ? (
-                <button type="button" className="cursor-pointer text-[11px] text-stone-400 transition hover:text-red-500 dark:text-zinc-600" onClick={onForget}>
-                    {t("comfyuiLocal.runtime.forget")}
-                </button>
-            ) : null}
         </section>
     );
 }

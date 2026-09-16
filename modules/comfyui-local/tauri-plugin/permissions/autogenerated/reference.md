@@ -19,6 +19,7 @@ Allows MGCanvas to detect, start, stop, inspect, execute workflows, and cache re
 - `allow-wait-for-execution`
 - `allow-interrupt-execution`
 - `allow-connect-remote`
+- `allow-disconnect-remote`
 
 ## Permission Table
 
@@ -77,6 +78,32 @@ Enables the detect_environment command without any pre-configured scope.
 <td>
 
 Denies the detect_environment command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mgcanvas-comfyui-local:allow-disconnect-remote`
+
+</td>
+<td>
+
+Enables the disconnect_remote command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mgcanvas-comfyui-local:deny-disconnect-remote`
+
+</td>
+<td>
+
+Denies the disconnect_remote command without any pre-configured scope.
 
 </td>
 </tr>

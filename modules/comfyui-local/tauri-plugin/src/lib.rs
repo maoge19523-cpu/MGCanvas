@@ -419,6 +419,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             environment_status,
             environment_logs,
             connect_remote,
+            disconnect_remote,
             system_stats,
             object_info,
             upload_input,
@@ -762,6 +763,25 @@ async fn connect_remote(
         inner.remote_base_url = Some(url.clone());
     }
     remember_remote_endpoint(&state.ownership_path, &url);
+    Ok(state.snapshot())
+}
+
+/// 断开云端 ComfyUI：清掉运行态并删除记住的地址，避免下次启动又被自动恢复。
+#[tauri::command]
+async fn disconnect_remote(state: State<'_, ComfyProcessManager>) -> Result<EnvironmentStatus, String> {
+    {
+        let mut inner = state.inner.lock().expect("ComfyUI process state poisoned");
+        inner.generation = inner.generation.wrapping_add(1);
+        inner.child = None;
+        inner.phase = EnvironmentPhase::Idle;
+        inner.pid = None;
+        inner.port = None;
+        inner.started_at = None;
+        inner.message = Some("已断开云端 ComfyUI".to_owned());
+        inner.profile_id = None;
+        inner.remote_base_url = None;
+    }
+    forget_remote_endpoint(&state.ownership_path);
     Ok(state.snapshot())
 }
 

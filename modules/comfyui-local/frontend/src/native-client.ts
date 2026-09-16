@@ -42,6 +42,9 @@ export function createComfyNativeClient(invoke: ComfyNativeInvoke) {
     /** 连接云端 ComfyUI（如 RunningHub 代理地址），不启动本地进程。 */
     connectRemote: (baseUrl: string) =>
       invoke<ComfyEnvironmentStatus>(command("connect_remote"), { baseUrl }),
+    /** 断开云端 ComfyUI，并清除记住的地址。 */
+    disconnectRemote: () =>
+      invoke<ComfyEnvironmentStatus>(command("disconnect_remote")),
     status: () => invoke<ComfyEnvironmentStatus>(command("environment_status")),
     logs: () => invoke<ComfyEnvironmentLogEntry[]>(command("environment_logs")),
     systemStats: () => invoke<Record<string, unknown>>(command("system_stats")),

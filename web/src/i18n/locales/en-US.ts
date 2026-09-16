@@ -977,6 +977,7 @@ export default {
             title: "Connect a ComfyUI environment",
             changeTitle: "Change ComfyUI environment",
             shortHint: "Choose a ComfyUI directory containing main.py.",
+            needEnvironment: "Choose a ComfyUI directory and save the configuration before starting.",
             cloudTitle: "Use cloud ComfyUI",
             cloudRecommended: "Recommended",
             cloudHint: "No local install needed. Paste a cloud base URL (for example a RunningHub proxy URL https://www.runninghub.cn/proxy/{your-api-key}) and start generating — the fastest path for new users.",

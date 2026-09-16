@@ -14,6 +14,7 @@ const COMMANDS: &[&str] = &[
     "wait_for_execution",
     "interrupt_execution",
     "connect_remote",
+    "disconnect_remote",
 ];
 
 fn main() {

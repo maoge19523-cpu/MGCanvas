@@ -18,4 +18,5 @@ permissions = [
     "allow-wait-for-execution",
     "allow-interrupt-execution",
     "allow-connect-remote",
+    "allow-disconnect-remote",
 ]

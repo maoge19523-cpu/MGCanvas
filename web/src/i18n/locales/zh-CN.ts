@@ -956,6 +956,7 @@ export default {
             title: "连接 ComfyUI 环境",
             changeTitle: "更换 ComfyUI 环境",
             shortHint: "选择包含 main.py 的 ComfyUI 目录。",
+            needEnvironment: "请先选择 ComfyUI 目录并保存配置，再点击启动。",
             cloudTitle: "使用云端 ComfyUI",
             cloudRecommended: "推荐",
             cloudHint: "无需在本地安装 ComfyUI。填入云端地址（例如 RunningHub 代理地址 https://www.runninghub.cn/proxy/{你的 API Key}）即可直接生成，新用户建议先用这条路径跑通。",

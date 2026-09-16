@@ -529,6 +529,7 @@ export default {
             group: "组",
             nodeCount: "{{count}} 个节点",
             generating: "生成中",
+            generated: "生成完成",
             failed: "生成失败",
             retry: "重试",
             viewErrorDetails: "查看完整错误",

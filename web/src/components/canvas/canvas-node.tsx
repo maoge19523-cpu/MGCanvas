@@ -520,7 +520,7 @@ function NodeContent(props: NodeContentRendererProps) {
     if (props.node.type === CanvasNodeType.Config && props.renderNodeContent) return props.renderNodeContent(props.node);
     if (shouldShowMediaGenerationGlass(props.node)) return <MediaGeneratingContent {...props} />;
     if (props.isBatchRoot) return <ImageNodeContent {...props} />;
-    if (props.node.metadata?.status === "loading") return <LoadingContent theme={props.theme} />;
+    if (props.node.metadata?.status === "loading") return <LoadingContent node={props.node} theme={props.theme} />;
     if (props.node.metadata?.status === "error") return <ErrorContent node={props.node} theme={props.theme} onRetry={props.onRetry} onShowErrorDetails={props.onShowErrorDetails} />;
 
     const Renderer = nodeContentRenderers[props.node.type as CanvasNodeType];
@@ -567,14 +567,57 @@ function GroupNodeContent({ node, theme, groupChildCount }: NodeContentRendererP
     );
 }
 
-function LoadingContent({ theme }: Pick<NodeContentRendererProps, "theme">) {
+function LoadingContent({ node, theme }: Pick<NodeContentRendererProps, "node" | "theme">) {
     const { t } = useTranslation();
+    const percent = useGenerationProgress(node);
+    const running = percent < 100;
     return (
         <div className="flex h-full w-full flex-col items-center justify-center gap-3" style={{ color: theme.node.activeStroke }}>
-            <div className="size-10 animate-spin rounded-full border-2" style={{ borderColor: theme.node.stroke, borderTopColor: theme.node.activeStroke }} />
-            <span className="text-[10px] tracking-[0.2em]">{t("canvas.node.generating")}</span>
+            <div className="relative grid size-14 place-items-center">
+                <svg className="absolute inset-0 -rotate-90" viewBox="0 0 36 36" fill="none">
+                    <circle cx="18" cy="18" r="15.5" stroke={theme.node.stroke} strokeWidth="2.5" />
+                    <circle
+                        cx="18"
+                        cy="18"
+                        r="15.5"
+                        stroke={theme.node.activeStroke}
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        pathLength={100}
+                        strokeDasharray={`${percent} 100`}
+                        className="transition-[stroke-dasharray] duration-300 ease-out"
+                    />
+                </svg>
+                <span className="text-[11px] font-semibold tabular-nums">{Math.round(percent)}%</span>
+            </div>
+            <span className="text-[10px] tracking-[0.2em]">{running ? t("canvas.node.generating") : t("canvas.node.generated")}</span>
         </div>
     );
+}
+
+/** 生成进度：优先用服务商上报值，其余按阶段分档并结合已用时间平滑推进。 */
+function useGenerationProgress(node: CanvasNodeData) {
+    const reported = node.metadata?.providerTask?.progress;
+    const run = node.metadata?.comfyuiRun as { phase?: string; startedAt?: number } | undefined;
+    const phase = run?.phase;
+    const startedAt = run?.startedAt;
+    const [tick, setTick] = useState(() => Date.now());
+
+    useEffect(() => {
+        if (phase !== "preparing" && phase !== "queued" && phase !== "running") return undefined;
+        const timer = setInterval(() => setTick(Date.now()), 500);
+        return () => clearInterval(timer);
+    }, [phase]);
+
+    if (typeof reported === "number" && Number.isFinite(reported)) return Math.min(99, Math.max(0, Math.round(reported)));
+    if (phase === "succeeded") return 100;
+    if (!phase) return node.metadata?.status === "error" ? 0 : 8;
+
+    const elapsed = startedAt ? Math.max(0, tick - startedAt) / 1000 : 0;
+    // 各阶段给出起点与上限，运行阶段随时间长推，避免出现"卡住不动"的观感。
+    const [floor, ceiling, seconds] = phase === "preparing" ? [5, 22, 12] : phase === "queued" ? [22, 38, 20] : [38, 96, 90];
+    const ratio = Math.min(1, elapsed / seconds);
+    return Math.round(floor + (ceiling - floor) * ratio);
 }
 
 function MediaGeneratingContent(props: NodeContentRendererProps) {
@@ -721,7 +764,7 @@ function ImageNodeContent(props: NodeContentRendererProps) {
     if (!props.node.metadata?.content && props.isBatchRoot) {
         const content =
             props.node.metadata?.status === "loading" ? (
-                <LoadingContent theme={props.theme} />
+                <LoadingContent node={props.node} theme={props.theme} />
             ) : props.node.metadata?.status === "error" ? (
                 <ErrorContent node={props.node} theme={props.theme} onRetry={props.onRetry} onShowErrorDetails={props.onShowErrorDetails} />
             ) : (

@@ -182,7 +182,7 @@ export default function CanvasPage() {
                     <motion.section {...contentMotion(0.08)} className="border-b border-black/[0.08] py-7 dark:border-white/[0.07]" aria-labelledby="quick-start-title">
                         <div className="flex min-w-0 items-start justify-between gap-4">
                             <div className="flex min-w-0 items-start gap-4">
-                                <span className="pt-1 text-[10px] font-semibold tabular-nums tracking-[0.18em] text-[#756bff]">02</span>
+                                <span className="pt-1 text-[10px] font-semibold tabular-nums tracking-[0.18em] text-[#756bff]">01</span>
                                 <div className="min-w-0">
                                     <h2 id="quick-start-title" className="text-xl font-semibold tracking-[-0.025em] text-stone-900 dark:text-zinc-100">
                                         {t("canvas.start.guideTitle")}
@@ -227,7 +227,7 @@ export default function CanvasPage() {
                 <motion.section {...contentMotion(0.1)} className="td-home-recent" aria-labelledby="recent-canvases-title">
                     <div className="td-home-recent-header flex min-w-0 flex-wrap items-end justify-between gap-4">
                         <div className="flex min-w-0 items-start gap-4">
-                            <span className="pt-1 text-[10px] font-semibold tabular-nums tracking-[0.18em] text-[#756bff]">01</span>
+                            <span className="pt-1 text-[10px] font-semibold tabular-nums tracking-[0.18em] text-[#756bff]">02</span>
                             <div className="min-w-0">
                                 <h2 id="recent-canvases-title" className="text-xl font-semibold tracking-[-0.025em] text-stone-900 dark:text-zinc-100">
                                     {t("canvas.start.recentTitle")}

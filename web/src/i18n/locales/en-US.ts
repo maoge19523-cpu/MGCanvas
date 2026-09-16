@@ -535,6 +535,7 @@ export default {
             group: "Group",
             nodeCount: "{{count}} nodes",
             generating: "Generating",
+            generated: "Done",
             failed: "Generation failed",
             retry: "Retry",
             viewErrorDetails: "View full error",

@@ -946,7 +946,8 @@ export default {
         pack: {
             import: "Batch import",
             installDemo: "Install demo workflow",
-            demoName: "Demo: basic text-to-image",
+            needsEnvironment: "Connect a cloud ComfyUI on the ComfyUI Cloud page first, or set up a local ComfyUI environment",
+            goConnectCloud: "No ComfyUI environment yet — opening the ComfyUI Cloud page. Paste an endpoint and connect, then import again.",            demoName: "Demo: basic text-to-image",
             demoInstalled: "Demo workflow installed — add it to the canvas to try it out",
             imported: "Imported {{count}} workflows",
             failed: "{{name}} failed to import: {{reason}}",

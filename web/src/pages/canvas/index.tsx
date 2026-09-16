@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { App } from "antd";
 import { ArrowRight, Download, Plus, Search, Sparkles, Trash2, X } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
 import { CanvasDeleteProjectsDialog } from "@/components/canvas/canvas-delete-projects-dialog";
 import { CanvasProjectCard } from "@/components/canvas/canvas-project-card";
+import { useComfyWorkflowImport } from "@/integrations/comfyui-local/use-workflow-import";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
 import { latestCanvasProjectId, sortCanvasProjectsByRecent } from "@/lib/canvas/canvas-home";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
@@ -15,6 +17,7 @@ import { useCanvasUiStore } from "@/stores/canvas/use-canvas-ui-store";
 const GUIDE_DISMISS_KEY = "mgcanvas:home-guide-dismissed";
 
 export default function CanvasPage() {
+    const { message } = App.useApp();
     const { t } = useTranslation();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
@@ -31,6 +34,27 @@ export default function CanvasPage() {
     const [searchQuery, setSearchQuery] = useState("");
     // 首次使用的三步引导卡片，用户关闭后本地记住不再显示。
     const [showGuide, setShowGuide] = useState(() => localStorage.getItem(GUIDE_DISMISS_KEY) !== "1");
+    const workflowImport = useComfyWorkflowImport();
+
+    /** 首页导入入口：没有可用环境时直接跳到「ComfyUI 云端」页配置。 */
+    const requireEnvironment = useCallback(async () => {
+        const environmentId = await workflowImport.resolveEnvironmentId();
+        if (environmentId) return true;
+        message.info(t("comfyuiLocal.pack.goConnectCloud"));
+        navigate("/comfyui-cloud");
+        return false;
+    }, [message, navigate, t, workflowImport]);
+
+    const handleInstallDemo = useCallback(async () => {
+        if (!(await requireEnvironment())) return;
+        await workflowImport.installDemo();
+    }, [requireEnvironment, workflowImport]);
+
+    const handleImportPack = useCallback(async () => {
+        if (!(await requireEnvironment())) return;
+        workflowImport.openPicker();
+    }, [requireEnvironment, workflowImport]);
+
     /** 重新显示三步引导（清掉本地的关闭标记）。 */
     const resetGuide = () => {
         localStorage.removeItem(GUIDE_DISMISS_KEY);
@@ -121,6 +145,7 @@ export default function CanvasPage() {
             <div className="td-home-page-grid pointer-events-none fixed inset-0" aria-hidden="true" />
             <div className="td-home-page-glow pointer-events-none fixed inset-0" aria-hidden="true" />
 
+            <input ref={workflowImport.packInputRef} type="file" accept=".json,.mgpack,application/json" multiple hidden onChange={(event) => void workflowImport.importFiles(event.target.files)} />
             <div className="td-home-content relative z-[1] mx-auto w-full max-w-[1440px]">
                 <section className="td-home-hero relative flex items-center overflow-hidden border-b border-black/[0.08] dark:border-white/[0.07]">
                     <div className="td-home-hero-art" aria-hidden="true">
@@ -212,6 +237,26 @@ export default function CanvasPage() {
                         </div>
 
                         <div className="flex min-w-0 flex-wrap items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => void handleInstallDemo()}
+                                disabled={workflowImport.importing}
+                                title={t("comfyuiLocal.pack.installDemo")}
+                                className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full border border-black/[0.08] bg-white/55 px-3 text-[11px] text-stone-500 backdrop-blur-xl transition hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-45 dark:border-white/[0.09] dark:bg-white/[0.04] dark:text-zinc-400 dark:hover:text-zinc-200"
+                            >
+                                <Sparkles className="size-3" strokeWidth={2} />
+                                {t("comfyuiLocal.pack.installDemo")}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => void handleImportPack()}
+                                disabled={workflowImport.importing}
+                                title={t("comfyuiLocal.pack.import")}
+                                className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full border border-black/[0.08] bg-white/55 px-3 text-[11px] text-stone-500 backdrop-blur-xl transition hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-45 dark:border-white/[0.09] dark:bg-white/[0.04] dark:text-zinc-400 dark:hover:text-zinc-200"
+                            >
+                                <Download className="size-3" strokeWidth={2} />
+                                {t("comfyuiLocal.pack.import")}
+                            </button>
                             <button
                                 type="button"
                                 onClick={resetGuide}

@@ -582,9 +582,7 @@ function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRe
                     <Button size="large" icon={<Sparkles className="size-4" />} onClick={onInstallDemo} loading={importingPack}>
                             {t("comfyuiLocal.pack.installDemo")}
                         </Button>
-                        <Button size="large" icon={<FolderOpen className="size-4" />} onClick={onImportPack} loading={importingPack}>
-                            {t("comfyuiLocal.pack.import")}
-                        </Button>
+
                         <Button type="primary" size="large" icon={<Plus className="size-4" />} onClick={onImport} disabled={status.phase !== "running"}>
                         {t("comfyuiLocal.library.import")}
                     </Button>

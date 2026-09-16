@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { App, Button, Input, Tag } from "antd";
-import { Cloud, Link2, LoaderCircle, Play, RefreshCw, Trash2 } from "lucide-react";
+import { Cloud, Link2, LoaderCircle, Play, RefreshCw, Sparkles, Trash2, Upload } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
@@ -9,6 +9,7 @@ import { comfyNativeClient, type ComfyEnvironmentStatus, type ComfyWorkflowDefin
 import { createComfyWorkflowCanvasNode } from "@/integrations/comfyui-local/canvas-node";
 import { createComfyResultNodes } from "@/integrations/comfyui-local/result-nodes";
 import { deleteComfyWorkflowDefinition, listComfyWorkflowDefinitions } from "@/integrations/comfyui-local/workflow-library";
+import { useComfyWorkflowImport } from "@/integrations/comfyui-local/use-workflow-import";
 import { isTauriRuntime } from "@/services/platform/desktop-runtime";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 
@@ -27,6 +28,8 @@ export default function ComfyUiCloudPage() {
     const [connecting, setConnecting] = useState(false);
     const [workflows, setWorkflows] = useState<ComfyWorkflowDefinition[]>([]);
 
+
+    const workflowImport = useComfyWorkflowImport({ onImported: () => loadWorkflows() });
 
     const loadWorkflows = useCallback(async () => {
         setWorkflows(await listComfyWorkflowDefinitions());
@@ -101,6 +104,7 @@ export default function ComfyUiCloudPage() {
 
     return (
         <WorkspacePage icon={Cloud} title={t("comfyuiCloud.title")} description={t("comfyuiCloud.description")}>
+            <input ref={workflowImport.packInputRef} type="file" accept=".json,.mgpack,application/json" multiple hidden onChange={(event) => void workflowImport.importFiles(event.target.files)} />
             <div className="mx-auto max-w-[1080px]">
                 {!desktop ? (
                     <section className="border-y border-amber-500/20 bg-amber-500/[0.04] px-5 py-8 sm:px-8">
@@ -150,7 +154,17 @@ export default function ComfyUiCloudPage() {
                         </div>
 
                         <div className="mt-8">
-                            <h3 className="text-[15px] font-semibold text-stone-950 dark:text-zinc-100">{t("comfyuiCloud.libraryTitle")}</h3>
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                <h3 className="text-[15px] font-semibold text-stone-950 dark:text-zinc-100">{t("comfyuiCloud.libraryTitle")}</h3>
+                                <div className="flex flex-wrap gap-2">
+                                    <Button icon={<Sparkles className="size-4" />} onClick={() => void workflowImport.installDemo()} loading={workflowImport.importing}>
+                                        {t("comfyuiLocal.pack.installDemo")}
+                                    </Button>
+                                    <Button icon={<Upload className="size-4" />} onClick={() => workflowImport.openPicker()} loading={workflowImport.importing}>
+                                        {t("comfyuiLocal.pack.import")}
+                                    </Button>
+                                </div>
+                            </div>
                             <p className="mt-2 text-[11px] leading-5 text-stone-500 dark:text-zinc-500">{t("comfyuiCloud.libraryHint")}</p>
                             {workflows.length ? (
                                 <ul className="mt-4 border-t border-black/[0.07] dark:border-white/[0.07]">

@@ -36,6 +36,17 @@ export default function CanvasPage() {
     // 首次使用的三步引导卡片，用户关闭后本地记住不再显示。
     const [showGuide, setShowGuide] = useState(() => localStorage.getItem(GUIDE_DISMISS_KEY) !== "1");
     const workflowImport = useComfyWorkflowImport();
+    // 当前环境可用的示例数量：本地一个通用示例，云端为分类示例（由运营方提供）。
+    const [demoCount, setDemoCount] = useState(0);
+    useEffect(() => {
+        let active = true;
+        void workflowImport.availableDemos().then((items) => {
+            if (active) setDemoCount(items.length);
+        });
+        return () => {
+            active = false;
+        };
+    }, [workflowImport]);
 
     /** 首页导入入口：没有可用环境时直接跳到「ComfyUI 云端」页配置。 */
     const requireEnvironment = useCallback(async () => {
@@ -240,6 +251,7 @@ export default function CanvasPage() {
                         </div>
 
                         <div className="flex min-w-0 flex-wrap items-center gap-2">
+                            {demoCount > 0 ? (
                             <button
                                 type="button"
                                 onClick={() => void handleInstallDemo()}
@@ -250,6 +262,7 @@ export default function CanvasPage() {
                                 <Sparkles className="size-3" strokeWidth={2} />
                                 {t("comfyuiLocal.pack.installDemo")}
                             </button>
+                        ) : null}
                             <button
                                 type="button"
                                 onClick={() => void handleImportPack()}

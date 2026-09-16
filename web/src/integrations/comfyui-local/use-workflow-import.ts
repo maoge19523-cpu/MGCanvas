@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { comfyNativeClient } from "./index";
 import { comfyWorkflowPackName, importComfyWorkflowPack, parseComfyWorkflowPack, type ComfyWorkflowPackEntry } from "./workflow-pack";
+import { demosForScope, type ComfyDemoWorkflow } from "./demo-workflows";
 import { listComfyWorkflowDefinitions } from "./workflow-library";
 
 /** 云端环境没有本地 profile，统一用固定标识绑定工作流。 */
@@ -82,34 +83,51 @@ export function useComfyWorkflowImport({ localEnvironmentId, onImported }: Comfy
         [finish, message, resolveEnvironmentId, t],
     );
 
-    /** 安装示例工作流；成功时返回导入的定义，便于调用方直接打开画布。 */
-    const installDemo = useCallback(async () => {
-        const environmentId = await resolveEnvironmentId();
-        if (!environmentId) {
-            message.warning(t("comfyuiLocal.pack.needsEnvironment"));
-            return null;
-        }
-        setImporting(true);
-        try {
-            const response = await fetch("/workflows/demo-text-to-image.json");
-            if (!response.ok) throw new Error(`读取示例工作流失败（HTTP ${response.status}）`);
-            const parsed = parseComfyWorkflowPack((await response.json()) as unknown);
-            if (parsed.length === 1 && !parsed[0].name) parsed[0].name = t("comfyuiLocal.pack.demoName");
-            const result = await importComfyWorkflowPack(environmentId, parsed);
-            if (result.imported.length) message.success(t("comfyuiLocal.pack.demoInstalled"));
-            for (const item of result.failed) message.warning(t("comfyuiLocal.pack.failed", { name: item.name, reason: item.reason }));
-            if (result.imported.length) await onImported?.();
-            return result.imported[0] ?? null;
-        } catch (error) {
-            message.error(error instanceof Error ? error.message : String(error));
-            return null;
-        } finally {
-            setImporting(false);
-        }
-    }, [message, onImported, resolveEnvironmentId, t]);
+    /** 安装指定的示例工作流；成功时返回导入的定义，便于调用方直接打开画布。 */
+    const installDemo = useCallback(
+        async (demo?: ComfyDemoWorkflow) => {
+            const environmentId = await resolveEnvironmentId();
+            if (!environmentId) {
+                message.warning(t("comfyuiLocal.pack.needsEnvironment"));
+                return null;
+            }
+            // 按当前环境挑选示例：本地一个通用示例，云端按用途分类。
+            const scope = environmentId === CLOUD_ENVIRONMENT_ID ? "cloud" : "local";
+            const target = demo ?? demosForScope(scope)[0];
+            if (!target) {
+                message.warning(t("comfyuiLocal.pack.noDemo"));
+                return null;
+            }
+            setImporting(true);
+            try {
+                const response = await fetch(`/workflows/${target.file}`);
+                if (!response.ok) throw new Error(`读取示例工作流失败（HTTP ${response.status}）`);
+                const parsed = parseComfyWorkflowPack((await response.json()) as unknown);
+                if (parsed.length === 1 && !parsed[0].name) parsed[0].name = target.name;
+                const result = await importComfyWorkflowPack(environmentId, parsed);
+                if (result.imported.length) message.success(t("comfyuiLocal.pack.demoInstalled"));
+                for (const item of result.failed) message.warning(t("comfyuiLocal.pack.failed", { name: item.name, reason: item.reason }));
+                if (result.imported.length) await onImported?.();
+                return result.imported[0] ?? null;
+            } catch (error) {
+                message.error(error instanceof Error ? error.message : String(error));
+                return null;
+            } finally {
+                setImporting(false);
+            }
+        },
+        [message, onImported, resolveEnvironmentId, t],
+    );
 
     /** 加载工作流列表（供调用方同步 UI）。 */
     const reload = useCallback(async () => listComfyWorkflowDefinitions(), []);
 
-    return { packInputRef, importing, openPicker, importFiles, installDemo, resolveEnvironmentId, reload };
+    /** 当前环境下可用的示例清单（供 UI 决定按钮或列表）。 */
+    const availableDemos = useCallback(async () => {
+        const environmentId = await resolveEnvironmentId();
+        if (!environmentId) return [];
+        return demosForScope(environmentId === CLOUD_ENVIRONMENT_ID ? "cloud" : "local");
+    }, [resolveEnvironmentId]);
+
+    return { packInputRef, importing, openPicker, importFiles, installDemo, availableDemos, resolveEnvironmentId, reload };
 }

@@ -7,7 +7,7 @@ import { useNavigate } from "react-router-dom";
 
 import { WorkspacePage } from "@/components/layout/workspace-page";
 import { comfyNativeClient, type ComfyEnvironmentDetection, type ComfyEnvironmentLogEntry, type ComfyEnvironmentProfile, type ComfyEnvironmentStatus, type ComfyWorkflowDefinition } from "@/integrations/comfyui-local";
-import { createComfyWorkflowCanvasNode } from "@/integrations/comfyui-local/canvas-node";
+import { openWorkflowInNewCanvas } from "@/integrations/comfyui-local/open-workflow-canvas";
 import { createComfyResultNodes } from "@/integrations/comfyui-local/result-nodes";
 import { ComfyWorkflowImportWizard } from "@/integrations/comfyui-local/workflow-import-wizard";
 import { comfyWorkflowPackName, importComfyWorkflowPack, parseComfyWorkflowPack, type ComfyWorkflowPackEntry } from "@/integrations/comfyui-local/workflow-pack";
@@ -315,22 +315,7 @@ export default function ComfyUiLocalPage() {
     };
 
     const addWorkflowToCanvas = (definition: ComfyWorkflowDefinition) => {
-        // 总是新建画布，避免把工作流节点混进用户正在使用的画布。
-        const projectId = createProject(definition.name);
-        const target = useCanvasStore.getState().openProject(projectId);
-        if (!target) return;
-        const viewport = target.viewport;
-        const position = {
-            x: (Math.max(900, window.innerWidth) / 2 - viewport.x) / viewport.k,
-            y: (Math.max(640, window.innerHeight) / 2 - viewport.y) / viewport.k,
-        };
-        const workflowNode = createComfyWorkflowCanvasNode(definition, position);
-        const resultGraph = createComfyResultNodes(workflowNode, definition);
-        updateProject(projectId, {
-            nodes: [...target.nodes, workflowNode, ...resultGraph.nodes],
-            connections: [...target.connections, ...resultGraph.connections],
-        });
-        navigate(`/canvas/${projectId}`);
+        navigate(`/canvas/${openWorkflowInNewCanvas(definition)}`);
     };
 
     const removeWorkflow = (definition: ComfyWorkflowDefinition) => {

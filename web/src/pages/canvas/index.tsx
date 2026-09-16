@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { CanvasDeleteProjectsDialog } from "@/components/canvas/canvas-delete-projects-dialog";
 import { CanvasProjectCard } from "@/components/canvas/canvas-project-card";
+import { openWorkflowInNewCanvas } from "@/integrations/comfyui-local/open-workflow-canvas";
 import { useComfyWorkflowImport } from "@/integrations/comfyui-local/use-workflow-import";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
 import { latestCanvasProjectId, sortCanvasProjectsByRecent } from "@/lib/canvas/canvas-home";
@@ -47,8 +48,10 @@ export default function CanvasPage() {
 
     const handleInstallDemo = useCallback(async () => {
         if (!(await requireEnvironment())) return;
-        await workflowImport.installDemo();
-    }, [requireEnvironment, workflowImport]);
+        const installed = await workflowImport.installDemo();
+        // 安装完成后直接打开带该工作流的新画布，省去让用户再去云端页手动添加。
+        if (installed) navigate(`/canvas/${openWorkflowInNewCanvas(installed)}`);
+    }, [navigate, requireEnvironment, workflowImport]);
 
     const handleImportPack = useCallback(async () => {
         if (!(await requireEnvironment())) return;

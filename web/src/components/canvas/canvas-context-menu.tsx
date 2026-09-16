@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { ClipboardCopy, ClipboardPaste, Plus, Redo2, Trash2, Undo2, Upload } from "lucide-react";
+import { ClipboardCopy, ClipboardPaste, Copy, Plus, Redo2, Scissors, Trash2, Undo2, Upload } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -55,6 +55,53 @@ export function CanvasNodeContextMenu({ menu, canUndo, canRedo, canCopyAll, onCl
         };
     }, [onClose]);
 
+    // 在输入框 / 文本域上右键时给出文本编辑菜单（剪切、复制、粘贴、全选），
+    // 而不是节点菜单，符合用户对右键的预期。
+    const [textTarget] = useState<HTMLInputElement | HTMLTextAreaElement | null>(() => {
+        const active = document.activeElement;
+        return active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement ? active : null;
+    });
+
+    /** 写入受控输入框：必须用原生 setter 再派发 input 事件，React 才能感知变化。 */
+    const writeValue = (target: HTMLInputElement | HTMLTextAreaElement, nextValue: string) => {
+        const prototype = target instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+        if (setter) setter.call(target, nextValue);
+        else target.value = nextValue;
+        target.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+
+    const replaceSelection = (text: string) => {
+        if (!textTarget) return;
+        const start = textTarget.selectionStart ?? textTarget.value.length;
+        const end = textTarget.selectionEnd ?? start;
+        writeValue(textTarget, textTarget.value.slice(0, start) + text + textTarget.value.slice(end));
+        const caret = start + text.length;
+        textTarget.setSelectionRange(caret, caret);
+    };
+
+    const copySelection = async () => {
+        if (!textTarget) return;
+        const start = textTarget.selectionStart ?? 0;
+        const end = textTarget.selectionEnd ?? 0;
+        const selected = textTarget.value.slice(start, end);
+        if (selected) await navigator.clipboard.writeText(selected).catch(() => undefined);
+    };
+
+    const pasteClipboard = async () => {
+        const text = await navigator.clipboard.readText().catch(() => "");
+        if (text) replaceSelection(text);
+    };
+
+    const cutSelection = async () => {
+        await copySelection();
+        replaceSelection("");
+    };
+
+    const selectAllText = () => {
+        textTarget?.select();
+    };
+
     const run = (action: () => void) => {
         action();
         onClose();
@@ -68,7 +115,15 @@ export function CanvasNodeContextMenu({ menu, canUndo, canRedo, canCopyAll, onCl
             style={{ ...position, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
             onPointerDown={(event) => event.stopPropagation()}
         >
-            {menu.type === "canvas" ? (
+            {textTarget ? (
+                <>
+                    <MenuButton icon={<Scissors className="size-4" />} label="剪切" shortcut="Ctrl+X" onClick={() => run(() => void cutSelection())} />
+                    <MenuButton icon={<Copy className="size-4" />} label="复制" shortcut="Ctrl+C" onClick={() => run(() => void copySelection())} />
+                    <MenuButton icon={<ClipboardPaste className="size-4" />} label="粘贴" shortcut="Ctrl+V" onClick={() => run(() => void pasteClipboard())} />
+                    <MenuDivider />
+                    <MenuButton icon={<ClipboardCopy className="size-4" />} label="全选" shortcut="Ctrl+A" onClick={() => run(selectAllText)} />
+                </>
+            ) : menu.type === "canvas" ? (
                 <>
                     <MenuButton icon={<Upload className="size-4" />} label={t("canvas.toolbar.upload")} onClick={() => run(onUpload)} />
                     <MenuButton icon={<Plus className="size-4" />} label={t("canvas.addNode", { defaultValue: "添加节点" })} onClick={() => run(onAddNode)} />

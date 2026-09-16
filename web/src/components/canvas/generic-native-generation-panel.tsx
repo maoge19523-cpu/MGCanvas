@@ -242,6 +242,8 @@ export function GenericNativeGenerationPanel({
     const connectedSummary = referenceSummary(referenceCounts);
     const automaticMode = nativeAutomaticMode(kind, operation.id, referenceCounts);
     const progress = node.metadata?.providerTask?.progress;
+    // 运行耗时：由任务的提交与完成时间计算。
+    const elapsed = formatGenericTaskDuration(node.metadata?.providerTask?.submittedAt, node.metadata?.providerTask?.completedAt);
     const pricingContext = useMemo(() => ({ imageReferences: referenceCounts.image, videoReferences: referenceCounts.video, audioReferences: referenceCounts.audio }), [referenceCounts.audio, referenceCounts.image, referenceCounts.video]);
     const basePriceQuote = useMemo(() => quoteGenericPrice(pricingCatalog, operation.id, effectivePayload, pricingContext), [effectivePayload, operation.id, pricingCatalog, pricingContext]);
     const canvasBatchCount = countParameter?.path === GENERIC_NATIVE_CANVAS_BATCH_COUNT_PATH ? Number(readGenericNativeParameter(effectivePayload, countParameter.path)) || 1 : 1;
@@ -286,6 +288,11 @@ export function GenericNativeGenerationPanel({
                     <span className="min-w-0 flex-1 truncate" title={referenceLimitNotice || connectedSummary || undefined} style={referenceLimitNotice ? { color: "#fbbf24" } : undefined}>
                         {referenceLimitNotice || connectedSummary || "未连接素材"}
                     </span>
+                    {elapsed ? (
+                        <span className="shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] tabular-nums" style={{ borderColor: theme.toolbar.border, color: theme.node.muted }}>
+                            用时 {elapsed}
+                        </span>
+                    ) : null}
                     {taskId ? <TaskStatus taskIds={taskIds} taskPhase={taskPhase} progress={progress} theme={theme} /> : null}
                 </div>
             ) : (
@@ -296,9 +303,14 @@ export function GenericNativeGenerationPanel({
                     <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-semibold">{nativeKindTitle(kind)}创作</div>
                         <div className="mt-0.5 truncate text-[10px]" style={{ color: theme.node.faint }}>
-                            {automaticMode ? [automaticMode, connectedSummary].filter(Boolean).join(" · ") : connectedSummary || operation.description}
+                            {[automaticMode ? automaticMode : null, connectedSummary || (automaticMode ? null : operation.description), elapsed ? `用时 ${elapsed}` : null].filter(Boolean).join(" · ")}
                         </div>
                     </div>
+                    {elapsed ? (
+                        <span className="shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] tabular-nums" style={{ borderColor: theme.toolbar.border, color: theme.node.muted }}>
+                            用时 {elapsed}
+                        </span>
+                    ) : null}
                     {taskId ? <TaskStatus taskIds={taskIds} taskPhase={taskPhase} progress={progress} theme={theme} /> : null}
                 </div>
             )}
@@ -850,6 +862,18 @@ function scaleCanvasBatchQuote(quote: GenericPriceQuote, count: number): Generic
 export function scaleCanvasBatchQuoteFromPayload(quote: GenericPriceQuote, payload: Record<string, unknown>): GenericPriceQuote {
     const count = Number(readGenericNativeParameter(payload, GENERIC_NATIVE_CANVAS_BATCH_COUNT_PATH)) || 1;
     return scaleCanvasBatchQuote(quote, count);
+}
+
+/** 任务耗时：不足一分钟只显示秒；缺少任一时间时返回空字符串。 */
+function formatGenericTaskDuration(submittedAt?: string, completedAt?: string) {
+    if (!submittedAt || !completedAt) return "";
+    const start = Date.parse(submittedAt);
+    const end = Date.parse(completedAt);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return "";
+    const total = Math.max(1, Math.round((end - start) / 1000));
+    const minutes = Math.floor(total / 60);
+    const seconds = total % 60;
+    return minutes ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`;
 }
 
 function splitPriceForPill(formatted: string) {

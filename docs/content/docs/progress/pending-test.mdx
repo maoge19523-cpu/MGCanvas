@@ -91,3 +91,5 @@ The Chinese version contains the complete item-by-item acceptance checklist.
 - 运行耗时显示位置调整到节点头部状态徽章旁，更醒目。
 - 生成节点不再预选模型：未主动选择时显示「请选择模型」，费用预估改为「选择模型后显示预估费用」，且必须先选模型才能运行。
 - 修复切换到非 Seedream 模型后无法运行：渠道模型不走参数规范化，残留的 metadata.width/height/output_format 会触发「仅适用于 Seedream 模型」校验而禁用运行按钮；现在切换与加载时都会自动清理。
+- 在输入框 / 文本域上右键时显示文本编辑菜单（剪切、复制、粘贴、全选），此前只有节点菜单、无法粘贴。
+- 原生生成节点（文生图等）运行完成后在头部显示用时。

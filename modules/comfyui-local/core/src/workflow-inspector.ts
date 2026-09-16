@@ -202,6 +202,20 @@ function inspectInputs(nodeId: string,
   });
 }
 
+/** 用户最常调整的数值型字段：直接暴露到画布，便于设置尺寸、数量与种子。 */
+const RECOMMENDED_NUMERIC_FIELDS = new Set([
+  "width",
+  "height",
+  "batch_size",
+  "seed",
+  "noise_seed",
+  "steps",
+  "cfg",
+  "denoise",
+  "length",
+  "fps",
+]);
+
 function isRecommendedCanvasInput(
   classType: string,
   field: string,
@@ -211,6 +225,8 @@ function isRecommendedCanvasInput(
   if (options.forceInput || options.defaultInput) return false;
   if (valueType === "image" || valueType === "video" || valueType === "audio")
     return true;
+  // 尺寸、生成数量、随机种子等数值参数也要能被用户设置，否则示例工作流只能改提示词。
+  if (RECOMMENDED_NUMERIC_FIELDS.has(field)) return true;
   if (valueType !== "string") return false;
   const signal =
     `${classType} ${field} ${typeof options.label === "string" ? options.label : ""}`.toLowerCase();

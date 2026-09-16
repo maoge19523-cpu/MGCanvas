@@ -34,7 +34,7 @@ export type ImageQuickToolsConfig = {
     showLabels: boolean;
 };
 
-export const IMAGE_QUICK_TOOLS_STORAGE_KEY = "mgcanvas:image-quick-tools-v6";
+export const IMAGE_QUICK_TOOLS_STORAGE_KEY = "mgcanvas:image-quick-tools-v7";
 
 const defaultBaseToolIds: ImageQuickToolId[] = ["info", "delete", "saveAsset", "download", "edit"];
 
@@ -49,7 +49,7 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
     },
     {
         id: "reversePrompt",
-        defaultVisible: true,
+        defaultVisible: false,
         label: () => i18n.t("canvas.imageTools.reversePrompt"),
         title: () => i18n.t("canvas.imageTools.reversePromptTitle"),
         icon: () => <FileText className="size-4" />,
@@ -57,7 +57,7 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
     },
     {
         id: "replace",
-        defaultVisible: true,
+        defaultVisible: false,
         label: () => i18n.t("canvas.imageTools.replace"),
         title: () => i18n.t("canvas.imageTools.replace"),
         icon: () => <Upload className="size-4" />,
@@ -74,7 +74,7 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
     },
     {
         id: "crop",
-        defaultVisible: true,
+        defaultVisible: false,
         label: () => i18n.t("canvas.imageTools.crop"),
         title: () => i18n.t("canvas.imageTools.cropTitle"),
         icon: () => <Scissors className="size-4" />,
@@ -82,7 +82,7 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
     },
     {
         id: "split",
-        defaultVisible: true,
+        defaultVisible: false,
         label: () => i18n.t("canvas.imageTools.split"),
         title: () => i18n.t("canvas.imageTools.splitTitle"),
         icon: () => <Grid2x2 className="size-4" />,
@@ -90,7 +90,7 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
     },
     {
         id: "upscale",
-        defaultVisible: true,
+        defaultVisible: false,
         label: () => i18n.t("canvas.imageTools.upscale"),
         title: () => i18n.t("canvas.imageTools.upscaleTitle"),
         icon: () => <ZoomIn className="size-4" />,

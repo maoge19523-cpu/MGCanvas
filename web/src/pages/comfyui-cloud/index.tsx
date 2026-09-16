@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { App, Button, Input, Tag } from "antd";
-import { Cloud, Link2, LoaderCircle, Play, RefreshCw, Sparkles, Square, Trash2, Upload } from "lucide-react";
+import { AlertCircle, Cloud, Link2, Play, RefreshCw, Sparkles, Square, Trash2, Upload } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
@@ -204,7 +204,7 @@ export default function ComfyUiCloudPage() {
                                 </ul>
                             ) : (
                                 <div className="mt-4 flex min-h-[140px] items-center gap-3 border-y border-black/[0.07] text-[12px] text-stone-400 dark:border-white/[0.07] dark:text-zinc-600">
-                                    <LoaderCircle className="size-4 animate-spin" />
+                                    <AlertCircle className="size-4 shrink-0 text-amber-500" strokeWidth={2} />
                                     {t("comfyuiCloud.emptyLibraryCloud")}
                                 </div>
                             )}

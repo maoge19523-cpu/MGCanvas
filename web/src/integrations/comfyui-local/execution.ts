@@ -6,6 +6,7 @@ import { CanvasNodeType, type CanvasNodeData, type CanvasNodeMetadata } from "@/
 import type { CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
 import type { CanvasNodeContext, CanvasNodeResource } from "@/types/canvas-plugin";
 
+import { formatComfyExecutionError } from "./execution-error";
 import { comfyNativeClient, materializeComfyWorkflow, type ComfyExecutionOutput, type ComfyWorkflowDefinition } from "./index";
 import { getComfyWorkflowDefinition } from "./workflow-library";
 import { ensureComfyResultNodeOps, readComfyResultBinding } from "./result-nodes";

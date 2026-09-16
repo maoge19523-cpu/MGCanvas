@@ -49,3 +49,11 @@ The Chinese version contains the complete item-by-item acceptance checklist.
 
 - Canvas toolbar: hovering any tool icon should show a rotating and breathing rainbow ring while the icon stays legible.
 - Top-of-window icons (download folder, language, back, Agent): tooltips should pop downward and stay fully visible instead of being clipped by the window edge.
+
+## 本地示例工作流与错误提示
+
+- 本地内置示例工作流已更换为 Z-Image Turbo 基础文生图（与本地 ComfyUI 默认工作流一致），需重新点一次「安装示例工作流」覆盖旧示例。
+- 运行工作流报「环境与工作流关联环境不一致」的问题已修复，更换过 ComfyUI 目录的工作流可直接运行。
+- 模型不存在时（HTTP 400）错误提示已中文化：会指出哪个节点缺少哪个模型，并列出环境里可用的模型。
+- 本地与云端的「刷新状态」现在会报告真实结果：本地提示 ComfyUI 是否启动成功（含地址），云端提示连接是否正常。
+- 本地工作流「添加到画布」需在本机 ComfyUI 启动成功后才可点击。

@@ -1,6 +1,6 @@
 import { nanoid } from "nanoid";
 
-import { buildComfyWorkflowDefinition, comfyNativeClient, inspectComfyWorkflow, parseComfyApiWorkflow, type ComfyWorkflowDefinition } from "./index";
+import { buildComfyWorkflowDefinition, comfyNativeClient, inspectComfyWorkflow, parseComfyApiWorkflow, selectComfyResultOutputs, type ComfyWorkflowDefinition } from "./index";
 import { saveComfyWorkflowDefinition } from "./workflow-library";
 import { defaultComfyPortIds, smartDefaultComfyInputIds } from "./workflow-selection";
 
@@ -55,11 +55,9 @@ export async function importComfyWorkflowPack(environmentId: string, entries: Co
         try {
             const workflow = parseComfyApiWorkflow(entry.workflow);
             const inspection = inspectComfyWorkflow(workflow, objectInfo);
-            // 只保留可视媒体输出：SaveImage 之类的节点还会暴露 image_urls 等 json 输出，
-            // 对普通用户没有意义，批量导入时直接跳过。
-            const outputs = inspection.outputs.filter(
-                (output) => output.exposable && output.outputNode && output.resourceType !== "json" && output.resourceType !== "text",
-            );
+            // 只保留可视媒体输出：跳过 image_urls 这类 json 输出，
+            // 并优先真正的落盘节点，忽略采样曲线之类的调试输出。
+            const outputs = selectComfyResultOutputs(inspection.outputs);
             if (!outputs.length) throw new Error("没有可作为输出的节点");
             const outputIds = outputs.map((output) => output.id);
             const inputIds = new Set(smartDefaultComfyInputIds(inspection.inputs));

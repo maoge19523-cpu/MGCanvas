@@ -124,6 +124,7 @@ function ComfyWorkflowNodeContent({ ctx }: { ctx: CanvasNodeContext }) {
     const visibleInputs = snapshot.inputs.slice(0, 4);
     const outputTypes = [...new Set(snapshot.outputs.map((output) => output.resourceType))];
     const runPhase = readComfyRunPhase(ctx.node.metadata);
+    const elapsed = formatComfyRunDuration(ctx.node.metadata);
     const running = runPhase === "preparing" || runPhase === "queued" || runPhase === "running";
     return (
         <div className="flex h-full min-h-0 flex-col overflow-hidden px-5 py-4">
@@ -174,6 +175,7 @@ function ComfyWorkflowNodeContent({ ctx }: { ctx: CanvasNodeContext }) {
                 <span>{t("comfyuiLocal.canvasNode.clickToEdit")}</span>
                 <span className="tabular-nums">
                     {snapshot.inputs.length} {t("comfyuiLocal.canvasNode.inputs")} · {snapshot.outputs.length} {t("comfyuiLocal.canvasNode.outputs")}
+                    {elapsed ? ` · ${t("comfyuiLocal.canvasNode.elapsed", { duration: elapsed })}` : ""}
                 </span>
             </div>
         </div>
@@ -652,6 +654,20 @@ function readComfySnapshot(metadata?: CanvasNodeMetadata): ComfyCanvasNodeSnapsh
     if (!value || typeof value !== "object") return null;
     const snapshot = value as Partial<ComfyCanvasNodeSnapshot>;
     return snapshot.workflowId && snapshot.environmentId && Array.isArray(snapshot.inputs) && Array.isArray(snapshot.outputs) && snapshot.values ? (snapshot as ComfyCanvasNodeSnapshot) : null;
+}
+
+/** 运行耗时：不足一分钟只显示秒，未完成时返回空字符串。 */
+function formatComfyRunDuration(metadata?: CanvasNodeMetadata) {
+    const value = metadata?.comfyuiRun;
+    if (!value || typeof value !== "object") return "";
+    const run = value as { startedAt?: unknown; completedAt?: unknown };
+    const startedAt = typeof run.startedAt === "number" ? run.startedAt : 0;
+    const completedAt = typeof run.completedAt === "number" ? run.completedAt : 0;
+    if (!startedAt || !completedAt || completedAt < startedAt) return "";
+    const total = Math.max(1, Math.round((completedAt - startedAt) / 1000));
+    const minutes = Math.floor(total / 60);
+    const seconds = total % 60;
+    return minutes ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`;
 }
 
 function readComfyRunPhase(metadata?: CanvasNodeMetadata) {

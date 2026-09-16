@@ -1094,6 +1094,7 @@ export default {
             port: "端口",
             connectMedia: "连接或全局引用 {{type}} 素材",
             uploadMedia: "上传本地文件",
+            elapsed: "用时 {{duration}}",
             clearMedia: "清除素材",
             mediaUploaded: "已上传 {{name}}",
             noMedia: "尚未选择{{type}}素材",

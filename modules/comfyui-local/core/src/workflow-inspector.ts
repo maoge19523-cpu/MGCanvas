@@ -203,6 +203,41 @@ function inspectInputs(nodeId: string,
 /** 参数占位节点：值由用户在画布上填写。 */
 const PARAMETER_HOLDER_CLASSES = new Set(["PrimitiveFloat", "PrimitiveInt", "PrimitiveNumber", "PrimitiveString", "PrimitiveStringMultiline", "Float", "Int"]);
 
+/**
+ * 真正落盘的输出节点。
+ * 一些调试 / 可视化节点（例如采样曲线图 SigmasGraph）也会被标记为输出节点，
+ * 但它们不是用户想要的结果，存在落盘节点时应忽略它们。
+ */
+const SAVE_OUTPUT_CLASSES = new Set([
+  "SaveImage",
+  "SaveAnimatedWEBP",
+  "SaveAnimatedPNG",
+  "SaveVideo",
+  "SaveWEBM",
+  "SaveAudio",
+  "SaveAudioMP3",
+  "SaveAudioOpus",
+  "VHS_VideoCombine",
+  "VHS_SaveVideo",
+  "PreviewImage",
+]);
+
+/**
+ * 挑选作为画布结果节点的输出：优先真正的落盘节点，
+ * 没有落盘节点时才退回到其余输出。
+ */
+export function selectComfyResultOutputs(outputs: ComfyInspectedOutput[]) {
+  const usable = outputs.filter(
+    (output) =>
+      output.exposable &&
+      output.outputNode &&
+      output.resourceType !== "json" &&
+      output.resourceType !== "text",
+  );
+  const saved = usable.filter((output) => SAVE_OUTPUT_CLASSES.has(output.classType));
+  return saved.length ? saved : usable;
+}
+
 /** 画面比例只保留竖屏与宽屏两档，避免新手在 8 个比例里挑花眼。 */
 const ASPECT_RATIO_OPTIONS = ["9:16 (Portrait Widescreen)", "16:9 (Widescreen)"];
 
@@ -302,7 +337,7 @@ function inspectOutputs(
   }
 
   return outputTypes.map((comfyType, outputIndex) => {
-    const resourceType = mapOutputResourceType(comfyType);
+    const resourceType = mapOutputResourceType(comfyType, node.class_type);
     return {
       id: `${nodeId}:${outputIndex}`,
       nodeId,
@@ -399,8 +434,15 @@ function looksLikeMediaLoader(
   );
 }
 
-function mapOutputResourceType(comfyType: string): ComfyOutputResourceType {
+function mapOutputResourceType(
+  comfyType: string,
+  classType?: string,
+): ComfyOutputResourceType {
   const value = comfyType.toUpperCase();
+  // VHS_VideoCombine 的输出类型名为 VHS_FILENAMES，但内容其实是视频文件；
+  // 若不特判会被当成普通文件，前端拿不到可播放的视频地址。
+  if (classType && /video|combine/i.test(classType) && value.includes("FILENAME"))
+    return "video";
   if (value.includes("IMAGE")) return "image";
   if (value.includes("VIDEO") || value.includes("GIF")) return "video";
   if (value.includes("AUDIO")) return "audio";

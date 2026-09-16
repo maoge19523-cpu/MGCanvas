@@ -309,6 +309,10 @@ function ComfyWorkflowParameters({ ctx, snapshot, onChangeWorkflow, onClose }: {
     const removeObjectReference = (referenceId: string) => {
         ctx.updateMetadata({ objectReferences: (ctx.node.metadata?.objectReferences || []).filter((reference) => reference.id !== referenceId) });
     };
+    // 随机种子：默认每次生成随机结果，关闭后使用固定值，避免用户误调导致结果变差。
+    const seedField = snapshot.inputs.find((input) => input.field === "seed" || input.field === "noise_seed");
+    const seedRandom = snapshot.values.__seedRandom !== "0";
+    const visibleInputs = snapshot.inputs.filter((input) => (seedRandom ? input.field !== "seed" && input.field !== "noise_seed" : true));
     return (
         <div>
             <div className="flex items-start justify-between gap-4 border-b pb-4" style={{ borderColor: ctx.theme.toolbar.border }}>
@@ -325,8 +329,17 @@ function ComfyWorkflowParameters({ ctx, snapshot, onChangeWorkflow, onClose }: {
                     </Button>
                 </div>
             </div>
+            {seedField ? (
+                <div className="flex items-center justify-between gap-3 border-b py-3" style={{ borderColor: ctx.theme.node.stroke }}>
+                    <span className="min-w-0">
+                        <span className="block text-[12px] font-medium">{t("comfyuiLocal.canvasNode.randomSeed")}</span>
+                        <span className="mt-0.5 block text-[10px] opacity-50">{t("comfyuiLocal.canvasNode.randomSeedHint")}</span>
+                    </span>
+                    <Switch size="small" checked={seedRandom} onChange={(checked) => updateValue("__seedRandom", checked ? "1" : "0")} />
+                </div>
+            ) : null}
             <div className="thin-scrollbar grid max-h-[430px] gap-4 overflow-y-auto py-5 pr-1 sm:grid-cols-2">
-                {snapshot.inputs.map((input) => {
+                {visibleInputs.map((input) => {
                     const allowedKinds = comfyInputObjectKinds(input);
                     return (
                         <ParameterControl

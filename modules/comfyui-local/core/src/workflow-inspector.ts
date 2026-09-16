@@ -202,16 +202,14 @@ function inspectInputs(nodeId: string,
   });
 }
 
-/** 用户最常调整的数值型字段：直接暴露到画布，便于设置尺寸、数量与种子。 */
+/**
+ * 只暴露尺寸、数量与帧率这类「调了不会变差」的参数。
+ * 采样步数 / 引导强度 / 重绘幅度等专业参数刻意不暴露，避免用户误调导致结果变差。
+ */
 const RECOMMENDED_NUMERIC_FIELDS = new Set([
   "width",
   "height",
   "batch_size",
-  "seed",
-  "noise_seed",
-  "steps",
-  "cfg",
-  "denoise",
   "length",
   "fps",
 ]);

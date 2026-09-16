@@ -137,17 +137,7 @@ export function CanvasTopBar({
                     <CanvasWalletBalance />
                     <UserStatusActions variant="canvas" onOpenShortcuts={() => setShortcutsOpen(true)} />
                     <span className="h-4 w-px opacity-60" style={{ background: theme.toolbar.border }} />
-                    <Tooltip title="Agent" placement="bottom">
-                        <button
-                            type="button"
-                            className="grid size-8 place-items-center rounded-[10px] transition-colors duration-150 hover:bg-black/5 dark:hover:bg-white/10"
-                            style={{ background: agentOpen ? theme.toolbar.activeBg : "transparent", color: theme.node.text }}
-                            onClick={onToggleAgent}
-                            aria-label="Agent"
-                        >
-                            <Bot className="size-4" />
-                        </button>
-                    </Tooltip>
+
                 </div>
             </div>
             <Modal title={t("canvas.shortcuts")} open={shortcutsOpen} onCancel={() => setShortcutsOpen(false)} footer={null} centered>

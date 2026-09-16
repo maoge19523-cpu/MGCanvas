@@ -212,6 +212,10 @@ const RECOMMENDED_NUMERIC_FIELDS = new Set([
   "batch_size",
   "length",
   "fps",
+  // seed 需要保留在参数列表中，画布上才能绑定「每次生成随机结果」开关；
+  // 随机模式下它的输入框会被隐藏，用户不会看到难懂的数字。
+  "seed",
+  "noise_seed",
 ]);
 
 function isRecommendedCanvasInput(

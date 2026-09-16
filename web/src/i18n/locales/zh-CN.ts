@@ -934,6 +934,7 @@ export default {
             noDemo: "当前环境还没有可用的示例工作流",
             needsEnvironment: "请先在「ComfyUI 云端」页填入云端地址并连接，或在本机配置 ComfyUI 环境",
             goConnectCloud: "还没有可用的 ComfyUI 环境，正在打开「ComfyUI 云端」页，填入地址并连接后即可导入",            demoName: "示例：基础文生图",
+            demoUpgraded: "内置示例工作流已更新为 Z-Image Turbo 版本",
             demoInstalled: "示例工作流已安装，可直接添加到画布体验",
             imported: "已导入 {{count}} 个工作流",
             failed: "{{name}} 导入失败：{{reason}}",

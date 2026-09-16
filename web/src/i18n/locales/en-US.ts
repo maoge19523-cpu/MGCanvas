@@ -955,6 +955,7 @@ export default {
             noDemo: "No demo workflow is available for the current environment",
             needsEnvironment: "Connect a cloud ComfyUI on the ComfyUI Cloud page first, or set up a local ComfyUI environment",
             goConnectCloud: "No ComfyUI environment yet — opening the ComfyUI Cloud page. Paste an endpoint and connect, then import again.",            demoName: "Demo: basic text-to-image",
+            demoUpgraded: "The built-in demo workflow was upgraded to the Z-Image Turbo version",
             demoInstalled: "Demo workflow installed — add it to the canvas to try it out",
             imported: "Imported {{count}} workflows",
             failed: "{{name}} failed to import: {{reason}}",

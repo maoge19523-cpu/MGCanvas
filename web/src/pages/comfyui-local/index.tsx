@@ -7,6 +7,7 @@ import { useNavigate } from "react-router-dom";
 
 import { WorkspacePage } from "@/components/layout/workspace-page";
 import { comfyNativeClient, type ComfyEnvironmentDetection, type ComfyEnvironmentLogEntry, type ComfyEnvironmentProfile, type ComfyEnvironmentStatus, type ComfyWorkflowDefinition } from "@/integrations/comfyui-local";
+import { upgradeLegacyDemoWorkflows } from "@/integrations/comfyui-local/demo-sync";
 import { openWorkflowInNewCanvas } from "@/integrations/comfyui-local/open-workflow-canvas";
 import { createComfyResultNodes } from "@/integrations/comfyui-local/result-nodes";
 import { ComfyWorkflowImportWizard } from "@/integrations/comfyui-local/workflow-import-wizard";
@@ -118,6 +119,21 @@ export default function ComfyUiLocalPage() {
             disposed = true;
         };
     }, [message]);
+
+    // 老版本随包分发的示例引用了本机不存在的模型，首次在本机环境就绪时就地升级，
+    // 这样库里和画布上已引用的节点都会换成当前示例。
+    const legacyDemoChecked = useRef(false);
+    useEffect(() => {
+        if (legacyDemoChecked.current || !desktop || !profile || status.phase !== "running") return;
+        legacyDemoChecked.current = true;
+        void upgradeLegacyDemoWorkflows("local", profile.id)
+            .then(async (count) => {
+                if (!count) return;
+                setWorkflows(await listComfyWorkflowDefinitions());
+                message.success(t("comfyuiLocal.pack.demoUpgraded"));
+            })
+            .catch(() => undefined);
+    }, [desktop, message, profile, status.phase, t]);
 
     const running = status.phase === "running";
     const busy = status.phase === "starting" || action !== null;

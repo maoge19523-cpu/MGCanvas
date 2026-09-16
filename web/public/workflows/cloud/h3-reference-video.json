@@ -1,425 +1,425 @@
 {
-  "1": {
-    "inputs": {
-      "scheduler": "beta",
-      "steps": 8,
-      "denoise": 1,
-      "model": [
-        "70",
-        0
-      ]
-    },
-    "class_type": "BasicScheduler",
-    "_meta": {
-      "title": "基础调度器"
-    }
-  },
-  "2": {
-    "inputs": {
-      "model": [
-        "70",
-        0
-      ],
-      "conditioning": [
-        "93",
-        0
-      ]
-    },
-    "class_type": "BasicGuider",
-    "_meta": {
-      "title": "基础引导"
-    }
-  },
-  "3": {
-    "inputs": {
-      "noise_seed": 297996211854275
-    },
-    "class_type": "RandomNoise",
-    "_meta": {
-      "title": "随机噪波"
-    }
-  },
-  "6": {
-    "inputs": {
-      "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
-      "type": "minimax",
-      "device": "default"
-    },
-    "class_type": "CLIPLoader",
-    "_meta": {
-      "title": "CLIP加载器"
-    }
-  },
-  "8": {
-    "inputs": {
-      "vae_name": "minimax_h3_video_vae_fp16.safetensors"
-    },
-    "class_type": "VAELoader",
-    "_meta": {
-      "title": "VAE加载器"
-    }
-  },
-  "10": {
-    "inputs": {
-      "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
-    },
-    "class_type": "VAELoader",
-    "_meta": {
-      "title": "VAE加载器"
-    }
-  },
-  "12": {
-    "inputs": {
-      "unet_name": "minimax_h3_fl2va_int8_convrot.safetensors",
-      "weight_dtype": "default"
-    },
-    "class_type": "UNETLoader",
-    "_meta": {
-      "title": "UNET加载器"
-    }
-  },
-  "20": {
-    "inputs": {
-      "value": 15
-    },
-    "class_type": "PrimitiveFloat",
-    "_meta": {
-      "title": "视频时长（秒）"
-    }
-  },
-  "26": {
-    "inputs": {
-      "sampler_name": "euler"
-    },
-    "class_type": "KSamplerSelect",
-    "_meta": {
-      "title": "K采样器选择"
-    }
-  },
-  "29": {
-    "inputs": {
-      "noise": [
-        "3",
-        0
-      ],
-      "guider": [
-        "2",
-        0
-      ],
-      "sampler": [
-        "26",
-        0
-      ],
-      "sigmas": [
-        "1",
-        0
-      ],
-      "latent_image": [
-        "93",
-        1
-      ]
-    },
-    "class_type": "SamplerCustomAdvanced",
-    "_meta": {
-      "title": "自定义采样器(高级)"
-    }
-  },
-  "33": {
-    "inputs": {
-      "expression": "max(5, round(a * 24)) + (5 - (max(5, round(a * 24)) % 17)) % 17",
-      "values.a": [
-        "20",
-        0
-      ]
-    },
-    "class_type": "ComfyMathExpression",
-    "_meta": {
-      "title": "Math Expression"
-    }
-  },
-  "36": {
-    "inputs": {
-      "samples": [
-        "29",
-        0
-      ],
-      "vae": [
-        "10",
-        0
-      ]
-    },
-    "class_type": "VAEDecodeAudio",
-    "_meta": {
-      "title": "VAE解码_Audio"
-    }
-  },
-  "37": {
-    "inputs": {
-      "samples": [
-        "29",
-        0
-      ],
-      "vae": [
-        "8",
-        0
-      ]
-    },
-    "class_type": "VAEDecode",
-    "_meta": {
-      "title": "VAE解码"
-    }
-  },
-  "38": {
-    "inputs": {
-      "frame_rate": 24,
-      "loop_count": 0,
-      "filename_prefix": "AnimateDiff",
-      "format": "video/h264-mp4",
-      "pix_fmt": "yuv420p",
-      "crf": 19,
-      "save_metadata": true,
-      "trim_to_audio": false,
-      "pingpong": false,
-      "save_output": true,
-      "no_preview": false,
-      "images": [
-        "37",
-        0
-      ],
-      "audio": [
-        "36",
-        0
-      ]
-    },
-    "class_type": "VHS_VideoCombine",
-    "_meta": {
-      "title": "合并为视频"
-    }
-  },
-  "43": {
-    "inputs": {
-      "text": "subject_definitions:\n<Subject 1> is the young woman in <Picture 1>, Ruan Qinghe, with double buns pinned by a silver hair clip, a cream-white knitted cardigan over a floral-strap blue slip dress, white ankle socks and white platform sneakers.\n<Subject 2> is the young man in <Picture 2>, Lu Jichuan, with fluffy short black hair, a light-grey hooded zip-up sweatshirt, black wide-leg trousers, white canvas shoes, and a thin black bracelet on his wrist.\n<Subject 3> is the flower-shop interior suggested by <Picture 3>, featuring a wooden shelf of white lisianthus in glass vases and ceramic pots, a glass door beaded with rain, a wooden counter, a water bucket, and warm amber lighting.\n\nsummary:\n[reference generation] The target video shows <Subject 1> arranging white lisianthus inside <Subject 3> when <Subject 2> enters at his usual 11:30 visit. After the door chime rings, the two exchange four short lines of dialogue across five shots — she answers without raising her head, he barely answers, and the scene ends on her pulling back a scratched hand. The images guide character appearance and the shop environment without serving as concrete frame anchors.\n\nretention_analysis:\n<Subject 1> (appears in [Shot 1], [Shot 2], [Shot 4], [Shot 5]): fully_preserved - the double buns with silver hair clip, cream-white knitted cardigan, floral blue slip dress, white socks and platform sneakers are retained.\n<Subject 2> (appears in [Shot 1], [Shot 3], [Shot 4]): fully_preserved - the fluffy black hair, light-grey hooded zip-up sweatshirt, black wide-leg trousers, white canvas shoes and black bracelet are retained.\n<Subject 3> (appears in [Shot 1], [Shot 3], [Shot 4]): fully_preserved - the wooden shelf of white lisianthus, glass vases, ceramic pots, water bucket, rain-beaded glass door and warm amber lighting are retained.\n\ndetailed_description:\nThe target video is in a warm, cinematic live-action style with a rain-dampened, quiet mood, soft amber interior lighting, and a slightly shallow depth of field.\n[Shot 1] A medium-wide shot establishes <Subject 3>, the flower shop: a wooden shelf of white lisianthus in glass vases and ceramic pots, a water bucket on the floor, and a glass door still beaded with fine raindrops. <Subject 1>, the young woman with double buns, a silver hair clip and a cream-white knitted cardigan, gathers loose white lisianthus stems into the bucket with her head slightly bowed. The camera holds a static shot with small amplitude as the door chime rings once, and <Subject 2>, the young man in the light-grey hooded sweatshirt and black wide-leg trousers, steps in from the doorway, water droplets catching the amber light on the glass behind him.\n[Shot 2] At 00:03.500, the camera cuts to a medium close-up of <Subject 1> (S1) facing slightly away from the counter, still tidying the flower stems without lifting her head. The tips of her ears flush pink as she (S1) opens her mouth and speaks in a soft, gentle young female voice with a light lilt, <d>[Chinese] 今天也是老规矩？</d> She closes her lips and keeps her eyes on the flowers, the faint blush spreading down to her cheeks.\n[Shot 3] At 00:06.500, the camera cuts to a medium shot of <Subject 2> (S2) standing at the wooden counter, his fingertips lightly brushing the flowers she just arranged, the light-grey sweatshirt and black bracelet clearly visible. He (S2) says in a low, calm young male voice, brief and understated, <d>[Chinese] 嗯。</d> as his mouth opens and closes in one short movement, his gaze resting softly on the blossoms.\n[Shot 4] At 00:09.000, the camera cuts to a medium shot of both subjects across the counter. <Subject 1> quickly wraps one white lisianthus in plain paper and holds it out toward <Subject 2>, but he does not take it; his eyes fall on her reddened knuckles. <Subject 2> (S2) asks with a lowered tone, <d>[Chinese] 你手怎么了？</d> while <Subject 1> keeps the wrapped flower extended, her fingers hesitating mid-air.\n[Shot 5] At 00:12.000, the camera cuts to a close-up of <Subject 1> (S1), the blush still warm on her face. She pulls her hand back and tucks it under the edge of the bucket, avoiding his gaze, and says in the same soft voice with a quiet, resigned cadence, <d>[Chinese] 扎的，习惯了。</d> Her mouth closes into a small faint smile as the shot holds on her lowered lashes until the end of the video.\n\noverall_soundscape:\nThe door chime rings once as he enters. Rainwater drips slowly from the glass door, soft flower stems rustle as they are gathered and wrapped in paper, and a quiet street ambience continues underneath with distant wet traffic.\n\nnon_diegetic_music:\nA sparse solo-piano motif at a slow tempo with a music-box-like timbre, gradually joined by a single sustained low string that softens during the final exchange and fades out at the end.\n"
-    },
-    "class_type": "Text",
-    "_meta": {
-      "title": "文本"
-    }
-  },
-  "44": {
-    "inputs": {
-      "aspect_ratio": "16:9 (Widescreen)",
-      "megapixels": 0.9,
-      "multiple": 32
-    },
-    "class_type": "ResolutionSelector",
-    "_meta": {
-      "title": "Resolution Selector"
-    }
-  },
-  "47": {
-    "inputs": {
-      "image": "ae1bcbb33ab77f74aed8da185099a2413ed7d1ca5350735ec0f96c8e1b196555.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "图片一"
-    }
-  },
-  "69": {
-    "inputs": {
-      "sigmas": [
-        "1",
-        0
-      ]
-    },
-    "class_type": "SigmasGraph",
-    "_meta": {
-      "title": "🐧 Sigmas Graph"
-    }
-  },
-  "70": {
-    "inputs": {
-      "lora_name": "minimax_h3_turbo_4步加速_comfyui.safetensors",
-      "strength_model": 1,
-      "model": [
-        "120",
-        0
-      ]
-    },
-    "class_type": "LoraLoaderModelOnly",
-    "_meta": {
-      "title": "LoRA加载器(仅模型)"
-    }
-  },
-  "73": {
-    "inputs": {
-      "model": [
-        "12",
-        0
-      ]
-    },
-    "class_type": "MiniMaxH3MemoryEfficientSageAttentionPatch",
-    "_meta": {
-      "title": "MiniMax H3 Memory Efficient Sage Attention Patch"
-    }
-  },
-  "75": {
-    "inputs": {
-      "image": "d41119bb6f3a6b78445eafccf5fcb47a12f4f02b550e653b1841464bc740420e.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "图片二"
-    }
-  },
-  "78": {
-    "inputs": {
-      "image": "4c1fd1c6ab0ae44f1e10f1bab7e53cad8809c672b7fa74aa3df71f4ebeac749b.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "图片三"
-    }
-  },
-  "93": {
-    "inputs": {
-      "prompt": [
-        "43",
-        0
-      ],
-      "width": [
-        "44",
-        0
-      ],
-      "height": [
-        "44",
-        1
-      ],
-      "length": [
-        "33",
-        1
-      ],
-      "ref_image_size": "match",
-      "clip": [
-        "6",
-        0
-      ],
-      "vae": [
-        "8",
-        0
-      ],
-      "audio_vae": [
-        "10",
-        0
-      ],
-      "ref_images.ref_image_0": [
-        "47",
-        0
-      ],
-      "ref_images.ref_image_1": [
-        "75",
-        0
-      ],
-      "ref_images.ref_image_2": [
-        "78",
-        0
-      ],
-      "ref_images.ref_image_3": [
-        "130",
-        0
-      ],
-      "ref_images.ref_image_4": [
-        "131",
-        0
-      ],
-      "ref_images.ref_image_5": [
-        "132",
-        0
-      ],
-      "ref_audios.ref_audio_0": [
-        "140",
-        0
-      ],
-      "ref_audios.ref_audio_1": [
-        "141",
-        0
-      ],
-      "ref_audios.ref_audio_2": [
-        "142",
-        0
-      ]
-    },
-    "class_type": "MiniMaxH3ReferenceToVideo",
-    "_meta": {
-      "title": "MiniMax H3 Reference to Video"
-    }
-  },
-  "120": {
-    "inputs": {
-      "lora_name": "MysticXXX_MMH3-V1.safetensors",
-      "strength_model": 0.6500000000000001,
-      "model": [
-        "73",
-        0
-      ]
-    },
-    "class_type": "LoraLoaderModelOnly",
-    "_meta": {
-      "title": "LoRA加载器(仅模型)"
-    }
-  },
-  "130": {
-    "inputs": {
-      "image": "ae1bcbb33ab77f74aed8da185099a2413ed7d1ca5350735ec0f96c8e1b196555.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "图片四"
-    }
-  },
-  "131": {
-    "inputs": {
-      "image": "ae1bcbb33ab77f74aed8da185099a2413ed7d1ca5350735ec0f96c8e1b196555.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "图片五"
-    }
-  },
-  "132": {
-    "inputs": {
-      "image": "ae1bcbb33ab77f74aed8da185099a2413ed7d1ca5350735ec0f96c8e1b196555.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "图片六"
-    }
-  },
-  "140": {
-    "inputs": {
-      "audio": "None"
-    },
-    "class_type": "LoadAudio",
-    "_meta": {
-      "title": "音频一"
-    }
-  },
-  "141": {
-    "inputs": {
-      "audio": "None"
-    },
-    "class_type": "LoadAudio",
-    "_meta": {
-      "title": "音频二"
-    }
-  },
-  "142": {
-    "inputs": {
-      "audio": "None"
-    },
-    "class_type": "LoadAudio",
-    "_meta": {
-      "title": "音频三"
-    }
-  }
+    "1":  {
+              "inputs":  {
+                             "scheduler":  "beta",
+                             "steps":  8,
+                             "denoise":  1,
+                             "model":  [
+                                           "70",
+                                           0
+                                       ]
+                         },
+              "class_type":  "BasicScheduler",
+              "_meta":  {
+                            "title":  "基础调度器"
+                        }
+          },
+    "2":  {
+              "inputs":  {
+                             "model":  [
+                                           "70",
+                                           0
+                                       ],
+                             "conditioning":  [
+                                                  "93",
+                                                  0
+                                              ]
+                         },
+              "class_type":  "BasicGuider",
+              "_meta":  {
+                            "title":  "基础引导"
+                        }
+          },
+    "3":  {
+              "inputs":  {
+                             "noise_seed":  297996211854275
+                         },
+              "class_type":  "RandomNoise",
+              "_meta":  {
+                            "title":  "随机噪波"
+                        }
+          },
+    "6":  {
+              "inputs":  {
+                             "clip_name":  "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+                             "type":  "minimax",
+                             "device":  "default"
+                         },
+              "class_type":  "CLIPLoader",
+              "_meta":  {
+                            "title":  "CLIP加载器"
+                        }
+          },
+    "8":  {
+              "inputs":  {
+                             "vae_name":  "minimax_h3_video_vae_fp16.safetensors"
+                         },
+              "class_type":  "VAELoader",
+              "_meta":  {
+                            "title":  "VAE加载器"
+                        }
+          },
+    "10":  {
+               "inputs":  {
+                              "vae_name":  "minimax_h3_audio_vae_fp32.safetensors"
+                          },
+               "class_type":  "VAELoader",
+               "_meta":  {
+                             "title":  "VAE加载器"
+                         }
+           },
+    "12":  {
+               "inputs":  {
+                              "unet_name":  "minimax_h3_fl2va_int8_convrot.safetensors",
+                              "weight_dtype":  "default"
+                          },
+               "class_type":  "UNETLoader",
+               "_meta":  {
+                             "title":  "UNET加载器"
+                         }
+           },
+    "20":  {
+               "inputs":  {
+                              "value":  15
+                          },
+               "class_type":  "PrimitiveFloat",
+               "_meta":  {
+                             "title":  "视频时长（秒）"
+                         }
+           },
+    "26":  {
+               "inputs":  {
+                              "sampler_name":  "euler"
+                          },
+               "class_type":  "KSamplerSelect",
+               "_meta":  {
+                             "title":  "K采样器选择"
+                         }
+           },
+    "29":  {
+               "inputs":  {
+                              "noise":  [
+                                            "3",
+                                            0
+                                        ],
+                              "guider":  [
+                                             "2",
+                                             0
+                                         ],
+                              "sampler":  [
+                                              "26",
+                                              0
+                                          ],
+                              "sigmas":  [
+                                             "1",
+                                             0
+                                         ],
+                              "latent_image":  [
+                                                   "93",
+                                                   1
+                                               ]
+                          },
+               "class_type":  "SamplerCustomAdvanced",
+               "_meta":  {
+                             "title":  "自定义采样器(高级)"
+                         }
+           },
+    "33":  {
+               "inputs":  {
+                              "expression":  "max(5, round(a * 24)) + (5 - (max(5, round(a * 24)) % 17)) % 17",
+                              "values.a":  [
+                                               "20",
+                                               0
+                                           ]
+                          },
+               "class_type":  "ComfyMathExpression",
+               "_meta":  {
+                             "title":  "Math Expression"
+                         }
+           },
+    "36":  {
+               "inputs":  {
+                              "samples":  [
+                                              "29",
+                                              0
+                                          ],
+                              "vae":  [
+                                          "10",
+                                          0
+                                      ]
+                          },
+               "class_type":  "VAEDecodeAudio",
+               "_meta":  {
+                             "title":  "VAE解码_Audio"
+                         }
+           },
+    "37":  {
+               "inputs":  {
+                              "samples":  [
+                                              "29",
+                                              0
+                                          ],
+                              "vae":  [
+                                          "8",
+                                          0
+                                      ]
+                          },
+               "class_type":  "VAEDecode",
+               "_meta":  {
+                             "title":  "VAE解码"
+                         }
+           },
+    "38":  {
+               "inputs":  {
+                              "frame_rate":  24,
+                              "loop_count":  0,
+                              "filename_prefix":  "AnimateDiff",
+                              "format":  "video/h264-mp4",
+                              "pix_fmt":  "yuv420p",
+                              "crf":  19,
+                              "save_metadata":  true,
+                              "trim_to_audio":  false,
+                              "pingpong":  false,
+                              "save_output":  true,
+                              "no_preview":  false,
+                              "images":  [
+                                             "37",
+                                             0
+                                         ],
+                              "audio":  [
+                                            "36",
+                                            0
+                                        ]
+                          },
+               "class_type":  "VHS_VideoCombine",
+               "_meta":  {
+                             "title":  "合并为视频"
+                         }
+           },
+    "43":  {
+               "inputs":  {
+                              "text":  "subject_definitions:\n\u003cSubject 1\u003e is the young woman in \u003cPicture 1\u003e, Ruan Qinghe, with double buns pinned by a silver hair clip, a cream-white knitted cardigan over a floral-strap blue slip dress, white ankle socks and white platform sneakers.\n\u003cSubject 2\u003e is the young man in \u003cPicture 2\u003e, Lu Jichuan, with fluffy short black hair, a light-grey hooded zip-up sweatshirt, black wide-leg trousers, white canvas shoes, and a thin black bracelet on his wrist.\n\u003cSubject 3\u003e is the flower-shop interior suggested by \u003cPicture 3\u003e, featuring a wooden shelf of white lisianthus in glass vases and ceramic pots, a glass door beaded with rain, a wooden counter, a water bucket, and warm amber lighting.\n\nsummary:\n[reference generation] The target video shows \u003cSubject 1\u003e arranging white lisianthus inside \u003cSubject 3\u003e when \u003cSubject 2\u003e enters at his usual 11:30 visit. After the door chime rings, the two exchange four short lines of dialogue across five shots — she answers without raising her head, he barely answers, and the scene ends on her pulling back a scratched hand. The images guide character appearance and the shop environment without serving as concrete frame anchors.\n\nretention_analysis:\n\u003cSubject 1\u003e (appears in [Shot 1], [Shot 2], [Shot 4], [Shot 5]): fully_preserved - the double buns with silver hair clip, cream-white knitted cardigan, floral blue slip dress, white socks and platform sneakers are retained.\n\u003cSubject 2\u003e (appears in [Shot 1], [Shot 3], [Shot 4]): fully_preserved - the fluffy black hair, light-grey hooded zip-up sweatshirt, black wide-leg trousers, white canvas shoes and black bracelet are retained.\n\u003cSubject 3\u003e (appears in [Shot 1], [Shot 3], [Shot 4]): fully_preserved - the wooden shelf of white lisianthus, glass vases, ceramic pots, water bucket, rain-beaded glass door and warm amber lighting are retained.\n\ndetailed_description:\nThe target video is in a warm, cinematic live-action style with a rain-dampened, quiet mood, soft amber interior lighting, and a slightly shallow depth of field.\n[Shot 1] A medium-wide shot establishes \u003cSubject 3\u003e, the flower shop: a wooden shelf of white lisianthus in glass vases and ceramic pots, a water bucket on the floor, and a glass door still beaded with fine raindrops. \u003cSubject 1\u003e, the young woman with double buns, a silver hair clip and a cream-white knitted cardigan, gathers loose white lisianthus stems into the bucket with her head slightly bowed. The camera holds a static shot with small amplitude as the door chime rings once, and \u003cSubject 2\u003e, the young man in the light-grey hooded sweatshirt and black wide-leg trousers, steps in from the doorway, water droplets catching the amber light on the glass behind him.\n[Shot 2] At 00:03.500, the camera cuts to a medium close-up of \u003cSubject 1\u003e (S1) facing slightly away from the counter, still tidying the flower stems without lifting her head. The tips of her ears flush pink as she (S1) opens her mouth and speaks in a soft, gentle young female voice with a light lilt, \u003cd\u003e[Chinese] 今天也是老规矩？\u003c/d\u003e She closes her lips and keeps her eyes on the flowers, the faint blush spreading down to her cheeks.\n[Shot 3] At 00:06.500, the camera cuts to a medium shot of \u003cSubject 2\u003e (S2) standing at the wooden counter, his fingertips lightly brushing the flowers she just arranged, the light-grey sweatshirt and black bracelet clearly visible. He (S2) says in a low, calm young male voice, brief and understated, \u003cd\u003e[Chinese] 嗯。\u003c/d\u003e as his mouth opens and closes in one short movement, his gaze resting softly on the blossoms.\n[Shot 4] At 00:09.000, the camera cuts to a medium shot of both subjects across the counter. \u003cSubject 1\u003e quickly wraps one white lisianthus in plain paper and holds it out toward \u003cSubject 2\u003e, but he does not take it; his eyes fall on her reddened knuckles. \u003cSubject 2\u003e (S2) asks with a lowered tone, \u003cd\u003e[Chinese] 你手怎么了？\u003c/d\u003e while \u003cSubject 1\u003e keeps the wrapped flower extended, her fingers hesitating mid-air.\n[Shot 5] At 00:12.000, the camera cuts to a close-up of \u003cSubject 1\u003e (S1), the blush still warm on her face. She pulls her hand back and tucks it under the edge of the bucket, avoiding his gaze, and says in the same soft voice with a quiet, resigned cadence, \u003cd\u003e[Chinese] 扎的，习惯了。\u003c/d\u003e Her mouth closes into a small faint smile as the shot holds on her lowered lashes until the end of the video.\n\noverall_soundscape:\nThe door chime rings once as he enters. Rainwater drips slowly from the glass door, soft flower stems rustle as they are gathered and wrapped in paper, and a quiet street ambience continues underneath with distant wet traffic.\n\nnon_diegetic_music:\nA sparse solo-piano motif at a slow tempo with a music-box-like timbre, gradually joined by a single sustained low string that softens during the final exchange and fades out at the end.\n"
+                          },
+               "class_type":  "Text",
+               "_meta":  {
+                             "title":  "文本"
+                         }
+           },
+    "44":  {
+               "inputs":  {
+                              "aspect_ratio":  "16:9 (Widescreen)",
+                              "megapixels":  0.9,
+                              "multiple":  32
+                          },
+               "class_type":  "ResolutionSelector",
+               "_meta":  {
+                             "title":  "Resolution Selector"
+                         }
+           },
+    "47":  {
+               "inputs":  {
+                              "image":  "ae1bcbb33ab77f74aed8da185099a2413ed7d1ca5350735ec0f96c8e1b196555.png"
+                          },
+               "class_type":  "LoadImage",
+               "_meta":  {
+                             "title":  "图片1"
+                         }
+           },
+    "69":  {
+               "inputs":  {
+                              "sigmas":  [
+                                             "1",
+                                             0
+                                         ]
+                          },
+               "class_type":  "SigmasGraph",
+               "_meta":  {
+                             "title":  "🐧 Sigmas Graph"
+                         }
+           },
+    "70":  {
+               "inputs":  {
+                              "lora_name":  "minimax_h3_turbo_4步加速_comfyui.safetensors",
+                              "strength_model":  1,
+                              "model":  [
+                                            "120",
+                                            0
+                                        ]
+                          },
+               "class_type":  "LoraLoaderModelOnly",
+               "_meta":  {
+                             "title":  "LoRA加载器(仅模型)"
+                         }
+           },
+    "73":  {
+               "inputs":  {
+                              "model":  [
+                                            "12",
+                                            0
+                                        ]
+                          },
+               "class_type":  "MiniMaxH3MemoryEfficientSageAttentionPatch",
+               "_meta":  {
+                             "title":  "MiniMax H3 Memory Efficient Sage Attention Patch"
+                         }
+           },
+    "75":  {
+               "inputs":  {
+                              "image":  "d41119bb6f3a6b78445eafccf5fcb47a12f4f02b550e653b1841464bc740420e.png"
+                          },
+               "class_type":  "LoadImage",
+               "_meta":  {
+                             "title":  "图片2"
+                         }
+           },
+    "78":  {
+               "inputs":  {
+                              "image":  "4c1fd1c6ab0ae44f1e10f1bab7e53cad8809c672b7fa74aa3df71f4ebeac749b.png"
+                          },
+               "class_type":  "LoadImage",
+               "_meta":  {
+                             "title":  "图片3"
+                         }
+           },
+    "93":  {
+               "inputs":  {
+                              "prompt":  [
+                                             "43",
+                                             0
+                                         ],
+                              "width":  [
+                                            "44",
+                                            0
+                                        ],
+                              "height":  [
+                                             "44",
+                                             1
+                                         ],
+                              "length":  [
+                                             "33",
+                                             1
+                                         ],
+                              "ref_image_size":  "match",
+                              "clip":  [
+                                           "6",
+                                           0
+                                       ],
+                              "vae":  [
+                                          "8",
+                                          0
+                                      ],
+                              "audio_vae":  [
+                                                "10",
+                                                0
+                                            ],
+                              "ref_images.ref_image_0":  [
+                                                             "47",
+                                                             0
+                                                         ],
+                              "ref_images.ref_image_1":  [
+                                                             "75",
+                                                             0
+                                                         ],
+                              "ref_images.ref_image_2":  [
+                                                             "78",
+                                                             0
+                                                         ],
+                              "ref_images.ref_image_3":  [
+                                                             "130",
+                                                             0
+                                                         ],
+                              "ref_images.ref_image_4":  [
+                                                             "131",
+                                                             0
+                                                         ],
+                              "ref_images.ref_image_5":  [
+                                                             "132",
+                                                             0
+                                                         ],
+                              "ref_audios.ref_audio_0":  [
+                                                             "140",
+                                                             0
+                                                         ],
+                              "ref_audios.ref_audio_1":  [
+                                                             "141",
+                                                             0
+                                                         ],
+                              "ref_audios.ref_audio_2":  [
+                                                             "142",
+                                                             0
+                                                         ]
+                          },
+               "class_type":  "MiniMaxH3ReferenceToVideo",
+               "_meta":  {
+                             "title":  "MiniMax H3 Reference to Video"
+                         }
+           },
+    "120":  {
+                "inputs":  {
+                               "lora_name":  "MysticXXX_MMH3-V1.safetensors",
+                               "strength_model":  0.6500000000000001,
+                               "model":  [
+                                             "73",
+                                             0
+                                         ]
+                           },
+                "class_type":  "LoraLoaderModelOnly",
+                "_meta":  {
+                              "title":  "LoRA加载器(仅模型)"
+                          }
+            },
+    "130":  {
+                "inputs":  {
+                               "image":  "None"
+                           },
+                "class_type":  "LoadImage",
+                "_meta":  {
+                              "title":  "图片4"
+                          }
+            },
+    "131":  {
+                "inputs":  {
+                               "image":  "None"
+                           },
+                "class_type":  "LoadImage",
+                "_meta":  {
+                              "title":  "图片5"
+                          }
+            },
+    "132":  {
+                "inputs":  {
+                               "image":  "None"
+                           },
+                "class_type":  "LoadImage",
+                "_meta":  {
+                              "title":  "图片6"
+                          }
+            },
+    "140":  {
+                "inputs":  {
+                               "audio":  "None"
+                           },
+                "class_type":  "LoadAudio",
+                "_meta":  {
+                              "title":  "音频1"
+                          }
+            },
+    "141":  {
+                "inputs":  {
+                               "audio":  "None"
+                           },
+                "class_type":  "LoadAudio",
+                "_meta":  {
+                              "title":  "音频2"
+                          }
+            },
+    "142":  {
+                "inputs":  {
+                               "audio":  "None"
+                           },
+                "class_type":  "LoadAudio",
+                "_meta":  {
+                              "title":  "音频3"
+                          }
+            }
 }

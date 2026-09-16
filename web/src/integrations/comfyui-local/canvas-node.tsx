@@ -1,5 +1,5 @@
 import { App, Button, Input, InputNumber, Select, Switch } from "antd";
-import { ArrowRight, CheckCircle2, Cpu, FileJson, Link2, LoaderCircle, Play, Search, SlidersHorizontal, Square, Upload, Workflow } from "lucide-react";
+import { ArrowRight, CheckCircle2, Cpu, FileJson, Link2, LoaderCircle, Play, Search, SlidersHorizontal, Square, Trash2, Upload, Workflow } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { nanoid } from "nanoid";
@@ -481,12 +481,32 @@ function ComfyWorkflowParameters({ ctx, snapshot, onChangeWorkflow, onClose }: {
     );
 }
 
-/** 分辨率档位：数值为百万像素，对应常见的 480p / 720p / 1080p。 */
+/** 分辨率档位：数值为百万像素，对应常见的清晰度档位。 */
 const MEGAPIXEL_PRESETS = [
-    { value: 0.4, label: "480p" },
-    { value: 0.9, label: "720p" },
-    { value: 2.0, label: "1080p" },
+    { value: 0.4, label: "480P 标清" },
+    { value: 0.9, label: "720P 高清" },
+    { value: 2.0, label: "1080P 全高清" },
 ];
+
+/**
+ * ComfyUI 枚举值的中文显示。
+ * 提交给后端时必须用原始值，这里只改下拉里显示的文字。
+ */
+const ENUM_LABELS: Record<string, string> = {
+    "1:1 (Square)": "1:1 方形",
+    "2:3 (Portrait Photo)": "2:3 竖版照片",
+    "3:2 (Photo)": "3:2 横版照片",
+    "3:4 (Portrait Standard)": "3:4 竖版",
+    "4:3 (Standard)": "4:3 横版",
+    "9:16 (Portrait Widescreen)": "9:16 竖屏",
+    "16:9 (Widescreen)": "16:9 横屏",
+    "21:9 (Ultrawide)": "21:9 超宽",
+    match: "按生成尺寸匹配",
+    max: "最高精度（较慢）",
+};
+
+/** 清空素材时使用的占位值：ComfyUI 把 None 视为「没有素材」。 */
+const EMPTY_MEDIA = "None";
 
 /** 解析已上传素材在当前环境的预览地址。 */
 function useComfyInputPreview(filename: string) {
@@ -533,8 +553,8 @@ function ParameterControl({ input, value, onChange, onPickMedia, uploadingMedia,
         </div>
     );
     if (input.control === "media") {
-        // 媒体参数必须能直接上传本地文件，否则用户不知道从哪里提供素材。
-        const mediaName = typeof value === "string" && value ? value : "";
+        // 媒体参数必须能直接上传本地文件，也要能清空：用不到的参考图 / 音频不应强制保留。
+        const mediaName = typeof value === "string" && value && value !== EMPTY_MEDIA ? value : "";
         return (
             <div className="block">
                 {label}
@@ -543,9 +563,19 @@ function ParameterControl({ input, value, onChange, onPickMedia, uploadingMedia,
                         {t("comfyuiLocal.canvasNode.uploadMedia")}
                     </Button>
                     {mediaName ? (
-                        <span className="min-w-0 flex-1 truncate text-[11px] opacity-60" title={mediaName}>
-                            {mediaName}
-                        </span>
+                        <>
+                            <span className="min-w-0 flex-1 truncate text-[11px] opacity-60" title={mediaName}>
+                                {mediaName}
+                            </span>
+                            <Button
+                                size="small"
+                                type="text"
+                                danger
+                                icon={<Trash2 className="size-3.5" />}
+                                onClick={() => onChange(EMPTY_MEDIA)}
+                                aria-label={t("comfyuiLocal.canvasNode.clearMedia")}
+                            />
+                        </>
                     ) : (
                         <span className="text-[11px] opacity-45">{t("comfyuiLocal.canvasNode.noMedia", { type: input.valueType })}</span>
                     )}
@@ -565,7 +595,7 @@ function ParameterControl({ input, value, onChange, onPickMedia, uploadingMedia,
         return (
             <div className="block">
                 {label}
-                <Select className="w-full" size="small" value={typeof value === "string" ? value : undefined} options={(input.enumValues || []).map((item) => ({ value: item, label: item }))} onChange={onChange} />
+                <Select className="w-full" size="small" value={typeof value === "string" ? value : undefined} options={(input.enumValues || []).map((item) => ({ value: item, label: ENUM_LABELS[item] ?? item }))} onChange={onChange} />
             </div>
         );
     // 分辨率档位用固定三档下拉，比让用户填百万像素直观。

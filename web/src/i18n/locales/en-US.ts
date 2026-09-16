@@ -1115,6 +1115,7 @@ export default {
             port: "Port",
             connectMedia: "Connect or globally reference a {{type}} asset",
             uploadMedia: "Upload file",
+            clearMedia: "Clear asset",
             mediaUploaded: "Uploaded {{name}}",
             noMedia: "No {{type}} selected yet",
             aspectRatio: "Aspect ratio",

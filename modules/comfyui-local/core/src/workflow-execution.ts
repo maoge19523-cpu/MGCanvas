@@ -41,15 +41,15 @@ export function materializeComfyWorkflow(
 }
 
 /**
- * 参考音频 / 视频未选择时（LoadAudio 的取值为 "None"），把对应引用从工作流里去掉，
- * 否则空值会被传给采样节点，可能导致校验或运行失败。
+ * 参考素材被清空时（加载节点的取值为 "None"），把对应引用从工作流里去掉，
+ * 起到「绕过」的效果：不用的参考图 / 音频 / 视频不会影响运行。
  */
 function stripEmptyReferenceInputs(workflow: ComfyApiWorkflow) {
   for (const node of Object.values(workflow)) {
     const inputs = node?.inputs;
     if (!inputs) continue;
     for (const key of Object.keys(inputs)) {
-      if (!/^ref_(audios|videos|video_audios)\./.test(key)) continue;
+      if (!/^ref_(images|audios|videos|video_audios)\./.test(key)) continue;
       const link = inputs[key];
       const sourceId = Array.isArray(link) ? String(link[0]) : "";
       const source = sourceId ? workflow[sourceId] : undefined;

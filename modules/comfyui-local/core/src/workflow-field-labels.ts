@@ -99,6 +99,7 @@ const CLASS_FIELD_LABELS: Record<string, string> = {
   "SaveImage.filename_prefix": "文件名前缀",
   "TTResolutionSelector.resolution": "分辨率",
   "ResolutionSelector.aspect_ratio": "画面比例",
+  "ResolutionSelector.megapixels": "分辨率档位",
 };
 
 /**

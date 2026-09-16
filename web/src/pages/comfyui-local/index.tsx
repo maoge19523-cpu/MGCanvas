@@ -1,5 +1,5 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { App, Button, Input, Modal, Progress } from "antd";
+import { App, Button, Input, Modal, Progress, Tooltip } from "antd";
 import { AlertCircle, ArrowRight, ChevronDown, CircleStop, Cloud, Cpu, ExternalLink, FileJson, FolderOpen, LoaderCircle, Play, Plus, RefreshCw, Sparkles, TerminalSquare, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -242,9 +242,9 @@ export default function ComfyUiLocalPage() {
         setEditing(false);
     };
 
-    // 本地页只反映本机环境状态：已连接云端时本地进程并没有在跑，
-    // 因此这里把状态重置为未启动，避免误显示"运行中"。
-    const localStatus: ComfyEnvironmentStatus = status.remoteBaseUrl ? EMPTY_STATUS : status;
+    // 本地页只反映本机环境状态。仅在「云端占用且本地没有进程」时归零，
+    // 一旦本地进程起来（有 pid），就显示真实的本地状态与进度。
+    const localStatus: ComfyEnvironmentStatus = status.remoteBaseUrl && !status.pid ? EMPTY_STATUS : status;
 
     /** 在系统浏览器中打开本机 ComfyUI 界面。 */
     const openConsole = async () => {
@@ -670,9 +670,17 @@ function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRe
                                 </div>
                                 <div className="flex justify-end gap-1">
                                     <Button type="text" size="small" danger icon={<Trash2 className="size-3.5" />} onClick={() => onDeleteWorkflow(workflow)} aria-label={t("common.delete")} />
-                                    <Button size="small" icon={<ArrowRight className="size-3.5" />} onClick={() => onAddToCanvas(workflow)}>
-                                        {t("comfyuiLocal.library.addToCanvas")}
-                                    </Button>
+                                    {/* 本地工作流要跑在本机 ComfyUI 上，未启动成功前不允许加入画布。 */}
+                                    <Tooltip title={status.phase === "running" ? undefined : t("comfyuiLocal.library.startFirst")}>
+                                        <Button
+                                            size="small"
+                                            icon={<ArrowRight className="size-3.5" />}
+                                            disabled={status.phase !== "running"}
+                                            onClick={() => onAddToCanvas(workflow)}
+                                        >
+                                            {t("comfyuiLocal.library.addToCanvas")}
+                                        </Button>
+                                    </Tooltip>
                                 </div>
                             </div>
                         ))}

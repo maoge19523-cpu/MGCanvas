@@ -601,11 +601,15 @@ async fn start_environment<R: Runtime>(
         inner.started_at = Some(started_at);
         inner.message = Some("正在等待 ComfyUI 完成自定义节点加载".to_owned());
         inner.profile_id = Some(profile.id.clone());
+        // 启动本地环境意味着不再使用云端：必须清掉记住的云端地址，
+        // 否则请求会被发到云端、且状态会与本地进程混淆。
+        inner.remote_base_url = None;
         inner.logs.clear();
         inner.log_bytes = 0;
         inner.child = Some(child);
         inner.generation
     };
+    forget_remote_endpoint(&state.ownership_path);
 
     if let Some(stream) = stdout {
         tauri::async_runtime::spawn(collect_logs(app.clone(), "stdout", stream, generation));

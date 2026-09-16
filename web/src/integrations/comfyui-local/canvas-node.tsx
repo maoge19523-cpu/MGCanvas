@@ -1,11 +1,11 @@
-import { Button, Input, InputNumber, Select, Switch } from "antd";
-import { ArrowRight, CheckCircle2, Cpu, FileJson, Link2, LoaderCircle, Play, Search, SlidersHorizontal, Square, Workflow } from "lucide-react";
+import { App, Button, Input, InputNumber, Select, Switch } from "antd";
+import { ArrowRight, CheckCircle2, Cpu, FileJson, Link2, LoaderCircle, Play, Search, SlidersHorizontal, Square, Upload, Workflow } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
-import type { ComfyExposedInput, ComfyWorkflowDefinition } from "./index";
+import { comfyNativeClient, type ComfyExposedInput, type ComfyWorkflowDefinition } from "./index";
 import { isComfyWorkflowRunning, runComfyWorkflowNode, stopComfyWorkflowNode } from "./execution";
 import { ensureComfyResultNodeOps, replaceComfyResultNodeOps } from "./result-nodes";
 import { listComfyWorkflowDefinitions } from "./workflow-library";
@@ -329,9 +329,42 @@ function readSizeValue(snapshot: ComfyCanvasNodeSnapshot, pair: { width: ComfyEx
 
 function ComfyWorkflowParameters({ ctx, snapshot, onChangeWorkflow, onClose }: { ctx: CanvasNodeContext; snapshot: ComfyCanvasNodeSnapshot; onChangeWorkflow: () => void; onClose: () => void }) {
     const { t } = useTranslation();
+    const { message } = App.useApp();
+    const mediaInputRef = useRef<HTMLInputElement | null>(null);
+    const pendingMediaInput = useRef<string | null>(null);
+    const [uploadingMedia, setUploadingMedia] = useState(false);
     const updateValue = (id: string, value: unknown) => ctx.updateMetadata({ comfyuiLocal: { ...snapshot, values: { ...snapshot.values, [id]: value } } });
     // 一次写入多个参数：连续调用 updateValue 会基于同一份旧快照，后者覆盖前者的修改。
     const updateValues = (patch: Record<string, unknown>) => ctx.updateMetadata({ comfyuiLocal: { ...snapshot, values: { ...snapshot.values, ...patch } } });
+
+    /** 打开文件选择器，并把结果写回指定参数。 */
+    const pickMedia = (inputId: string) => {
+        pendingMediaInput.current = inputId;
+        mediaInputRef.current?.click();
+    };
+
+    /** 把本地文件上传到当前 ComfyUI，文件名写回参数值。 */
+    const handleMediaFile = async (file: File | undefined) => {
+        const inputId = pendingMediaInput.current;
+        pendingMediaInput.current = null;
+        if (mediaInputRef.current) mediaInputRef.current.value = "";
+        if (!file || !inputId) return;
+        setUploadingMedia(true);
+        try {
+            const uploaded = await comfyNativeClient.uploadInput(
+                snapshot.environmentId,
+                file.name,
+                file.type || "application/octet-stream",
+                Array.from(new Uint8Array(await file.arrayBuffer())),
+            );
+            updateValue(inputId, uploaded.subfolder ? `${uploaded.subfolder.replace(/\\\\/g, "/")}/${uploaded.name}` : uploaded.name);
+            message.success(t("comfyuiLocal.canvasNode.mediaUploaded", { name: uploaded.name }));
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : String(error));
+        } finally {
+            setUploadingMedia(false);
+        }
+    };
     const updateObjectReference = (inputId: string, sourceNodeId: string) => {
         const connectedIds = ctx.getInputConnections(inputId).map((connection) => connection.id);
         if (connectedIds.length) ctx.applyOps([{ type: "delete_connections", ids: connectedIds }]);
@@ -409,6 +442,7 @@ function ComfyWorkflowParameters({ ctx, snapshot, onChangeWorkflow, onClose }: {
                     </div>
                 </div>
             ) : null}
+            <input ref={mediaInputRef} type="file" accept="image/*,video/*,audio/*" hidden onChange={(event) => void handleMediaFile(event.target.files?.[0])} />
             <div className="thin-scrollbar grid max-h-[430px] gap-4 overflow-y-auto py-5 pr-1 sm:grid-cols-2">
                 {visibleInputs.map((input) => {
                     const allowedKinds = comfyInputObjectKinds(input);
@@ -422,6 +456,8 @@ function ComfyWorkflowParameters({ ctx, snapshot, onChangeWorkflow, onClose }: {
                                 else if (input.id === sizePair?.height.id) sizeAnchor.current = "height";
                                 updateValue(input.id, value);
                             }}
+                            onPickMedia={() => pickMedia(input.id)}
+                            uploadingMedia={uploadingMedia}
                             referencePicker={
                                 input.canvasPort && allowedKinds.length ? (
                                     <CanvasObjectReferencePicker
@@ -444,7 +480,7 @@ function ComfyWorkflowParameters({ ctx, snapshot, onChangeWorkflow, onClose }: {
     );
 }
 
-function ParameterControl({ input, value, onChange, referencePicker }: { input: ComfyExposedInput; value: unknown; onChange: (value: unknown) => void; referencePicker?: ReactNode }) {
+function ParameterControl({ input, value, onChange, onPickMedia, uploadingMedia, referencePicker }: { input: ComfyExposedInput; value: unknown; onChange: (value: unknown) => void; onPickMedia: () => void; uploadingMedia: boolean; referencePicker?: ReactNode }) {
     const { t } = useTranslation();
     const label = (
         <div className="mb-2 flex min-w-0 items-center gap-2 text-[11px] font-medium opacity-65" title={input.label}>
@@ -458,13 +494,27 @@ function ParameterControl({ input, value, onChange, referencePicker }: { input: 
             <span className="ml-auto">{referencePicker}</span>
         </div>
     );
-    if (input.control === "media")
+    if (input.control === "media") {
+        // 媒体参数必须能直接上传本地文件，否则用户不知道从哪里提供素材。
+        const mediaName = typeof value === "string" && value ? value : "";
         return (
             <div className="block">
                 {label}
-                <div className="flex h-10 items-center rounded-lg border border-dashed border-white/[0.12] px-3 text-[11px] opacity-50">{t("comfyuiLocal.canvasNode.connectMedia", { type: input.valueType })}</div>
+                <div className="flex flex-wrap items-center gap-2">
+                    <Button size="small" icon={<Upload className="size-3.5" />} loading={uploadingMedia} onClick={onPickMedia}>
+                        {t("comfyuiLocal.canvasNode.uploadMedia")}
+                    </Button>
+                    {mediaName ? (
+                        <span className="min-w-0 flex-1 truncate text-[11px] opacity-60" title={mediaName}>
+                            {mediaName}
+                        </span>
+                    ) : (
+                        <span className="text-[11px] opacity-45">{t("comfyuiLocal.canvasNode.noMedia", { type: input.valueType })}</span>
+                    )}
+                </div>
             </div>
         );
+    }
     if (input.control === "switch")
         return (
             <div className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.07] px-3 py-2.5">

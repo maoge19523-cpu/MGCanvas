@@ -534,6 +534,27 @@ type RuntimeProps = {
 
 function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRefresh, onOpenConsole, onChangeEnvironment, onConnectCloud, onForget, workflows, onImport, onImportPack, onInstallDemo, importingPack, onAddToCanvas, onDeleteWorkflow }: RuntimeProps) {
     const { t } = useTranslation();
+
+    // 启动进度：ComfyUI 不提供进度信息，这里按时间平滑推进到 92%，
+    // 进入运行态时补满到 100% 并用成功样式短暂展示后隐藏。
+    const [startProgress, setStartProgress] = useState(0);
+
+    useEffect(() => {
+        if (status.phase === "starting") {
+            setStartProgress((value) => (value > 0 ? value : 6));
+            const timer = setInterval(() => {
+                setStartProgress((value) => (value >= 92 ? 92 : Math.min(92, value + Math.max(1, Math.round((95 - value) * 0.07)))));
+            }, 350);
+            return () => clearInterval(timer);
+        }
+        if (status.phase === "running") {
+            setStartProgress(100);
+            const timer = setTimeout(() => setStartProgress(0), 1800);
+            return () => clearTimeout(timer);
+        }
+        setStartProgress(0);
+        return undefined;
+    }, [status.phase]);
     const active = status.phase === "running" || status.phase === "starting";
     return (
         <section className="py-7 sm:py-9">
@@ -555,9 +576,12 @@ function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRe
 
                     <Button icon={<RefreshCw className="size-3.5" />} onClick={onRefresh} disabled={busy}>
                         {t("comfyuiLocal.runtime.refresh")}
-                    </Button>
-                    <Button icon={<ExternalLink className="size-3.5" />} onClick={onOpenConsole} disabled={!status.port}>
-                        {t("comfyuiLocal.runtime.openConsole")}
+                    </Button>
+
+                    <Button icon={<ExternalLink className="size-3.5" />} onClick={onOpenConsole} disabled={!status.port}>
+
+                        {t("comfyuiLocal.runtime.openConsole")}
+
                     </Button>
                     <Button icon={<Trash2 className="size-3.5" />} danger onClick={onForget} disabled={busy}>
                         {t("comfyuiLocal.runtime.forget")}
@@ -574,9 +598,13 @@ function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRe
                 </div>
             </div>
 
-            {status.phase === "starting" ? (
-                <div className="border-b border-black/[0.08] px-0 py-4 dark:border-white/[0.08]">
-                    <Progress percent={100} showInfo={false} status="active" strokeColor="#756bff" size="small" />
+            {startProgress > 0 ? (
+                <div className="border-b border-black/[0.08] py-4 dark:border-white/[0.08]">
+                    <Progress
+                        percent={Math.round(startProgress)}
+                        status={status.phase === "running" ? "success" : "active"}
+                        strokeColor="#756bff"
+                    />
                 </div>
             ) : null}
             <dl className="grid border-b border-black/[0.08] dark:border-white/[0.08] sm:grid-cols-3">

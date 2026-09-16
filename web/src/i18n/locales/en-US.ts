@@ -354,8 +354,7 @@ export default {
             available: "Available balance",
             used: "Used {{amount}}",
             refresh: "Refresh",
-            openConsole: "Open ComfyUI UI",
-            consoleUnavailable: "ComfyUI is not running yet — start it first to open the UI.",            updating: "Updating balance",
+            updating: "Updating balance",
             unavailable: "Balance is unavailable. Try refreshing shortly.",
             updatedAt: "Updated {{time}}",
             notUpdated: "Waiting for first update",
@@ -1028,6 +1027,7 @@ export default {
             loopbackOnly: "Local access only; the ComfyUI browser will not open",
             change: "Change environment",
             forget: "Remove configuration",
+            openConsole: "Open ComfyUI UI",
         },
         logs: {
             title: "Startup logs",

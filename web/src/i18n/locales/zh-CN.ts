@@ -348,8 +348,7 @@ export default {
             available: "可用余额",
             used: "已使用 {{amount}}",
             refresh: "刷新",
-            openConsole: "打开 ComfyUI 界面",
-            consoleUnavailable: "ComfyUI 还没有启动，启动成功后即可打开界面。",            updating: "正在更新余额",
+            updating: "正在更新余额",
             unavailable: "暂时无法获取余额，请稍后刷新",
             updatedAt: "更新于 {{time}}",
             notUpdated: "等待首次更新",
@@ -1007,6 +1006,7 @@ export default {
             loopbackOnly: "仅允许本机访问，不会打开 ComfyUI 浏览器",
             change: "更换环境",
             forget: "移除配置",
+            openConsole: "打开 ComfyUI 界面",
         },
         logs: {
             title: "启动日志",

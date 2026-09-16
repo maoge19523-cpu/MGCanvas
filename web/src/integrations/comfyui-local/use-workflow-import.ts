@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { comfyNativeClient } from "./index";
 import { comfyWorkflowPackName, importComfyWorkflowPack, parseComfyWorkflowPack, type ComfyWorkflowPackEntry } from "./workflow-pack";
 import { demosForScope, type ComfyDemoWorkflow } from "./demo-workflows";
-import { listComfyWorkflowDefinitions } from "./workflow-library";
+import { deleteComfyWorkflowDefinition, listComfyWorkflowDefinitions } from "./workflow-library";
 
 /** 云端环境没有本地 profile，统一用固定标识绑定工作流。 */
 export const CLOUD_ENVIRONMENT_ID = "cloud-remote";
@@ -100,6 +100,12 @@ export function useComfyWorkflowImport({ localEnvironmentId, onImported }: Comfy
             }
             setImporting(true);
             try {
+                // 先清掉同名与历史版本的示例，避免列表里同时存在新旧示例、
+                // 用户点到引用旧模型的那一份而报错。
+                const stale = (await listComfyWorkflowDefinitions()).filter(
+                    (item) => item.name === target.name || item.name === t("comfyuiLocal.pack.demoName"),
+                );
+                for (const item of stale) await deleteComfyWorkflowDefinition(item.id);
                 const response = await fetch(`/workflows/${target.file}`);
                 if (!response.ok) throw new Error(`读取示例工作流失败（HTTP ${response.status}）`);
                 const parsed = parseComfyWorkflowPack((await response.json()) as unknown);

@@ -158,6 +158,8 @@ export function GenericNativeGenerationPanel({
     const unusedReferenceTotal = Object.values(unusedReferenceCounts).reduce((sum, count) => sum + count, 0);
     const referenceLimitNotice = unusedReferenceCounts.image > 0 && usedReferenceCounts.image > 0 ? `已连接 ${referenceCounts.image} 张图片，当前模型按排序只读取前 ${usedReferenceCounts.image} 张` : unusedReferenceTotal > 0 ? `${unusedReferenceTotal} 个素材不符合当前模型的输入要求` : null;
     const selectedModelKey = readGenericNativeModelChoice(kind, operation.id, effectivePayload);
+    // 用户是否主动选过模型：未选择前不展示预估费用，也不允许直接运行。
+    const modelPinned = node.metadata?.genericModelPinned === true;
     const taskIds = Array.from(
         new Set([
             ...(node.metadata?.providerTask?.taskIds || []),
@@ -205,6 +207,8 @@ export function GenericNativeGenerationPanel({
     const selectModel = (modelId: string) => {
         const next = changeGenericNativeModelChoice(kind, operation.id, effectivePayload, modelId, referenceCounts);
         persist(next.payload, next.operationId, true);
+        // 标记为已主动选择，费用预估与运行按钮据此解锁。
+        onChange(node.id, { genericModelPinned: true });
     };
 
     const updatePrompt = (value: string) => persist(writeGenericNativePrompt(operation.id, { ...payload }, value));
@@ -215,7 +219,7 @@ export function GenericNativeGenerationPanel({
     };
 
     const run = async () => {
-        if (isRunning || !onRun || validationError || hasUnresolvedTask) return;
+        if (isRunning || !onRun || validationError || hasUnresolvedTask || !modelPinned) return;
         const configuredNode: CanvasNodeData = {
             ...node,
             metadata: {
@@ -429,7 +433,8 @@ export function GenericNativeGenerationPanel({
                     <Select
                         showSearch
                         disabled={hasUnresolvedTask}
-                        value={selectedModelKey}
+                        placeholder="请选择模型"
+                        value={modelPinned ? selectedModelKey : undefined}
                         options={modelGroups.map((group) => ({
                             label: group.label,
                             options: group.options,
@@ -473,6 +478,14 @@ export function GenericNativeGenerationPanel({
                         </Button>
                     </Popover>
                 ) : null}
+                {!modelPinned ? (
+                    <span
+                        className="inline-flex h-9 max-w-[190px] shrink-0 items-center rounded-full border px-3 text-[11px] font-medium"
+                        style={{ background: theme.node.fill, borderColor: theme.toolbar.border, color: theme.node.faint }}
+                    >
+                        选择模型后显示预估费用
+                    </span>
+                ) : (
                 <Tooltip
                     title={
                         pricingLoading
@@ -495,6 +508,7 @@ export function GenericNativeGenerationPanel({
                         <span className="truncate">{pricePill.value}</span>
                     </span>
                 </Tooltip>
+                )}
                 {isPolling ? (
                     <Tooltip title="仅停止本地查询，远端任务仍会继续">
                         <Button danger shape="circle" className="!size-9 shrink-0" icon={<CircleStop className="size-4" />} disabled={!onStopPolling} onClick={() => onStopPolling?.(node)} />
@@ -504,12 +518,12 @@ export function GenericNativeGenerationPanel({
                         <Button shape="circle" className="!size-9 shrink-0" icon={<RefreshCw className="size-4" />} disabled={!onStartPolling} onClick={() => void onStartPolling?.(node)} />
                     </Tooltip>
                 ) : (
-                    <Tooltip title={validationError || `开始生成 · ${formattedPrice}`}>
+                    <Tooltip title={!modelPinned ? "请先选择模型" : validationError || `开始生成 · ${formattedPrice}`}>
                         <Button
                             type="primary"
                             shape="circle"
                             className="!size-9 shrink-0"
-                            disabled={isRunning || !onRun || Boolean(validationError)}
+                            disabled={isRunning || !onRun || Boolean(validationError) || !modelPinned}
                             aria-label={`开始生成，${formattedPrice}`}
                             icon={isRunning ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
                             onClick={() => void run()}

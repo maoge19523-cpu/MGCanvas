@@ -186,6 +186,8 @@ export type CanvasNodeMetadata = {
     groupId?: string;
     genericOperation?: string;
     genericPayload?: string;
+    /** 用户是否主动选过模型：未选择前不显示预估费用，也不允许直接运行。 */
+    genericModelPinned?: boolean;
     channelId?: string;
     providerTask?: GenericProviderTask;
     providerResult?: GenericProviderResult;

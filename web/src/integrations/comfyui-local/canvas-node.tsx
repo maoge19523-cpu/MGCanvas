@@ -143,6 +143,7 @@ function ComfyWorkflowNodeContent({ ctx }: { ctx: CanvasNodeContext }) {
                         <span className={runPhase === "failed" ? "size-1.5 rounded-full bg-red-400" : snapshot.runnable ? "size-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.65)]" : "size-1.5 rounded-full bg-amber-400"} />
                     )}
                     {t(runPhase ? `comfyuiLocal.canvasNode.phase.${runPhase}` : snapshot.runnable ? "comfyuiLocal.canvasNode.ready" : "comfyuiLocal.canvasNode.missingDependencies")}
+                    {elapsed ? <span className="font-medium tabular-nums opacity-90">· {t("comfyuiLocal.canvasNode.elapsed", { duration: elapsed })}</span> : null}
                 </span>
             </div>
             {/* 右侧为绝对定位的端口标签留出空间，避免参数值与输出类型标签被覆盖。 */}
@@ -176,7 +177,6 @@ function ComfyWorkflowNodeContent({ ctx }: { ctx: CanvasNodeContext }) {
                 <span>{t("comfyuiLocal.canvasNode.clickToEdit")}</span>
                 <span className="tabular-nums">
                     {snapshot.inputs.length} {t("comfyuiLocal.canvasNode.inputs")} · {snapshot.outputs.length} {t("comfyuiLocal.canvasNode.outputs")}
-                    {elapsed ? ` · ${t("comfyuiLocal.canvasNode.elapsed", { duration: elapsed })}` : ""}
                 </span>
             </div>
         </div>

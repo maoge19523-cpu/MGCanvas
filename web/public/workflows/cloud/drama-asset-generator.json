@@ -1,0 +1,209 @@
+{
+  "11": {
+    "inputs": {
+      "vae_name": "z_image_turbo-vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "VAE加载器"
+    }
+  },
+  "12": {
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "CLIP加载器"
+    }
+  },
+  "14": {
+    "inputs": {
+      "lora_name": "Z-Image-Fun-Lora-Distill-8-Steps-2603-ComfyUI.safetensors",
+      "strength_model": 0.45000000000000007,
+      "model": [
+        "33",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoRA加载器(仅模型)"
+    }
+  },
+  "16": {
+    "inputs": {
+      "text": "泛黄，发绿，模糊，低分辨率，低质量图像，扭曲的肢体，诡异的外观，丑陋，AI感，噪点，网格感，JPEG压缩条纹，异常的肢体，水印，乱码，意义不明的字符，泛蓝",
+      "clip": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP文本编码器"
+    }
+  },
+  "17": {
+    "inputs": {
+      "samples": [
+        "22",
+        0
+      ],
+      "vae": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "18": {
+    "inputs": {
+      "unet_name": "z_image_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNET加载器"
+    }
+  },
+  "21": {
+    "inputs": {
+      "width": [
+        "69",
+        0
+      ],
+      "height": [
+        "69",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "空Latent"
+    }
+  },
+  "22": {
+    "inputs": {
+      "seed": 968277581718558,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "res_2s_ode",
+      "scheduler": "kl_optimal",
+      "denoise": 1,
+      "model": [
+        "14",
+        0
+      ],
+      "positive": [
+        "24",
+        0
+      ],
+      "negative": [
+        "16",
+        0
+      ],
+      "latent_image": [
+        "21",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "K采样器"
+    }
+  },
+  "23": {
+    "inputs": {
+      "lora_name": "Kook_Zimage_瑶光.safetensors",
+      "strength_model": 0.5000000000000001,
+      "model": [
+        "18",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoRA加载器(仅模型)"
+    }
+  },
+  "24": {
+    "inputs": {
+      "text": [
+        "49",
+        0
+      ],
+      "clip": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP文本编码器"
+    }
+  },
+  "27": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "17",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  },
+  "33": {
+    "inputs": {
+      "lora_name": "Kook_Zimage_如梦似幻.safetensors",
+      "strength_model": 0.7000000000000002,
+      "model": [
+        "23",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoRA加载器(仅模型)"
+    }
+  },
+  "49": {
+    "inputs": {
+      "text": "完美融入摄影技法+油画技法+3D技法，背景与前景形成鲜明的对比，画面背景是穆夏风格的花卉插画，单一的纯克莱因蓝色，大张力角度+故事感，印象派技法，虚实结合的油画，模糊颗粒肌理，模糊感+颗粒感+肌理感+朦胧感，清新淡雅，治愈配色，色彩冷暖对比强烈，强调梦幻温暖的氛围感，微光，隐约看出形态，非传统构图方式，自序，艺术，高级的氛围感，梦幻，缪斯，复古风格，超强复古颗粒感，低饱和，使背景与前景相互融合，打破常规，反设计，超越时代，虚实反复穿插，非传统构图的艺术，耀变+反射，梦幻+微光，高级的氛围感，通透，发光，图片合适的地方有极细无衬线字体“BENTHAM 25”、“PG-13”、“Dreamina .AI”、“For intense sequences of peril，some disturbing images and brief strong language”，细闪珠光感，光影层次感，电影质感，梦幻光影，肌理反光，折射光影，光影弥散，抽象表达，艺术氛围，极简艺术海报，穆夏风格的插画立绘+天野喜孝画风，细致笔触，极繁主义，超多细节，极繁风格"
+    },
+    "class_type": "CR Text",
+    "_meta": {
+      "title": "文本"
+    }
+  },
+  "63": {
+    "inputs": {
+      "text": "情绪氛围感拉满，暗朦，光朦，胶片颗粒质感，层次丰富，，朦胧美学，光的美学,POV视角，对焦模糊，缤纷泛影，质感和肌理，透射暖金微光，超广角，强透视，延伸感，灰青橙黄褪色胶片粗颗粒，低光与高曝，低饱和，高对比反差，光影模糊、弱印象派，超现实，朦胧渐变，暗灰色调氛围，逆朦，过曝，泛朦，模糊弥散渐变，粒子高噪点、光影层次，复古，抽象，空灵，梦幻，大张力角度+故事感，印象派技法，虚实结合的油画，模糊颗粒肌理，模糊感+颗粒感+肌理感+朦胧感，清新淡雅，治愈配色，色彩冷暖对比强烈，强调梦幻温暖的氛围感，微光，隐约看出形态，非传统构图方式，自序，艺术，高级的氛围感，梦幻，缪斯，复古风格，超强复古颗粒感，低饱和"
+    },
+    "class_type": "CR Text",
+    "_meta": {
+      "title": "文本"
+    }
+  },
+  "69": {
+    "inputs": {
+      "use_custom_resolution": false,
+      "resolution": "1024x1024 (1:1) (方形)",
+      "custom_width": 1024,
+      "custom_height": 1024
+    },
+    "class_type": "TTResolutionSelector",
+    "_meta": {
+      "title": "TT分辨率选择器"
+    }
+  }
+}

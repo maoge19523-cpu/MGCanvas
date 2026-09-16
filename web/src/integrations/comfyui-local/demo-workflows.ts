@@ -37,15 +37,31 @@ export const COMFY_DEMO_WORKFLOWS: ComfyDemoWorkflow[] = [
         name: "Z-Image Turbo 文生图",
         description: "Z-Image Turbo 基础文生图，与本地 ComfyUI 默认工作流一致。模型可在参数面板替换。",
     },
-    // 云端示例：由运营方导出 API JSON 后在此登记，例如
-    // {
-    //     id: "cloud-z-image-turbo",
-    //     scope: "cloud",
-    //     category: "image",
-    //     file: "cloud/z-image-turbo.json",
-    //     name: "Z-Image Turbo 文生图",
-    //     description: "高质量快速出图，适合封面与插画。",
-    // },
+    // 云端示例：面向新手，按用途分类。
+    {
+        id: "cloud-drama-asset",
+        scope: "cloud",
+        category: "image",
+        file: "cloud/drama-asset-generator.json",
+        name: "短剧资产生成器",
+        description: "生成短剧场景与角色资产，内置画风提示词，可选画面比例。",
+    },
+    {
+        id: "cloud-krea2-character-sheet",
+        scope: "cloud",
+        category: "edit",
+        file: "cloud/krea2-character-sheet.json",
+        name: "Krea2 角色三视图",
+        description: "上传一张角色图，生成脸部特写＋正面全身＋侧面全身的标准三视图，适合做设定图。",
+    },
+    {
+        id: "cloud-h3-reference-video",
+        scope: "cloud",
+        category: "video",
+        file: "cloud/h3-reference-video.json",
+        name: "MiniMax H3 全能参考",
+        description: "用最多三张参考图配合提示词生成 1280 分辨率视频，可设置时长，自带音频。",
+    },
 ];
 
 /** 按当前环境筛选可用示例。 */

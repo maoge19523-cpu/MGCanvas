@@ -97,6 +97,8 @@ const CLASS_FIELD_LABELS: Record<string, string> = {
   "CheckpointLoaderSimple.ckpt_name": "模型",
   "CLIPTextEncode.text": "提示词",
   "SaveImage.filename_prefix": "文件名前缀",
+  "TTResolutionSelector.resolution": "分辨率",
+  "ResolutionSelector.aspect_ratio": "画面比例",
 };
 
 /**
@@ -110,7 +112,12 @@ export function resolveComfyFieldLabel(
   classType: string,
   field: string,
   promptRole?: "positive" | "negative",
+  nodeTitle?: string,
 ) {
+  // value 这类字段本身没有语义（PrimitiveFloat 等参数节点），
+  // 直接用节点标题，运营方在工作流里把标题写成中文即可。
+  if (field === "value" && nodeTitle) return nodeTitle;
+
   // 文本编码器被采样器引用时，直接按方向命名，比字段名更直观。
   if (promptRole === "positive" && (field === "text" || field === "prompt")) return "正向提示词";
   if (promptRole === "negative" && (field === "text" || field === "prompt")) return "负向提示词";

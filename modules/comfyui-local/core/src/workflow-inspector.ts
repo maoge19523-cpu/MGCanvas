@@ -185,7 +185,7 @@ function inspectInputs(nodeId: string,
       nodeTitle,
       field,
       // 优先给中文标签：英文原始字段名对普通用户不可读。
-      label: resolveComfyFieldLabel(node.class_type, field, promptRole),
+      label: resolveComfyFieldLabel(node.class_type, field, promptRole, nodeTitle),
       section: spec?.section || "unknown",
       currentValue,
       valueType,
@@ -201,6 +201,12 @@ function inspectInputs(nodeId: string,
     };
   });
 }
+
+/** 参数占位节点：值由用户在画布上填写。 */
+const PARAMETER_HOLDER_CLASSES = new Set(["PrimitiveFloat", "PrimitiveInt", "PrimitiveNumber", "PrimitiveString", "PrimitiveStringMultiline", "Float", "Int"]);
+
+/** 分辨率选择器节点：其枚举值本身就是给用户挑的。 */
+const RESOLUTION_SELECTOR_CLASSES = new Set(["TTResolutionSelector", "ResolutionSelector"]);
 
 /**
  * 只暴露尺寸、数量与帧率这类「调了不会变差」的参数。
@@ -229,6 +235,10 @@ function isRecommendedCanvasInput(
     return true;
   // 尺寸、生成数量等数值参数也要能被用户设置，否则示例工作流只能改提示词。
   if (RECOMMENDED_NUMERIC_FIELDS.has(field)) return true;
+  // 分辨率选择器的比例 / 分辨率枚举：直接决定出图尺寸，必须可调。
+  if (RESOLUTION_SELECTOR_CLASSES.has(classType) && (field === "resolution" || field === "aspect_ratio")) return true;
+  // 参数占位节点的数值（例如 PrimitiveFloat 的时长）由运营方命名，应当可调。
+  if (field === "value" && PARAMETER_HOLDER_CLASSES.has(classType)) return true;
   if (valueType !== "string") return false;
   const signal =
     `${classType} ${field} ${typeof options.label === "string" ? options.label : ""}`.toLowerCase();

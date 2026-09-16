@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { App, Button, Input, Tag } from "antd";
+import { App, Button, Input, Modal, Tag } from "antd";
 import { AlertCircle, Cloud, Link2, Play, RefreshCw, Sparkles, Square, Trash2, Upload } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
@@ -9,7 +9,7 @@ import { comfyNativeClient, type ComfyEnvironmentStatus, type ComfyWorkflowDefin
 import { createComfyWorkflowCanvasNode } from "@/integrations/comfyui-local/canvas-node";
 import { openWorkflowInNewCanvas } from "@/integrations/comfyui-local/open-workflow-canvas";
 import { deleteComfyWorkflowDefinition, listComfyWorkflowDefinitions } from "@/integrations/comfyui-local/workflow-library";
-import { demosForScope, isCloudWorkflow } from "@/integrations/comfyui-local/demo-workflows";
+import { demosForScope, groupDemosByCategory, isCloudWorkflow, type ComfyDemoWorkflow } from "@/integrations/comfyui-local/demo-workflows";
 import { useComfyWorkflowImport } from "@/integrations/comfyui-local/use-workflow-import";
 import { isTauriRuntime } from "@/services/platform/desktop-runtime";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
@@ -31,8 +31,9 @@ export default function ComfyUiCloudPage() {
     const [workflows, setWorkflows] = useState<ComfyWorkflowDefinition[]>([]);
 
 
-    // 云端示例由运营方提供；未配置时不显示安装按钮，避免点击后没有结果。
     const cloudDemos = demosForScope("cloud");
+    const demoGroups = groupDemosByCategory(cloudDemos);
+    const [demoPickerOpen, setDemoPickerOpen] = useState(false);
     // 明确声明云端场景：未连接云端时不会回退到本地环境，避免装成本地示例。
     const workflowImport = useComfyWorkflowImport({ scope: "cloud", onImported: () => loadWorkflows() });
 
@@ -93,6 +94,13 @@ export default function ComfyUiCloudPage() {
         } finally {
             setRefreshing(false);
         }
+    };
+
+    /** 安装选中的示例并直接打开带该工作流的新画布。 */
+    const installDemo = async (demo: ComfyDemoWorkflow) => {
+        setDemoPickerOpen(false);
+        const installed = await workflowImport.installDemo(demo);
+        if (installed) navigate(`/canvas/${openWorkflowInNewCanvas(installed)}`);
     };
 
     /** 把云端工作流作为节点加入一个全新画布。 */
@@ -172,7 +180,7 @@ export default function ComfyUiCloudPage() {
                             <div className="flex flex-wrap items-center justify-between gap-3">
                                 <h3 className="text-[15px] font-semibold text-stone-950 dark:text-zinc-100">{t("comfyuiCloud.libraryTitle")}</h3>
                                 <div className="flex flex-wrap gap-2">
-                                    <Button icon={<Sparkles className="size-4" />} onClick={() => void workflowImport.installDemo()} loading={workflowImport.importing}>
+                                    <Button icon={<Sparkles className="size-4" />} onClick={() => setDemoPickerOpen(true)} loading={workflowImport.importing} disabled={!cloudDemos.length}>
                                         {t("comfyuiLocal.pack.installDemo")}
                                     </Button>
                                     <Button icon={<Upload className="size-4" />} onClick={() => workflowImport.openPicker()} loading={workflowImport.importing}>
@@ -211,6 +219,29 @@ export default function ComfyUiCloudPage() {
                     </section>
                 )}
             </div>
+
+            <Modal open={demoPickerOpen} title={t("comfyuiCloud.demoPickerTitle")} footer={null} onCancel={() => setDemoPickerOpen(false)} width={560}>
+                <div className="max-h-[60vh] overflow-y-auto pt-2">
+                    {demoGroups.map((group) => (
+                        <div key={group.category} className="mb-5 last:mb-0">
+                            <div className="mb-2 text-[11px] font-semibold tracking-[0.16em] text-stone-400 dark:text-zinc-600">{group.label}</div>
+                            <div className="grid gap-2">
+                                {group.items.map((demo) => (
+                                    <button
+                                        key={demo.id}
+                                        type="button"
+                                        className="cursor-pointer rounded-[12px] border border-black/[0.08] p-3 text-left transition-colors hover:border-[#756bff]/40 hover:bg-[#756bff]/[0.04] dark:border-white/[0.08] dark:hover:bg-[#756bff]/[0.06]"
+                                        onClick={() => void installDemo(demo)}
+                                    >
+                                        <div className="text-[13px] font-medium text-stone-900 dark:text-zinc-100">{demo.name}</div>
+                                        <div className="mt-1 text-[11px] leading-5 text-stone-500 dark:text-zinc-500">{demo.description}</div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </Modal>
         </WorkspacePage>
     );
 }

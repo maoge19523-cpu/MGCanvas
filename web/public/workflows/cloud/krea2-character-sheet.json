@@ -1,0 +1,305 @@
+{
+  "5": {
+    "inputs": {
+      "filename_prefix": "krea2_identity_edit",
+      "images": [
+        "38",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  },
+  "7": {
+    "inputs": {
+      "width": 1536,
+      "height": 1024,
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "空Latent_SD3"
+    }
+  },
+  "9": {
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "VAE加载器"
+    }
+  },
+  "11": {
+    "inputs": {
+      "samples": [
+        "14",
+        0
+      ],
+      "vae": [
+        "9",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "14": {
+    "inputs": {
+      "seed": 337553976241958,
+      "steps": 10,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "23",
+        0
+      ],
+      "positive": [
+        "24",
+        0
+      ],
+      "negative": [
+        "22",
+        0
+      ],
+      "latent_image": [
+        "7",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "K采样器"
+    }
+  },
+  "16": {
+    "inputs": {
+      "lora_name": "Krea2-四视图QuadView_krea2_v1_M0d.safetensors",
+      "strength_model": 1,
+      "model": [
+        "25",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoRA加载器(仅模型)"
+    }
+  },
+  "17": {
+    "inputs": {
+      "image": "57a8e7dea93c32c6b98081ac54ccc5a9b5e084dad94533daadf100b978c6a1a1.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "18": {
+    "inputs": {
+      "width": 1024,
+      "height": 1536,
+      "upscale_method": "lanczos",
+      "keep_proportion": "resize",
+      "pad_color": "0, 0, 0",
+      "crop_position": "center",
+      "divisible_by": 2,
+      "device": "cpu",
+      "image": [
+        "17",
+        0
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "Resize Image v2"
+    }
+  },
+  "20": {
+    "inputs": {
+      "pixels": [
+        "18",
+        0
+      ],
+      "vae": [
+        "9",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE编码"
+    }
+  },
+  "21": {
+    "inputs": {
+      "clip_name": "qwen3vl_4b_fp8_scaled.safetensors",
+      "type": "krea2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "CLIP加载器"
+    }
+  },
+  "22": {
+    "inputs": {
+      "prompt": "",
+      "grounding_px": 768,
+      "system_prompt": "",
+      "clip": [
+        "21",
+        0
+      ],
+      "image": [
+        "18",
+        0
+      ]
+    },
+    "class_type": "Krea2EditGroundedEncode",
+    "_meta": {
+      "title": "negative (leave empty)"
+    }
+  },
+  "23": {
+    "inputs": {
+      "ref_boost": 1,
+      "ref_boost_a": 1,
+      "fit_mode": "fit",
+      "model": [
+        "16",
+        0
+      ],
+      "source_latent": [
+        "20",
+        0
+      ],
+      "vae": [
+        "9",
+        0
+      ],
+      "source_image": [
+        "18",
+        0
+      ]
+    },
+    "class_type": "Krea2EditModelPatch",
+    "_meta": {
+      "title": "Krea2 Edit (source patch)"
+    }
+  },
+  "24": {
+    "inputs": {
+      "prompt": "Convert the character in the image to a Character Sheet showing a face close-up, front full body, side full body and back full body views",
+      "grounding_px": 0,
+      "system_prompt": "",
+      "clip": [
+        "21",
+        0
+      ],
+      "image": [
+        "18",
+        0
+      ]
+    },
+    "class_type": "Krea2EditGroundedEncode",
+    "_meta": {
+      "title": "Krea2 Edit (grounded encode)"
+    }
+  },
+  "25": {
+    "inputs": {
+      "unet_name": "krea2_turbo_fp8_scaled.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNET加载器"
+    }
+  },
+  "35": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "图像按像素缩放"
+    }
+  },
+  "36": {
+    "inputs": {
+      "model": "seedvr2_ema_3b_fp8_e4m3fn.safetensors",
+      "device": "cuda:0",
+      "blocks_to_swap": 32,
+      "swap_io_components": false,
+      "offload_device": "cpu",
+      "attention_mode": "sdpa"
+    },
+    "class_type": "SeedVR2LoadDiTModel",
+    "_meta": {
+      "title": "SeedVR2 (Down)Load DiT Model"
+    }
+  },
+  "37": {
+    "inputs": {
+      "model": "ema_vae_fp16.safetensors",
+      "device": "cuda:0",
+      "encode_tiled": true,
+      "encode_tile_size": 1024,
+      "encode_tile_overlap": 128,
+      "decode_tiled": true,
+      "decode_tile_size": 1024,
+      "decode_tile_overlap": 128,
+      "tile_debug": "false",
+      "offload_device": "cpu"
+    },
+    "class_type": "SeedVR2LoadVAEModel",
+    "_meta": {
+      "title": "SeedVR2 (Down)Load VAE Model"
+    }
+  },
+  "38": {
+    "inputs": {
+      "seed": 1688711103,
+      "resolution": 1440,
+      "max_resolution": 4500,
+      "batch_size": 1,
+      "uniform_batch_size": false,
+      "color_correction": "lab",
+      "temporal_overlap": 0,
+      "prepend_frames": 0,
+      "input_noise_scale": 0,
+      "latent_noise_scale": 0,
+      "offload_device": "cpu",
+      "enable_debug": false,
+      "image": [
+        "35",
+        0
+      ],
+      "dit": [
+        "36",
+        0
+      ],
+      "vae": [
+        "37",
+        0
+      ]
+    },
+    "class_type": "SeedVR2VideoUpscaler",
+    "_meta": {
+      "title": "SeedVR2 Video Upscaler (v2.5.24)"
+    }
+  }
+}

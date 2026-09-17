@@ -375,7 +375,7 @@ export const CanvasNode = React.memo(function CanvasNode({
             )}
 
             <div
-                className="relative h-full w-full overflow-visible rounded-3xl border-2"
+                className="mg-glass-ring relative h-full w-full overflow-visible rounded-3xl border-2"
                 style={{
                     background: isGroup ? `${theme.toolbar.panel}66` : hasImageContent || hasVideoContent || transparentBg ? "transparent" : theme.node.fill,
                     borderColor: isGroup
@@ -501,7 +501,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                 : null}
 
             {showPanel && !isGroup && renderPanel ? (
-                <div className="absolute left-1/2 top-full z-[70] -translate-x-1/2 pt-3" style={{ width: isNativeWorkbench ? Math.max(data.width, data.type === CanvasNodeType.Image || data.type === CanvasNodeType.Video ? 760 : data.width) : 600 }}>
+                <div className="mg-panel absolute left-1/2 top-full z-[70] -translate-x-1/2 pt-3" style={{ width: isNativeWorkbench ? Math.max(data.width, data.type === CanvasNodeType.Image || data.type === CanvasNodeType.Video ? 760 : data.width) : 600 }}>
                     {renderPanel(data)}
                 </div>
             ) : null}

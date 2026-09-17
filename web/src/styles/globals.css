@@ -1934,3 +1934,28 @@ body,
         transform: none;
     }
 }
+
+/* ===== 液态玻璃（浅色主题）=====
+   给画布上的浮层加磨砂与冷调高光：背景半透明 + backdrop-filter 模糊，
+   让下方的画布隐约透出，形成 iOS 26 那种玻璃质感。 */
+.mg-glass {
+    -webkit-backdrop-filter: blur(18px) saturate(1.6);
+    backdrop-filter: blur(18px) saturate(1.6);
+}
+
+/* 节点卡片与面板本身不透明时玻璃感不明显，这里统一补一层冷调内高光。 */
+.mg-glass-ring {
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, .75),
+        inset 0 0 0 1px rgba(255, 255, 255, .35),
+        0 12px 32px rgba(15, 23, 42, .08);
+}
+
+/* 画布里的浮动面板（节点编辑面板、工具条等）统一磨砂。 */
+.mg-glass .mg-panel {
+    -webkit-backdrop-filter: blur(20px) saturate(1.7);
+    backdrop-filter: blur(20px) saturate(1.7);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, .7),
+        0 18px 48px rgba(15, 23, 42, .10);
+}

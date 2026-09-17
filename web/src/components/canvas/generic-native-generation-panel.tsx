@@ -124,10 +124,9 @@ export function GenericNativeGenerationPanel({
     }, [pricingBaseUrl]);
 
     const effectivePayload = useMemo(() => createGenericNativePayload(operation.id, payload, referenceCounts), [operation.id, payload, referenceCounts]);
-    // 渠道模型优先展示：用户在设置里配置的模型按当前节点能力筛选后与内置目录并列。
-    // 图像与视频已接入渠道协议；音频/文本仍走内置目录，避免误选后调用到错误接口。
+    // 只列出用户在设置里配置的渠道模型：不展示内置固定目录，
+    // 由用户自己选择要调用的渠道模型名称（图片 / 视频 / 音频 / 文本一致）。
     const channelModelGroup = useMemo(() => {
-        if (kind !== "image" && kind !== "video") return null;
         const values = selectableModelsByCapability(config, kind as ModelCapability);
         if (!values.length) return null;
         return { label: "渠道模型", options: values.map((value) => ({ label: modelOptionLabel(config, value), value })) };
@@ -434,19 +433,7 @@ export function GenericNativeGenerationPanel({
             ) : null}
 
             <div className={`${isMediaKind ? "mt-0" : "mt-2.5 border-t"} flex min-w-0 items-center gap-2 px-3 py-2.5`} style={{ borderColor: theme.toolbar.border }}>
-                {hasModelChoices && kind === "video" && !channelModelGroup ? (
-                    <GenericVideoModelPicker
-                        categories={videoModelCategories}
-                        placeholder="请选择模型"
-                        value={modelPinned ? selectedModelKey : undefined}
-                        priceLabels={modelPriceLabels}
-                        pricingLoading={pricingLoading}
-                        automaticMode={automaticMode}
-                        disabled={hasUnresolvedTask}
-                        theme={theme}
-                        onChange={selectModel}
-                    />
-                ) : hasModelChoices ? (
+                {hasModelChoices ? (
                     <Select
                         showSearch
                         disabled={hasUnresolvedTask}
@@ -475,7 +462,7 @@ export function GenericNativeGenerationPanel({
                     />
                 ) : (
                     <span className="min-w-0 flex-1 truncate px-1 text-xs font-medium" style={{ color: theme.node.muted }}>
-                        {operation.label}
+                        还没有可用的渠道模型，请到「配置」里添加
                     </span>
                 )}
                 <Popover

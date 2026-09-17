@@ -160,8 +160,8 @@ const ZHIPU_IMAGE_SCRIPT = [
  * 智谱（BigModel）视频生成。异步任务：先创建拿 id，再轮询 async-result。
  */
 const ZHIPU_VIDEO_SCRIPT = [
-    // 智谱视频的 size 是枚举值：把面板尺寸映射到允许的取值，其余一律不传（交给接口默认值）。
-    'const SIZE_MAP = { "1280x720": "1920x1080", "16:9": "1920x1080", "720x1280": "1080x1920", "9:16": "1080x1920", "960x960": "1024x1024", "1:1": "1024x1024" };',
+    // 智谱视频的 size 是枚举值：把面板的五个比例档位全部映射到接口允许的取值。
+    'const SIZE_MAP = { "1280x720": "1920x1080", "16:9": "1920x1080", "720x1280": "1080x1920", "9:16": "1080x1920", "960x960": "1024x1024", "1:1": "1024x1024", "1088x832": "1280x960", "4:3": "1280x960", "832x1088": "960x1280", "3:4": "960x1280" };',
     'const rawSize = params.size ? String(params.size).trim() : "";',
     'const size = SIZE_MAP[rawSize];',
     'const headers = { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };',

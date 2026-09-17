@@ -4,7 +4,7 @@ import { ClipboardCopy, ClipboardPaste, Copy, Plus, Redo2, Scissors, Trash2, Und
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
-import { insertIntoEditable, lastFocusedEditable, readEditableSelection, writeEditableValue } from "@/lib/last-focused-editable";
+import { insertIntoEditable, isPasteTargetEditable, lastFocusedEditable, readEditableSelection, writeEditableValue } from "@/lib/last-focused-editable";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { ContextMenuState } from "@/types/canvas";
 
@@ -63,9 +63,10 @@ export function CanvasNodeContextMenu({ menu, canUndo, canRedo, canCopyAll, onCl
     const [clickTarget] = useState<HTMLInputElement | HTMLTextAreaElement | null>(() => {
         const under = document.elementFromPoint(menu.x, menu.y);
         for (const candidate of [under, document.activeElement]) {
-            if (candidate instanceof HTMLTextAreaElement || candidate instanceof HTMLInputElement) return candidate;
             const editable = candidate instanceof Element ? candidate.closest("textarea, input") : null;
-            if (editable instanceof HTMLTextAreaElement || editable instanceof HTMLInputElement) return editable;
+            // 模型下拉的搜索框、数字输入等控件不算文本编辑区：
+            // 否则在模型选择框上右键，提示词会被粘进模型选择框。
+            if (isPasteTargetEditable(editable)) return editable;
         }
         return null;
     });

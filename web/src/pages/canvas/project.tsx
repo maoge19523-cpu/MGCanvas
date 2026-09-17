@@ -2139,39 +2139,76 @@ function MGCanvasProjectPage() {
             const requested = Number(payload.n);
             const count = Number.isInteger(requested) && requested >= 1 ? String(Math.min(requested, 10)) : "1";
             const seconds = payload.seconds === undefined || payload.seconds === null || payload.seconds === "" ? "" : String(payload.seconds);
-            setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, model: modelValue, prompt, status: NODE_STATUS_LOADING, errorDetails: undefined } } : item)));
+            // 渠道模型是同步直连请求，没有服务商轮询上报进度：必须自己写入提交时间与阶段，
+            // 否则进度环取不到计时起点，会永远停在 8%。
+            const channelTaskBase: NonNullable<CanvasNodeMetadata["providerTask"]> = {
+                provider: "generic",
+                action: nativeKind === "video" ? "video.generate" : "image.generate",
+                family: nativeKind === "video" ? "video" : "image",
+                submittedAt: new Date().toISOString(),
+            };
+            const channelRunningTask: NonNullable<CanvasNodeMetadata["providerTask"]> = { ...channelTaskBase, phase: "running", status: "running", progress: 0 };
+            const channelDoneTask: NonNullable<CanvasNodeMetadata["providerTask"]> = { ...channelTaskBase, phase: "succeeded", status: "succeeded", progress: 100, completedAt: new Date().toISOString() };
+            setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, model: modelValue, prompt, status: NODE_STATUS_LOADING, errorDetails: undefined, providerTask: channelRunningTask } } : item)));
             try {
                 const references = buildNodeGenerationInputs(node.id, nodesRef.current, connectionsRef.current).flatMap((input) => (input.type === "image" && input.image ? [input.image] : []));
                 if (nativeKind === "video") {
                     const video = await requestVideoGeneration({ ...requestConfig, size, videoSeconds: seconds }, prompt, references, [], [], { signal: controller.signal });
                     const uploadedVideo = await storeGeneratedVideo(video);
+                    const videoSpec = getNodeSpec(CanvasNodeType.Video);
                     setNodes((prev) =>
-                        prev.map((item) =>
-                            item.id === node.id
-                                ? { ...item, metadata: { ...item.metadata, ...videoMetadata(uploadedVideo), prompt, model: modelValue, status: NODE_STATUS_SUCCESS, errorDetails: undefined } }
-                                : item,
-                        ),
+                        prev.map((item) => {
+                            if (item.id !== node.id) return item;
+                            const videoPatch = {
+                                ...videoMetadata(uploadedVideo),
+                                prompt,
+                                model: modelValue,
+                                status: NODE_STATUS_SUCCESS,
+                                errorDetails: undefined,
+                                providerTask: channelDoneTask,
+                            };
+                            // 画面框按成片实际宽高比自适应，避免被默认横屏框裁切。
+                            return { ...item, ...fitMediaNodeGeometry(item, videoPatch.naturalWidth, videoPatch.naturalHeight, videoSpec.width, videoSpec.height), metadata: { ...item.metadata, ...videoPatch } };
+                        }),
                     );
                 } else {
                     const items = references.length
                         ? await requestEdit({ ...requestConfig, size, count }, prompt, references, undefined, { signal: controller.signal })
                         : await requestGeneration({ ...requestConfig, size, count }, prompt, { signal: controller.signal });
-                    const image = items[0];
-                    if (!image?.dataUrl) throw new Error("渠道模型没有返回图片，请检查模型能力与接口地址。");
-                    const uploaded = await uploadImage(image.dataUrl);
+                    const generated = items.filter((item) => Boolean(item?.dataUrl));
+                    if (!generated.length) throw new Error("渠道模型没有返回图片，请检查模型能力与接口地址。");
+                    // 生成数量 >1 时上游会返回多张：首张作为节点主图，其余并入图片历史，避免被静默丢弃。
+                    const uploadedImages = await Promise.all(generated.map((item) => uploadImage(item.dataUrl)));
+                    const [primaryImage, ...extraImages] = uploadedImages;
+                    const toOutput = (image: (typeof uploadedImages)[number]): GenericOutput => ({
+                        kind: "image",
+                        url: image.url,
+                        sourceUrl: image.url,
+                        storageKey: image.storageKey,
+                        mimeType: image.mimeType,
+                        bytes: image.bytes,
+                        width: image.width,
+                        height: image.height,
+                    });
+                    const primaryOutput = toOutput(primaryImage);
+                    const extraOutputs = extraImages.map(toOutput);
+                    const imageSpec = getNodeSpec(CanvasNodeType.Image);
                     setNodes((prev) =>
-                        prev.map((item) =>
-                            item.id === node.id
-                                ? { ...item, metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt, model: modelValue, status: NODE_STATUS_SUCCESS, errorDetails: undefined } }
-                                : item,
-                        ),
+                        prev.map((item) => {
+                            if (item.id !== node.id) return item;
+                            const imagePatch = { ...imageMetadata(primaryImage), prompt, model: modelValue, status: NODE_STATUS_SUCCESS, errorDetails: undefined, providerTask: channelDoneTask };
+                            const historyPatch = extraOutputs.length ? mergeGeneratedImageOutputsHistory({ ...item.metadata, ...imagePatch }, [primaryOutput, ...extraOutputs], channelDoneTask, primaryOutput) : {};
+                            // 图片框按生成结果的实际宽高比自适应：选了 1024×1024 就应显示为方框，而不是横屏框裁切。
+                            return { ...item, ...fitMediaNodeGeometry(item, imagePatch.naturalWidth, imagePatch.naturalHeight, imageSpec.width, imageSpec.height), metadata: { ...item.metadata, ...imagePatch, ...historyPatch } };
+                        }),
                     );
                 }
             } catch (error) {
                 if (!isGenerationCanceled(error)) {
                     const errorDetails = error instanceof Error ? error.message : "生成失败";
                     message.error(errorDetails);
-                    setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails } } : item)));
+                    const failedTask: NonNullable<CanvasNodeMetadata["providerTask"]> = { ...channelTaskBase, phase: "failed", status: "failed", completedAt: new Date().toISOString() };
+                    setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails, providerTask: failedTask } } : item)));
                 }
             } finally {
                 genericRequestLocksRef.current.delete(node.id);

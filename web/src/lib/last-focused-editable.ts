@@ -8,15 +8,31 @@
 
 let lastEditable: HTMLInputElement | HTMLTextAreaElement | null = null;
 
-function isEditable(target: EventTarget | null): target is HTMLInputElement | HTMLTextAreaElement {
-    return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+/** 数字、滑块等控件不是可以写提示词的地方，粘贴时必须排除。 */
+const NON_TEXT_INPUT_TYPES = new Set(["number", "range", "checkbox", "radio", "color", "file", "date", "time", "datetime-local", "month", "week", "password", "hidden", "button", "submit", "reset"]);
+
+/**
+ * 下拉框的搜索输入框（模型选择、数字输入、日期选择等）同样是 input，
+ * 但它们不是「文本编辑区」。不排除的话，只要用户点过模型下拉，
+ * 提示词就会被粘贴进模型选择框里。
+ */
+const CONTROL_INPUT_ANCESTORS = ".ant-select, .ant-input-number, .ant-picker, .ant-cascader, [role='combobox'], [role='spinbutton'], [cmdk-input-wrapper]";
+
+/** 是否是可以承载提示词等长文本的输入框；右键粘贴等文本操作只认这类目标。 */
+export function isPasteTargetEditable(target: EventTarget | null): target is HTMLInputElement | HTMLTextAreaElement {
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return false;
+    if (target instanceof HTMLInputElement) {
+        const type = (target.getAttribute("type") || "text").toLowerCase();
+        if (NON_TEXT_INPUT_TYPES.has(type)) return false;
+    }
+    return !target.closest(CONTROL_INPUT_ANCESTORS);
 }
 
 /** 在应用启动时安装一次；返回卸载函数。 */
 export function trackFocusedEditable() {
     if (typeof document === "undefined") return () => undefined;
     const onFocusIn = (event: FocusEvent) => {
-        if (isEditable(event.target)) lastEditable = event.target;
+        if (isPasteTargetEditable(event.target)) lastEditable = event.target;
     };
     document.addEventListener("focusin", onFocusIn, true);
     return () => document.removeEventListener("focusin", onFocusIn, true);

@@ -1,6 +1,7 @@
 import axios, { type AxiosRequestConfig } from "axios";
 
 import i18n from "@/i18n";
+import { platformFetch } from "@/services/platform/desktop-runtime";
 import { buildApiUrl, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 
 type RequestOptions = { signal?: AbortSignal };
@@ -42,10 +43,56 @@ function pluginUrl(config: AiConfig, path: string) {
     return buildApiUrl(config.baseUrl, path.startsWith("/") ? path : `/${path}`);
 }
 
+/**
+ * 通过 Tauri 原生 HTTP 发送脚本请求。
+ *
+ * 浏览器直接请求会被服务商的 CORS 策略拦下（表现为「Failed to fetch」，
+ * 例如智谱 open.bigmodel.cn 不返回跨域许可头），因此桌面端统一走原生层。
+ * 失败时抛出 axios 形状的错误，兼容脚本里对 error.response.status / data 的读取。
+ */
+async function desktopScriptRequest(input: {
+    method?: string;
+    url: string;
+    headers?: Record<string, unknown>;
+    data?: unknown;
+    params?: Record<string, unknown>;
+    responseType?: string;
+    signal?: AbortSignal;
+}) {
+    const target = new URL(input.url);
+    for (const [key, value] of Object.entries(input.params || {})) {
+        if (value !== undefined && value !== null) target.searchParams.set(key, String(value));
+    }
+    const isForm = typeof FormData !== "undefined" && input.data instanceof FormData;
+    const body = input.data === undefined || input.method?.toLowerCase() === "get" ? undefined : isForm || typeof input.data === "string" ? (input.data as BodyInit) : JSON.stringify(input.data);
+    const response = await platformFetch(target.toString(), {
+        method: (input.method || "get").toUpperCase(),
+        headers: input.headers as HeadersInit,
+        body,
+        signal: input.signal,
+    });
+    const text = await response.text();
+    let parsed: unknown = text;
+    if (input.responseType !== "text" && text) {
+        try {
+            parsed = JSON.parse(text);
+        } catch {
+            parsed = text;
+        }
+    }
+    if (!response.ok) {
+        throw Object.assign(new Error(`Request failed with status code ${response.status}`), {
+            isAxiosError: true,
+            response: { status: response.status, statusText: response.statusText, data: parsed },
+        });
+    }
+    return parsed;
+}
+
 function createPluginHttp(config: AiConfig, options?: RequestOptions): PluginHttp {
     const run = async (method: "get" | "post", path: string, body: unknown, opts?: PluginHttpOptions) => {
         const isForm = typeof FormData !== "undefined" && body instanceof FormData;
-        const response = await axios.request({
+        return desktopScriptRequest({
             method,
             url: pluginUrl(config, path),
             data: method === "post" ? body : undefined,
@@ -54,7 +101,6 @@ function createPluginHttp(config: AiConfig, options?: RequestOptions): PluginHtt
             responseType: opts?.responseType || "json",
             signal: options?.signal,
         });
-        return response.data;
     };
     return {
         url: (path) => pluginUrl(config, path),
@@ -66,8 +112,15 @@ function createPluginHttp(config: AiConfig, options?: RequestOptions): PluginHtt
 /** Raw request with no automatic auth header — the script controls method, url, headers, body entirely. */
 function createPluginRequest(config: AiConfig, options?: RequestOptions) {
     return async (requestConfig: AxiosRequestConfig & { url: string }) => {
-        const response = await axios.request({ ...requestConfig, url: pluginUrl(config, requestConfig.url), signal: options?.signal });
-        return response.data;
+        return desktopScriptRequest({
+            method: requestConfig.method,
+            url: pluginUrl(config, requestConfig.url),
+            headers: requestConfig.headers as Record<string, unknown>,
+            data: requestConfig.data,
+            params: requestConfig.params,
+            responseType: requestConfig.responseType,
+            signal: options?.signal,
+        });
     };
 }
 

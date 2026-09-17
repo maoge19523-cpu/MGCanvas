@@ -179,7 +179,8 @@ const ARK_IMAGE_SCRIPT = [
     '  try {',
     '    data = await request({',
     '      method: "post",',
-    '      url: "https://ark.cn-beijing.volces.com/api/v3/images/generations",',
+    // 用相对路径：方舟接入点分地域（北京 / 上海等），必须跟随渠道里填写的接口地址。
+    '      url: "/images/generations",',
     '      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },',
     '      data: { model: modelId, prompt, size, response_format: "url", watermark: false },',
     '    });',
@@ -226,7 +227,8 @@ const ARK_VIDEO_SCRIPT = [
     'const content = [{ type: "text", text: `${prompt}${flags}` }];',
     'if (images && images[0]) content.push({ type: "image_url", image_url: { url: images[0] } });',
     'const headers = { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };',
-    'const base = "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks";',
+    // 用相对路径：方舟接入点分地域（北京 / 上海等），必须跟随渠道里填写的接口地址。
+    'const base = "/contents/generations/tasks";',
     '',
     'let submit;',
     'try {',

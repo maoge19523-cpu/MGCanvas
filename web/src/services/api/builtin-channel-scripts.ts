@@ -165,10 +165,11 @@ const ZHIPU_IMAGE_SCRIPT = [
 const ARK_IMAGE_SCRIPT = [
     // 方舟的模型 ID 一律小写并用短横线；用户常按控制台展示名填写（含大写与点号），这里自动纠正。
     'const modelId = String(model || "").replace(/\\./g, "-").toLowerCase();',
-    // 面板给的是具体像素，方舟接受 1K/2K/4K 档位，这里按像素大小归到最近的档位。
+    // 方舟只接受 2k / 3k / 4k（必须小写）或少数固定宽高；
+    // 实测该模型下自定义宽高基本都会被拒，因此统一按面板尺寸归到预设档位。
     'const rawSize = params.size ? String(params.size).trim() : "";',
     'const pixels = rawSize.includes("x") ? rawSize.split("x").reduce((a, b) => Math.max(Number(a) || 0, Number(b) || 0), 0) : 0;',
-    'const size = pixels >= 3000 ? "4K" : pixels >= 1500 ? "2K" : pixels > 0 ? "1K" : "2K";',
+    'const size = pixels >= 3000 ? "4k" : "2k";',
     'const countRaw = Math.floor(Number(params.count));',
     'const count = Number.isFinite(countRaw) && countRaw > 1 ? Math.min(countRaw, 4) : 1;',
     '',

@@ -165,11 +165,18 @@ const ZHIPU_IMAGE_SCRIPT = [
 const ARK_IMAGE_SCRIPT = [
     // 方舟的模型 ID 一律小写并用短横线；用户常按控制台展示名填写（含大写与点号），这里自动纠正。
     'const modelId = String(model || "").replace(/\\./g, "-").toLowerCase();',
-    // 方舟只接受 2k / 3k / 4k（必须小写）或少数固定宽高；
-    // 实测该模型下自定义宽高基本都会被拒，因此统一按面板尺寸归到预设档位。
+    // 方舟接受自定义宽高，但要求总像素达到 2K 级别（实测 3.7M 以上才通过），
+    // 而面板给的是小尺寸；这里按比例换算成方舟可用的 2K 尺寸，让画幅选择真正生效。
+    'const RATIO_SIZES = { "16:9": "2560x1440", "9:16": "1440x2560", "4:3": "2304x1728", "3:4": "1728x2304", "1:1": "2048x2048" };',
     'const rawSize = params.size ? String(params.size).trim() : "";',
-    'const pixels = rawSize.includes("x") ? rawSize.split("x").reduce((a, b) => Math.max(Number(a) || 0, Number(b) || 0), 0) : 0;',
-    'const size = pixels >= 3000 ? "4k" : "2k";',
+    'let ratio = "1:1";',
+    'if (rawSize.includes("x")) {',
+    '  const parts = rawSize.split("x").map(Number);',
+    '  const r = parts[0] > 0 && parts[1] > 0 ? parts[0] / parts[1] : 1;',
+    '  const near = (value) => Math.abs(r - value) < 0.06;',
+    '  ratio = near(16 / 9) ? "16:9" : near(9 / 16) ? "9:16" : near(4 / 3) ? "4:3" : near(3 / 4) ? "3:4" : "1:1";',
+    '}',
+    'const size = RATIO_SIZES[ratio];',
     'const countRaw = Math.floor(Number(params.count));',
     'const count = Number.isFinite(countRaw) && countRaw > 1 ? Math.min(countRaw, 4) : 1;',
     '',

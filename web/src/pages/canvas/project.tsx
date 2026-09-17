@@ -2123,10 +2123,8 @@ function MGCanvasProjectPage() {
     const handleChannelModelRun = useCallback(
         async (node: CanvasNodeData, modelValue: string, payload: Record<string, unknown>) => {
             const nativeKind = genericNativeNodeKind(node.type);
-            if (nativeKind !== "image" && nativeKind !== "video") {
-                message.warning("渠道模型支持图片与视频节点；音频与文本请在模型列表中选择内置模型。");
-                return;
-            }
+            // 文本与音频在上层已改走通用生成流程，这里只作为兜底。
+            if (nativeKind !== "image" && nativeKind !== "video") return;
             const requestConfig = resolveModelRequestConfig(effectiveConfig, modelValue);
             if (!isAiConfigReady(requestConfig, requestConfig.model)) {
                 openConfigDialog(true);
@@ -2364,7 +2362,11 @@ function MGCanvasProjectPage() {
                 return;
             }
             const channelModel = typeof payload.model === "string" ? payload.model : "";
-            if (isChannelModelValue(channelModel)) {
+            // 渠道模型目前只为图片与视频实现了专门的渠道协议分支；
+            // 文本与音频改走下面的通用生成流程（本地协议已支持对话与语音），
+            // 否则这两类节点会被拦在这里而完全无法运行。
+            const channelKind = genericNativeNodeKind(node.type);
+            if (isChannelModelValue(channelModel) && (channelKind === "image" || channelKind === "video")) {
                 await handleChannelModelRun(node, channelModel, payload);
                 return;
             }

@@ -118,6 +118,81 @@ const DASHSCOPE_VIDEO_SCRIPT = [
     'return { url: done.video_url };',
 ].join("\n");
 
+/**
+ * 智谱（BigModel / Z.ai）图像生成。
+ * 图片模型（CogView 系列）不在 OpenAI 兼容的 /models 列表里，需要手动填模型名，
+ * 且请求体格式与 OpenAI 不同，因此用调用脚本转换。
+ */
+const ZHIPU_IMAGE_SCRIPT = [
+    'const RATIO_PIXELS = { "1:1": "1024x1024", "16:9": "1440x720", "9:16": "720x1440", "4:3": "1200x900", "3:4": "900x1200" };',
+    'const rawSize = params.size ? String(params.size).trim() : "";',
+    'const size = RATIO_PIXELS[rawSize] || (rawSize.includes("x") ? rawSize : undefined);',
+    'const countRaw = Math.floor(Number(params.count));',
+    'const count = Number.isFinite(countRaw) && countRaw > 1 ? Math.min(countRaw, 4) : 1;',
+    '',
+    'const urls = [];',
+    'let lastData;',
+    'for (let index = 0; index < count; index += 1) {',
+    '  let data;',
+    '  try {',
+    '    data = await request({',
+    '      method: "post",',
+    '      url: "https://open.bigmodel.cn/api/paas/v4/images/generations",',
+    '      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },',
+    '      data: { model, prompt, ...(size ? { size } : {}) },',
+    '    });',
+    '  } catch (error) {',
+    '    const status = error?.response?.status;',
+    '    const body = error?.response?.data;',
+    '    throw new Error(`智谱图像接口调用失败${status ? `（HTTP ${status}）` : ""}：` + (body ? JSON.stringify(body).slice(0, 500) : error?.message || String(error)));',
+    '  }',
+    '  lastData = data;',
+    '  const batch = (data?.data || []).map((item) => item.url).filter(Boolean);',
+    '  urls.push(...batch);',
+    '}',
+    '',
+    'if (!urls.length) throw new Error("智谱返回里没有图片字段，原始响应：" + JSON.stringify(lastData).slice(0, 500));',
+    'return urls;',
+].join("\n");
+
+/**
+ * 智谱（BigModel）视频生成。异步任务：先创建拿 id，再轮询 async-result。
+ */
+const ZHIPU_VIDEO_SCRIPT = [
+    'const RATIO_PIXELS = { "1:1": "1080x1080", "16:9": "1920x1080", "9:16": "1080x1920", "4:3": "1440x1080", "3:4": "1080x1440" };',
+    'const rawSize = params.size ? String(params.size).trim() : "";',
+    'const size = RATIO_PIXELS[rawSize] || (rawSize.includes("x") ? rawSize : undefined);',
+    'const headers = { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };',
+    '',
+    'let submit;',
+    'try {',
+    '  submit = await request({',
+    '    method: "post",',
+    '    url: "https://open.bigmodel.cn/api/paas/v4/videos/generations",',
+    '    headers,',
+    '    data: { model, prompt, ...(images && images[0] ? { image_url: images[0] } : {}), ...(size ? { size } : {}) },',
+    '  });',
+    '} catch (error) {',
+    '  const status = error?.response?.status;',
+    '  const body = error?.response?.data;',
+    '  throw new Error(`智谱视频任务创建失败${status ? `（HTTP ${status}）` : ""}：` + (body ? JSON.stringify(body).slice(0, 500) : error?.message || String(error)));',
+    '}',
+    '',
+    'const taskId = submit?.id;',
+    'if (!taskId) throw new Error("智谱没有返回任务 id，原始响应：" + JSON.stringify(submit).slice(0, 500));',
+    '',
+    'const done = await poll(',
+    '  () => request({ method: "get", url: `https://open.bigmodel.cn/api/paas/v4/async-result/${taskId}`, headers }),',
+    '  (state) => {',
+    '    const status = state?.task_status;',
+    '    if (status === "FAIL") throw new Error("智谱视频任务失败：" + JSON.stringify(state).slice(0, 400));',
+    '    const url = state?.video_result?.[0]?.url;',
+    '    return status === "SUCCESS" && url ? url : null;',
+    '  },',
+    '  { intervalMs: 5000, timeoutMs: 900000 },',
+    ');',
+    'return { url: done };',
+].join("\n");
 export const BUILTIN_CHANNEL_SCRIPTS: readonly BuiltinChannelScript[] = [
     {
         id: "dashscope-image",
@@ -125,6 +200,20 @@ export const BUILTIN_CHANNEL_SCRIPTS: readonly BuiltinChannelScript[] = [
         match: /dashscope(-intl|-us)?\.aliyuncs\.com|bailian/i,
         capability: "image",
         script: DASHSCOPE_IMAGE_SCRIPT,
+    },
+    {
+        id: "zhipu-image",
+        label: "智谱 BigModel 图像生成（CogView）",
+        match: /bigmodel\.cn|zhipu|z\.ai/i,
+        capability: "image",
+        script: ZHIPU_IMAGE_SCRIPT,
+    },
+    {
+        id: "zhipu-video",
+        label: "智谱 BigModel 视频生成（CogVideoX）",
+        match: /bigmodel\.cn|zhipu|z\.ai/i,
+        capability: "video",
+        script: ZHIPU_VIDEO_SCRIPT,
     },
     {
         id: "dashscope-video",

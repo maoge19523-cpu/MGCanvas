@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- [新增] 智谱 BigModel 内置调用脚本（CogView 图像 / CogVideoX 视频），按渠道地址自动匹配，无需手写脚本。
 - [新增] 渠道编辑的「接口地址」支持从下拉选择常用服务商地址（智谱 / 百炼 / DeepSeek / Kimi / 火山方舟 / OpenAI / Gemini / Claude / RunningHub），也可自行输入。
 - [调整] 模型下拉彻底移除内置目录，只列渠道模型；未配置时按节点类型提示需要把模型 capabilities 设为 image / video / audio / text。
 - [调整] 模型下拉只列出用户配置的渠道模型（图片 / 视频 / 音频 / 文本一致），不再展示内置固定目录；没有可用渠道模型时给出配置提示。

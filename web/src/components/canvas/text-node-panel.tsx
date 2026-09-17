@@ -3,7 +3,7 @@ import { LoaderCircle, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
-import { TEXT_PROMPT_STYLES, rewriteImagePrompt, type TextPromptStyle } from "@/services/api/text-rewrite";
+import { DEFAULT_TEXT_PROMPT_STYLE, TEXT_PROMPT_STYLE_GROUPS, rewriteImagePrompt, type TextPromptStyle } from "@/services/api/text-rewrite";
 import { modelOptionLabel, selectableModelsByCapability, useConfigStore } from "@/stores/use-config-store";
 import type { CanvasNodeData, CanvasNodeMetadata } from "@/types/canvas";
 
@@ -26,7 +26,7 @@ export function TextNodePanel({ node, theme, onChange }: TextNodePanelProps) {
     const models = selectableModelsByCapability(config, "text");
     const [model, setModel] = useState(node.metadata?.model && models.includes(node.metadata.model) ? node.metadata.model : models[0] || "");
     const [idea, setIdea] = useState(node.metadata?.prompt || "");
-    const [style, setStyle] = useState<string>(node.metadata?.style || TEXT_PROMPT_STYLES[0]);
+    const [style, setStyle] = useState<string>(node.metadata?.style || DEFAULT_TEXT_PROMPT_STYLE);
     const [running, setRunning] = useState(false);
 
     useEffect(() => {
@@ -81,10 +81,10 @@ export function TextNodePanel({ node, theme, onChange }: TextNodePanelProps) {
 
             <div className="flex items-center gap-2">
                 <Select
-                    className="min-w-[104px] flex-1"
+                    className="min-w-[150px] flex-1"
                     size="small"
                     value={style}
-                    options={TEXT_PROMPT_STYLES.map((item) => ({ label: item, value: item }))}
+                    options={TEXT_PROMPT_STYLE_GROUPS.map((group) => ({ label: group.label, options: group.options.map((item) => ({ label: item.label, value: item.label })) }))}
                     onChange={(value) => {
                         setStyle(value);
                         onChange(node.id, { style: value });

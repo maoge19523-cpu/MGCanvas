@@ -137,7 +137,13 @@ export async function runGenericOperation(config: GenericRequestConfig, operatio
         body = form;
     } else if (operation.requestMode === "json") {
         headers["Content-Type"] = "application/json";
-        body = JSON.stringify(prepared);
+        // 渠道模型值是 `channelId::modelName`，前缀只用于在本地定位渠道与密钥，
+        // 发给服务商时必须用裸模型名，否则会报 model_not_found。
+        const outbound =
+            typeof prepared.model === "string" && prepared.model.includes("::")
+                ? { ...prepared, model: prepared.model.slice(prepared.model.indexOf("::") + 2) }
+                : prepared;
+        body = JSON.stringify(outbound);
     }
 
     const raw = await requestGeneric(config, operation.path, { method: operation.method, headers, body, signal: options.signal }, fetchImpl);

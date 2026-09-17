@@ -2149,7 +2149,14 @@ function MGCanvasProjectPage() {
                 submittedAt: new Date().toISOString(),
             };
             const channelRunningTask: NonNullable<CanvasNodeMetadata["providerTask"]> = { ...channelTaskBase, phase: "running", status: "running", progress: 0 };
-            const channelDoneTask: NonNullable<CanvasNodeMetadata["providerTask"]> = { ...channelTaskBase, phase: "succeeded", status: "succeeded", progress: 100, completedAt: new Date().toISOString() };
+            // 完成时间必须在请求结束后才取：提前算会把耗时算成 0。
+            const channelDoneTask = (): NonNullable<CanvasNodeMetadata["providerTask"]> => ({
+                ...channelTaskBase,
+                phase: "succeeded",
+                status: "succeeded",
+                progress: 100,
+                completedAt: new Date().toISOString(),
+            });
             setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, model: modelValue, prompt, status: NODE_STATUS_LOADING, errorDetails: undefined, providerTask: channelRunningTask } } : item)));
             try {
                 const references = buildNodeGenerationInputs(node.id, nodesRef.current, connectionsRef.current).flatMap((input) => (input.type === "image" && input.image ? [input.image] : []));
@@ -2166,7 +2173,7 @@ function MGCanvasProjectPage() {
                                 model: modelValue,
                                 status: NODE_STATUS_SUCCESS,
                                 errorDetails: undefined,
-                                providerTask: channelDoneTask,
+                                providerTask: channelDoneTask(),
                             };
                             // 画面框按成片实际宽高比自适应，避免被默认横屏框裁切。
                             return { ...item, ...fitMediaNodeGeometry(item, videoPatch.naturalWidth, videoPatch.naturalHeight, videoSpec.width, videoSpec.height), metadata: { ...item.metadata, ...videoPatch } };
@@ -2209,8 +2216,8 @@ function MGCanvasProjectPage() {
                     setNodes((prev) =>
                         prev.map((item) => {
                             if (item.id !== node.id) return item;
-                            const imagePatch = { ...imageMetadata(primaryImage), prompt, model: modelValue, status: NODE_STATUS_SUCCESS, errorDetails: undefined, providerTask: channelDoneTask };
-                            const historyPatch = extraOutputs.length ? mergeGeneratedImageOutputsHistory({ ...item.metadata, ...imagePatch }, [primaryOutput, ...extraOutputs], channelDoneTask, primaryOutput) : {};
+                            const imagePatch = { ...imageMetadata(primaryImage), prompt, model: modelValue, status: NODE_STATUS_SUCCESS, errorDetails: undefined, providerTask: channelDoneTask() };
+                            const historyPatch = extraOutputs.length ? mergeGeneratedImageOutputsHistory({ ...item.metadata, ...imagePatch }, [primaryOutput, ...extraOutputs], channelDoneTask(), primaryOutput) : {};
                             // 图片框按生成结果的实际宽高比自适应：选了 1024×1024 就应显示为方框，而不是横屏框裁切。
                             return { ...item, ...fitMediaNodeGeometry(item, imagePatch.naturalWidth, imagePatch.naturalHeight, imageSpec.width, imageSpec.height), metadata: { ...item.metadata, ...imagePatch, ...historyPatch } };
                         }),

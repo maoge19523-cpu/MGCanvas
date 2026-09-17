@@ -1,4 +1,4 @@
-import { Button, Drawer, Input, Segmented, Select, Space } from "antd";
+import { AutoComplete, Button, Drawer, Input, Segmented, Select, Space } from "antd";
 import { ListPlus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -7,6 +7,23 @@ import { GENERIC_MODEL_PROFILES, type GenericModelFamily } from "@/services/api/
 import { guessCapability, normalizeChannelModels, type ApiCallFormat, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import { ModelScriptEditor } from "./model-script-editor";
 import { ModelSelectModal } from "./model-select-modal";
+
+/**
+ * 常用渠道接口地址。
+ * 多数用户在服务商文档里找不到「Base URL」，这里给出可直接选用的完整地址，
+ * 减少填错（例如误把网页控制台地址当成接口地址）。
+ */
+const COMMON_BASE_URLS: readonly { value: string; label: string }[] = [
+    { value: "https://open.bigmodel.cn/api/paas/v4", label: "智谱 GLM（BigModel）" },
+    { value: "https://dashscope.aliyuncs.com/compatible-mode/v1", label: "阿里云百炼（通义千问）" },
+    { value: "https://api.deepseek.com/v1", label: "DeepSeek" },
+    { value: "https://api.moonshot.cn/v1", label: "Kimi（月之暗面）" },
+    { value: "https://ark.cn-beijing.volces.com/api/v3", label: "火山方舟（豆包 / Seedance）" },
+    { value: "https://api.openai.com/v1", label: "OpenAI" },
+    { value: "https://generativelanguage.googleapis.com/v1beta", label: "Google Gemini" },
+    { value: "https://api.anthropic.com/v1", label: "Anthropic Claude" },
+    { value: "https://www.runninghub.cn/proxy/", label: "RunningHub 云端 ComfyUI（末尾接 API Key）" },
+];
 
 type ScriptTarget = { name: string; capability: ModelCapability; value: string };
 
@@ -97,7 +114,16 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                 </label>
                 <label className="block md:col-span-2">
                     <span className="mb-1 block text-sm font-medium">{t("config.channelEditor.baseUrl")}</span>
-                    <Input value={draft.baseUrl} onChange={(event) => patch({ baseUrl: event.target.value })} placeholder="https://api.example.com" />
+                    <AutoComplete
+                        className="w-full"
+                        value={draft.baseUrl}
+                        onChange={(value) => patch({ baseUrl: value })}
+                        placeholder="https://api.example.com/v1，也可从下拉里选常用地址"
+                        options={COMMON_BASE_URLS.map((item) => ({ value: item.value, label: `${item.label} · ${item.value}` }))}
+                        filterOption={(input, option) =>
+                            String(option?.label ?? "").toLowerCase().includes(input.toLowerCase()) || String(option?.value ?? "").toLowerCase().includes(input.toLowerCase())
+                        }
+                    />
                 </label>
                 <label className="block md:col-span-2">
                     <span className="mb-1 block text-sm font-medium">API Key</span>

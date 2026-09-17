@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
-import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
+import { requestVideoGeneration, storeGeneratedVideo, type VideoGenerationResult } from "@/services/api/video";
 import { GenericApiError, GenericPollingStoppedError, describeGenericError, resumeGenericTasks, runGenericOperationBatch, type GenericReference, type GenericRunResult, type GenericSubmission } from "@/services/api/generic";
 import { getGenericOperation } from "@/services/api/generic-contract";
 import type { GenericOutput } from "@/services/api/generic-protocol";
@@ -14,9 +14,10 @@ import { persistGenericRunResult } from "@/services/api/generic-storage";
 import { clearGenericTaskJournal, journalGenericSubmission, mergeGenericTaskJournal } from "@/services/api/generic-task-journal";
 import { requestGenericWalletRefresh } from "@/services/api/generic-wallet";
 import { resolveModelChannel, resolveModelRequestConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
-import { uploadImage } from "@/services/image-storage";
-import { uploadMediaFile } from "@/services/file-storage";
-import { downloadBlobBackedMedia, downloadFilenameFromTitle, type DownloadableMediaKind } from "@/services/media-download";
+import { uploadImage, type UploadedImage } from "@/services/image-storage";
+import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
+import { downloadBlobBackedMedia, downloadFilenameFromTitle, resolveDownloadBlob, type DownloadableMediaKind } from "@/services/media-download";
+import { cacheRemoteMedia } from "@/services/local-media-cache";
 import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
@@ -2154,7 +2155,7 @@ function MGCanvasProjectPage() {
                 const references = buildNodeGenerationInputs(node.id, nodesRef.current, connectionsRef.current).flatMap((input) => (input.type === "image" && input.image ? [input.image] : []));
                 if (nativeKind === "video") {
                     const video = await requestVideoGeneration({ ...requestConfig, size, videoSeconds: seconds }, prompt, references, [], [], { signal: controller.signal });
-                    const uploadedVideo = await storeGeneratedVideo(video);
+                    const uploadedVideo = await storeProviderVideo(video);
                     const videoSpec = getNodeSpec(CanvasNodeType.Video);
                     setNodes((prev) =>
                         prev.map((item) => {
@@ -2178,7 +2179,19 @@ function MGCanvasProjectPage() {
                     const generated = items.filter((item) => Boolean(item?.dataUrl));
                     if (!generated.length) throw new Error("渠道模型没有返回图片，请检查模型能力与接口地址。");
                     // 生成数量 >1 时上游会返回多张：首张作为节点主图，其余并入图片历史，避免被静默丢弃。
-                    const uploadedImages = await Promise.all(generated.map((item) => uploadImage(item.dataUrl)));
+                    // 取图统一走 resolveProviderMediaBlob：服务商临时地址用 WebView 直连会被 CORS 拦下。
+                    // 单张取回失败不影响其余结果，只有全部失败才判定为错误。
+                    const uploads = await Promise.all(
+                        generated.map(async (item): Promise<UploadedImage | null> => {
+                            try {
+                                return await uploadImage(item.dataUrl.startsWith("data:") ? item.dataUrl : await resolveProviderMediaBlob(item.dataUrl, "image"));
+                            } catch {
+                                return null;
+                            }
+                        }),
+                    );
+                    const uploadedImages = uploads.filter((image): image is UploadedImage => image !== null);
+                    if (!uploadedImages.length) throw new Error("渠道模型返回的图片无法读取：可能被跨域策略拦截或地址已过期，请检查模型能力与接口地址。");
                     const [primaryImage, ...extraImages] = uploadedImages;
                     const toOutput = (image: (typeof uploadedImages)[number]): GenericOutput => ({
                         kind: "image",
@@ -4394,6 +4407,38 @@ function applyGenericResultToSource(
             providerResult,
         },
     };
+}
+
+/**
+ * 把服务商返回的临时 HTTPS 地址读成 Blob（图片 / 视频通用）。
+ *
+ * 渠道模型直连取素材走的是 WebView 的 fetch，会被服务商的 CORS 策略拦下
+ * （表现为「请求 … 失败（Failed to fetch）」）。这里复用内置模型同款的兜底顺序：
+ * 桌面原生磁盘缓存（走 Rust，无跨域限制）→ 带 SSRF 防护的下载中转 → 直连。
+ */
+async function resolveProviderMediaBlob(url: string, kind: DownloadableMediaKind): Promise<Blob> {
+    try {
+        const cached = await cacheRemoteMedia({ url });
+        const blob = await readDesktopFileBlob(cached.absolutePath, cached.mimeType);
+        if (blob?.size) return blob;
+    } catch {
+        // 桌面缓存不可用时继续走下载链路
+    }
+    return resolveDownloadBlob({ kind, url });
+}
+
+/**
+ * 渠道模型视频入库：与图片同款兜底，先把服务商临时地址落成本地 Blob 再入库，
+ * 否则 uploadMediaFile 内部同样是一次会被 CORS 拦下的 fetch，视频只会静默退化成远端地址、永不落盘。
+ * 取回失败时退回 storeGeneratedVideo 原有行为（保底登记远端地址，不中断生成）。
+ */
+async function storeProviderVideo(result: VideoGenerationResult): Promise<UploadedFile> {
+    if (result.blob || !result.url) return storeGeneratedVideo(result);
+    try {
+        return await uploadMediaFile(await resolveProviderMediaBlob(result.url, "video"), "video");
+    } catch {
+        return storeGeneratedVideo(result);
+    }
 }
 
 function createGenericOutputNode(source: CanvasNodeData, output: GenericOutput, index: number, operationLabel: string, providerTask: NonNullable<CanvasNodeMetadata["providerTask"]>) {

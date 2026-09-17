@@ -3,7 +3,7 @@ import localforage from "localforage";
 import { nanoid } from "nanoid";
 import i18n from "@/i18n";
 import { readImageMeta } from "@/lib/image-utils";
-import { readDesktopFileBlob } from "@/services/platform/desktop-runtime";
+import { platformFetch, readDesktopFileBlob } from "@/services/platform/desktop-runtime";
 
 export type UploadedImage = {
     url: string;
@@ -67,7 +67,8 @@ export async function imageToDataUrl(image: { url?: string; dataUrl?: string; st
     if (diskBlob) return blobToDataUrl(diskBlob);
     const url = image.dataUrl || image.url || "";
     if (!url) return "";
-    const response = await fetch(url);
+    // 走原生层下载：部分图片 CDN（如智谱的 UCloud 存储）不允许浏览器跨域请求。
+    const response = await platformFetch(url);
     if (!response.ok) {
         if (response.status === 404 || response.status === 410) throw new Error("引用图片的原地址已失效，且未找到可用的本地副本。请重新上传该素材后再生成。");
         throw new Error(i18n.t("common.imageReadFailed"));

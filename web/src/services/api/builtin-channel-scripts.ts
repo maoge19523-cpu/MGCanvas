@@ -182,7 +182,7 @@ const ARK_IMAGE_SCRIPT = [
     // 用相对路径：方舟接入点分地域（北京 / 上海等），必须跟随渠道里填写的接口地址。
     '      url: "/images/generations",',
     '      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },',
-    '      data: { model: modelId, prompt, size, response_format: "url", watermark: false },',
+    '      data: { model: modelId, prompt, sequential_image_generation: "disabled", response_format: "url", size, stream: false, watermark: false },',
     '    });',
     '  } catch (error) {',
     '    const status = error?.response?.status;',

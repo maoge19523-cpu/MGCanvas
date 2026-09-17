@@ -1,4 +1,6 @@
 import i18n from "@/i18n";
+import { platformFetch } from "@/services/platform/desktop-runtime";
+
 import type { PromptSource } from "./prompt-source-presets";
 
 export type RawPrompt = {
@@ -23,7 +25,8 @@ export type RawPrompt = {
 type RunOptions = { signal?: AbortSignal };
 
 async function fetchSource(source: PromptSource, options?: RunOptions) {
-    const response = await fetch(source.url, { cache: "no-store", signal: options?.signal });
+    // 走原生 HTTP：多数提示词托管地址不会返回跨域许可头，浏览器直连会失败。
+    const response = await platformFetch(source.url, { cache: "no-store", signal: options?.signal });
     if (!response.ok) throw new Error(i18n.t("config.promptSources.runtime.requestFailed", { status: response.status }));
     return response.json();
 }

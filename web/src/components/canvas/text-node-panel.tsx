@@ -1,6 +1,10 @@
+import { Select, Tooltip, message } from "antd";
+import { LoaderCircle, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
+import { TEXT_PROMPT_STYLES, rewriteImagePrompt, type TextPromptStyle } from "@/services/api/text-rewrite";
+import { modelOptionLabel, selectableModelsByCapability, useConfigStore } from "@/stores/use-config-store";
 import type { CanvasNodeData, CanvasNodeMetadata } from "@/types/canvas";
 
 type CanvasTheme = (typeof canvasThemes)[keyof typeof canvasThemes];
@@ -12,44 +16,118 @@ export type TextNodePanelProps = {
 };
 
 /**
- * 文本节点专用面板。
+ * 文本节点 = 提示词优化器。
  *
- * 文本节点的定位是「内容载体」：直接编辑文字，连线给图片 / 视频 / 音频节点当提示词；
- * 需要模型改写时用节点上的「编辑文字」，因此这里不提供模型选择与生成按钮。
+ * 下方填一句简单想法并选好画风，模型把它扩写成可直接用于生图的专业提示词，
+ * 结果写回节点内容（节点上方显示），之后连线给图片 / 视频节点即可直接用。
  */
 export function TextNodePanel({ node, theme, onChange }: TextNodePanelProps) {
-    const stored = node.metadata?.content || "";
-    const [draft, setDraft] = useState(stored);
+    const config = useConfigStore((state) => state.config);
+    const models = selectableModelsByCapability(config, "text");
+    const [model, setModel] = useState(node.metadata?.model && models.includes(node.metadata.model) ? node.metadata.model : models[0] || "");
+    const [idea, setIdea] = useState(node.metadata?.prompt || "");
+    const [style, setStyle] = useState<string>(node.metadata?.style || TEXT_PROMPT_STYLES[0]);
+    const [running, setRunning] = useState(false);
 
     useEffect(() => {
-        setDraft(node.metadata?.content || "");
-    }, [node.id, node.metadata?.content]);
+        if (!models.includes(model)) setModel(models[0] || "");
+    }, [models, model]);
 
-    const commit = (value: string) => {
-        setDraft(value);
-        onChange(node.id, { content: value, status: value.trim() ? "success" : node.metadata?.status });
+    const content = node.metadata?.content || "";
+
+    const run = async () => {
+        const trimmed = idea.trim();
+        if (!trimmed) {
+            void message.warning("先写一句想要画什么。");
+            return;
+        }
+        if (!model) {
+            void message.warning("还没有可用的文本模型，请到「配置」里添加一个 capabilities 为 text 的模型。");
+            return;
+        }
+        setRunning(true);
+        try {
+            const optimized = await rewriteImagePrompt(trimmed, style as TextPromptStyle, model);
+            onChange(node.id, { content: optimized, prompt: trimmed, style, model, status: "success", errorDetails: undefined });
+            void message.success("提示词已生成，可直接连线给图片 / 视频节点。");
+        } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            onChange(node.id, { status: "error", errorDetails: detail });
+            void message.error(detail);
+        } finally {
+            setRunning(false);
+        }
     };
 
     return (
-        <div className="flex flex-col gap-2" style={{ color: theme.node.text }}>
-            <div className="flex items-center gap-2 text-[11px]" style={{ color: theme.node.muted }}>
-                <span className="font-medium" style={{ color: theme.node.text }}>
-                    文本内容
+        <div className="flex flex-col gap-2 text-xs" style={{ color: theme.node.text }}>
+            <label className="block">
+                <span className="mb-1 block text-[11px] font-medium" style={{ color: theme.node.muted }}>
+                    想画什么（一句话就够）
                 </span>
-                <span>连线到图片 / 视频节点即可作为提示词；用「编辑文字」让模型按指令改写</span>
+                <textarea
+                    data-canvas-no-zoom
+                    value={idea}
+                    onChange={(event) => {
+                        setIdea(event.target.value);
+                        onChange(node.id, { prompt: event.target.value });
+                    }}
+                    placeholder="例如：一只小猫"
+                    spellCheck={false}
+                    className="min-h-[56px] w-full resize-y rounded-xl border p-2.5 leading-5 outline-none"
+                    style={{ background: theme.node.fill, borderColor: theme.toolbar.border, color: theme.node.text }}
+                />
+            </label>
+
+            <div className="flex items-center gap-2">
+                <Select
+                    className="min-w-[104px] flex-1"
+                    size="small"
+                    value={style}
+                    options={TEXT_PROMPT_STYLES.map((item) => ({ label: item, value: item }))}
+                    onChange={(value) => {
+                        setStyle(value);
+                        onChange(node.id, { style: value });
+                    }}
+                />
+                <Select
+                    className="min-w-[160px] flex-[2]"
+                    size="small"
+                    value={model || undefined}
+                    placeholder="请选择模型"
+                    options={models.map((item) => ({ label: modelOptionLabel(config, item), value: item }))}
+                    onChange={(value) => {
+                        setModel(value);
+                        onChange(node.id, { model: value });
+                    }}
+                />
+                <Tooltip title="用模型把这句话扩写成专业生图提示词">
+                    <button
+                        type="button"
+                        onClick={() => void run()}
+                        disabled={running || !model}
+                        className="flex size-8 shrink-0 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-45"
+                        style={{ background: theme.toolbar.activeBg, color: theme.node.text }}
+                    >
+                        {running ? <LoaderCircle className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                    </button>
+                </Tooltip>
             </div>
-            <textarea
-                data-canvas-no-zoom
-                value={draft}
-                onChange={(event) => commit(event.target.value)}
-                placeholder="在这里写文字，或从别处粘贴"
-                spellCheck={false}
-                className="min-h-[160px] w-full resize-y rounded-xl border p-3 text-xs leading-5 outline-none transition-colors"
-                style={{ background: theme.node.fill, borderColor: theme.toolbar.border, color: theme.node.text }}
-            />
-            <div className="text-right text-[11px]" style={{ color: theme.node.faint }}>
-                {draft.length} 字
-            </div>
+
+            <label className="block">
+                <span className="mb-1 block text-[11px] font-medium" style={{ color: theme.node.muted }}>
+                    优化后的提示词（可直接编辑，连线给下游即用）
+                </span>
+                <textarea
+                    data-canvas-no-zoom
+                    value={content}
+                    onChange={(event) => onChange(node.id, { content: event.target.value })}
+                    placeholder="点右侧按钮后，这里会出现专业提示词"
+                    spellCheck={false}
+                    className="min-h-[120px] w-full resize-y rounded-xl border p-2.5 leading-5 outline-none"
+                    style={{ background: theme.node.fill, borderColor: theme.toolbar.border, color: theme.node.text }}
+                />
+            </label>
         </div>
     );
 }

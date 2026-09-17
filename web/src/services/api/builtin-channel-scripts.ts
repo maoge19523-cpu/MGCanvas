@@ -164,6 +164,9 @@ const ZHIPU_VIDEO_SCRIPT = [
     'const SIZE_MAP = { "1280x720": "1920x1080", "16:9": "1920x1080", "720x1280": "1080x1920", "9:16": "1080x1920", "960x960": "1024x1024", "1:1": "1024x1024", "1088x832": "1280x960", "4:3": "1280x960", "832x1088": "960x1280", "3:4": "960x1280" };',
     'const rawSize = params.size ? String(params.size).trim() : "";',
     'const size = SIZE_MAP[rawSize];',
+    // cogvideox 系列只支持 5 秒或 10 秒，其余取值一律按 5 秒处理，避免被接口拒绝。
+    'const secondsRaw = Math.floor(Number(params.seconds));',
+    'const duration = Number.isFinite(secondsRaw) && secondsRaw >= 10 ? 10 : Number.isFinite(secondsRaw) && secondsRaw > 0 ? 5 : undefined;',
     'const headers = { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };',
     '',
     'let submit;',
@@ -172,7 +175,7 @@ const ZHIPU_VIDEO_SCRIPT = [
     '    method: "post",',
     '    url: "https://open.bigmodel.cn/api/paas/v4/videos/generations",',
     '    headers,',
-    '    data: { model, prompt, ...(images && images[0] ? { image_url: images[0] } : {}), ...(size ? { size } : {}) },',
+    '    data: { model, prompt, ...(images && images[0] ? { image_url: images[0] } : {}), ...(size ? { size } : {}), ...(duration ? { duration } : {}) },',
     '  });',
     '} catch (error) {',
     '  const status = error?.response?.status;',

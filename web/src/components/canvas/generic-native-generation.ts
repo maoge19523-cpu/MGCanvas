@@ -621,15 +621,17 @@ function channelModelParameterDefinitions(operationId: string): readonly Generic
         return [
             {
                 path: "metadata.size",
-                label: "分辨率",
+                // 视频模型只输出 480p–1080p，写死像素值没有意义：
+                // 这里统一按画幅选择，由各渠道脚本按服务商支持的尺寸枚举落地。
+                label: "画幅",
                 control: "select",
                 optional: true,
                 options: [
-                    { label: "1280×720 (16:9)", value: "1280x720" },
-                    { label: "720×1280 (9:16)", value: "720x1280" },
-                    { label: "960×960 (1:1)", value: "960x960" },
-                    { label: "1088×832 (4:3)", value: "1088x832" },
-                    { label: "832×1088 (3:4)", value: "832x1088" },
+                    { label: "16:9 横屏", value: "16:9" },
+                    { label: "9:16 竖屏", value: "9:16" },
+                    { label: "1:1 方形", value: "1:1" },
+                    { label: "4:3 横屏", value: "4:3" },
+                    { label: "3:4 竖屏", value: "3:4" },
                 ],
             },
             { path: "seconds", label: "时长（秒）", control: "number", min: 2, max: 15, step: 1, optional: true },

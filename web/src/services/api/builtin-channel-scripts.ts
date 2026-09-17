@@ -124,10 +124,10 @@ const DASHSCOPE_VIDEO_SCRIPT = [
  * 且请求体格式与 OpenAI 不同，因此用调用脚本转换。
  */
 const ZHIPU_IMAGE_SCRIPT = [
-    // CogView 只接受固定分辨率：只映射到接口支持的取值，其余不传。
-    'const RATIO_PIXELS = { "1:1": "1024x1024", "16:9": "1440x720", "9:16": "720x1440", "4:3": "1152x864", "3:4": "864x1152" };',
+    // 面板传的是具体尺寸（如 720x1280），映射到 CogView 支持的分辨率；匹配不上则不传，交给接口默认值。
+    'const SIZE_MAP = { "1024x1024": "1024x1024", "1:1": "1024x1024", "1280x720": "1440x720", "16:9": "1440x720", "720x1280": "720x1440", "9:16": "720x1440", "1152x864": "1152x864", "4:3": "1152x864", "864x1152": "864x1152", "3:4": "864x1152" };',
     'const rawSize = params.size ? String(params.size).trim() : "";',
-    'const size = RATIO_PIXELS[rawSize];',
+    'const size = SIZE_MAP[rawSize];',
     'const countRaw = Math.floor(Number(params.count));',
     'const count = Number.isFinite(countRaw) && countRaw > 1 ? Math.min(countRaw, 4) : 1;',
     '',
@@ -140,7 +140,7 @@ const ZHIPU_IMAGE_SCRIPT = [
     '      method: "post",',
     '      url: "https://open.bigmodel.cn/api/paas/v4/images/generations",',
     '      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },',
-    '      data: { model, prompt, ...(size ? { size } : {}) },',
+    '      data: { model, prompt, watermark_enabled: false, ...(size ? { size } : {}) },',
     '    });',
     '  } catch (error) {',
     '    const status = error?.response?.status;',
@@ -160,10 +160,10 @@ const ZHIPU_IMAGE_SCRIPT = [
  * 智谱（BigModel）视频生成。异步任务：先创建拿 id，再轮询 async-result。
  */
 const ZHIPU_VIDEO_SCRIPT = [
-    // 智谱视频的 size 是枚举值：只映射到接口允许的取值，其余一律不传（交给接口默认值），否则会被拒。
-    'const RATIO_PIXELS = { "16:9": "1920x1080", "9:16": "1080x1920", "1:1": "1024x1024" };',
+    // 智谱视频的 size 是枚举值：把面板尺寸映射到允许的取值，其余一律不传（交给接口默认值）。
+    'const SIZE_MAP = { "1280x720": "1920x1080", "16:9": "1920x1080", "720x1280": "1080x1920", "9:16": "1080x1920", "960x960": "1024x1024", "1:1": "1024x1024" };',
     'const rawSize = params.size ? String(params.size).trim() : "";',
-    'const size = RATIO_PIXELS[rawSize];',
+    'const size = SIZE_MAP[rawSize];',
     'const headers = { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };',
     '',
     'let submit;',

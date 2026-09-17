@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- [修复] 智谱脚本的尺寸映射改用面板实际传的尺寸值（此前匹配不上导致尺寸失效），并关闭图片水印。
 - [修复] 下载生成结果改走 Tauri 原生 HTTP：部分图片 CDN（如智谱使用的 UCloud 存储）不允许浏览器跨域请求，此前智谱能生成但下载失败并报 Failed to fetch。
 - [修复] 桌面端 axios 请求改走 Tauri 原生 HTTP，彻底绕开服务商 CORS 限制（智谱等未返回跨域许可头的服务商此前报 Failed to fetch）。
 - [修复] 渠道调用脚本的请求改走 Tauri 原生 HTTP，修复部分服务商（如智谱）因缺少跨域许可头导致的「Failed to fetch」。

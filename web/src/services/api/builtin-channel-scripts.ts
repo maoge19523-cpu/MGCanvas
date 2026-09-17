@@ -124,9 +124,10 @@ const DASHSCOPE_VIDEO_SCRIPT = [
  * 且请求体格式与 OpenAI 不同，因此用调用脚本转换。
  */
 const ZHIPU_IMAGE_SCRIPT = [
-    'const RATIO_PIXELS = { "1:1": "1024x1024", "16:9": "1440x720", "9:16": "720x1440", "4:3": "1200x900", "3:4": "900x1200" };',
+    // CogView 只接受固定分辨率：只映射到接口支持的取值，其余不传。
+    'const RATIO_PIXELS = { "1:1": "1024x1024", "16:9": "1440x720", "9:16": "720x1440", "4:3": "1152x864", "3:4": "864x1152" };',
     'const rawSize = params.size ? String(params.size).trim() : "";',
-    'const size = RATIO_PIXELS[rawSize] || (rawSize.includes("x") ? rawSize : undefined);',
+    'const size = RATIO_PIXELS[rawSize];',
     'const countRaw = Math.floor(Number(params.count));',
     'const count = Number.isFinite(countRaw) && countRaw > 1 ? Math.min(countRaw, 4) : 1;',
     '',
@@ -159,9 +160,10 @@ const ZHIPU_IMAGE_SCRIPT = [
  * 智谱（BigModel）视频生成。异步任务：先创建拿 id，再轮询 async-result。
  */
 const ZHIPU_VIDEO_SCRIPT = [
-    'const RATIO_PIXELS = { "1:1": "1080x1080", "16:9": "1920x1080", "9:16": "1080x1920", "4:3": "1440x1080", "3:4": "1080x1440" };',
+    // 智谱视频的 size 是枚举值：只映射到接口允许的取值，其余一律不传（交给接口默认值），否则会被拒。
+    'const RATIO_PIXELS = { "16:9": "1920x1080", "9:16": "1080x1920", "1:1": "1024x1024" };',
     'const rawSize = params.size ? String(params.size).trim() : "";',
-    'const size = RATIO_PIXELS[rawSize] || (rawSize.includes("x") ? rawSize : undefined);',
+    'const size = RATIO_PIXELS[rawSize];',
     'const headers = { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };',
     '',
     'let submit;',

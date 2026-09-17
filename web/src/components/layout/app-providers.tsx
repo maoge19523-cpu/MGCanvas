@@ -55,6 +55,22 @@ export function AppProviders({ children }: { children: ReactNode }) {
     // 记录最后一次聚焦的输入框，供画布右键菜单提供粘贴等文本操作。
     useEffect(() => trackFocusedEditable(), []);
 
+    // 诊断用：包装全局 fetch，失败时带上具体地址，便于定位「Failed to fetch」来自哪一步。
+    useEffect(() => {
+        const original = globalThis.fetch;
+        globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+            try {
+                return await original(input, init);
+            } catch (error) {
+                const target = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+                const reason = error instanceof Error ? error.message : String(error);
+                throw new Error(`请求 ${target} 失败（${reason}）`);
+            }
+        }) as typeof fetch;
+        return () => {
+            globalThis.fetch = original;
+        };
+    }, []);
     // 桌面端让 axios 走原生 HTTP：浏览器直连会被服务商的 CORS 拦下（Failed to fetch）。
     useEffect(() => {
         if (!isTauriRuntime()) return;

@@ -159,9 +159,8 @@ export function GenericNativeGenerationPanel({
     const referenceLimitNotice = unusedReferenceCounts.image > 0 && usedReferenceCounts.image > 0 ? `已连接 ${referenceCounts.image} 张图片，当前模型按排序只读取前 ${usedReferenceCounts.image} 张` : unusedReferenceTotal > 0 ? `${unusedReferenceTotal} 个素材不符合当前模型的输入要求` : null;
     const selectedModelKey = readGenericNativeModelChoice(kind, operation.id, effectivePayload);
     // 用户是否主动选过模型：未选择前不展示预估费用，也不允许直接运行。
-    // 已保存过模型的节点（例如本次改动之前创建的）视为已选择，避免被误锁住；
-    // 全新节点没有保存过模型，才要求用户先主动选择。
-    const modelPinned = node.metadata?.genericModelPinned === true || Boolean(node.metadata?.model);
+    // 不预选模型：下拉显示「请选择模型」，由用户自己从（渠道 + 内置）列表里挑。
+    const modelPinned = node.metadata?.genericModelPinned === true;
     const taskIds = Array.from(
         new Set([
             ...(node.metadata?.providerTask?.taskIds || []),
@@ -221,7 +220,7 @@ export function GenericNativeGenerationPanel({
     };
 
     const run = async () => {
-        if (isRunning || !onRun || validationError || hasUnresolvedTask || !modelPinned) return;
+        if (isRunning || !onRun || validationError || hasUnresolvedTask) return;
         const configuredNode: CanvasNodeData = {
             ...node,
             metadata: {
@@ -541,7 +540,7 @@ export function GenericNativeGenerationPanel({
                         type="primary"
                         shape="circle"
                         className="!size-9 shrink-0"
-                        disabled={taskActive || hasUnresolvedTask || !onRun || Boolean(validationError) || !modelPinned}
+                        disabled={taskActive || hasUnresolvedTask || !onRun || Boolean(validationError)}
                         aria-label={`开始生成，${formattedPrice}`}
                         icon={isRunning ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
                         onClick={() => void run()}

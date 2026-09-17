@@ -84,7 +84,7 @@ export function TextNodePanel({ node, theme, onChange }: TextNodePanelProps) {
 
             <div className="flex items-center gap-2">
                 <Select
-                    className="min-w-[180px] flex-1"
+                    className="w-[104px] shrink-0"
                     size="small"
                     value={style}
                     options={TEXT_PROMPT_STYLE_GROUPS.map((group) => ({ label: group.label, options: group.options.map((item) => ({ label: item.label, value: item.label })) }))}
@@ -94,7 +94,7 @@ export function TextNodePanel({ node, theme, onChange }: TextNodePanelProps) {
                     }}
                 />
                 <Select
-                    className="min-w-[88px]"
+                    className="w-[76px] shrink-0"
                     size="small"
                     value={count}
                     options={[1, 2, 3, 4].map((item) => ({ label: `${item} 组`, value: item }))}
@@ -104,7 +104,7 @@ export function TextNodePanel({ node, theme, onChange }: TextNodePanelProps) {
                     }}
                 />
                 <Select
-                    className="min-w-[84px]"
+                    className="w-[78px] shrink-0"
                     size="small"
                     value={english ? "en" : "zh"}
                     options={[
@@ -118,7 +118,7 @@ export function TextNodePanel({ node, theme, onChange }: TextNodePanelProps) {
                     }}
                 />
                 <Select
-                    className="min-w-[150px] flex-[2]"
+                    className="min-w-[200px] flex-1"
                     size="small"
                     value={model || undefined}
                     placeholder="请选择模型"

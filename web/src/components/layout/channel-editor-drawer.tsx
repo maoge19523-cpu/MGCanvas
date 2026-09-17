@@ -94,15 +94,7 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
             title={t("config.channelEditor.title")}
             onClose={onClose}
             styles={{ body: { paddingTop: 16 } }}
-            extra={
-                <Space>
-                    <Button onClick={onClose}>{t("common.cancel")}</Button>
-                    <Button type="primary" onClick={save}>
-                        {t("common.save")}
-                    </Button>
-                </Space>
-            }
-            // 头部按钮在滚动或窗口较小时可能看不到，底部再放一组，保证随时能保存。
+            // 操作按钮统一放在底部：位置固定、不会被悬浮图标遮挡，也避免与头部重复。
             footer={
                 <div className="flex justify-end gap-2">
                     <Button onClick={onClose}>{t("common.cancel")}</Button>

@@ -37,7 +37,7 @@ export default function UserLayout({ children }: { children: ReactNode }) {
                     <button
                         type="button"
                         data-agent-dock
-                        className="fixed bottom-6 right-6 z-[1100] flex size-12 cursor-pointer items-center justify-center rounded-full border border-black/[0.08] bg-white text-stone-700 shadow-[0_10px_30px_rgba(0,0,0,0.18)] transition duration-200 hover:-translate-y-0.5 hover:text-stone-950 dark:border-white/[0.12] dark:bg-[#1c1d20] dark:text-zinc-200 dark:hover:text-white"
+                        className="fixed bottom-6 right-6 z-[900] flex size-12 cursor-pointer items-center justify-center rounded-full border border-black/[0.08] bg-white text-stone-700 shadow-[0_10px_30px_rgba(0,0,0,0.18)] transition duration-200 hover:-translate-y-0.5 hover:text-stone-950 dark:border-white/[0.12] dark:bg-[#1c1d20] dark:text-zinc-200 dark:hover:text-white"
                         onClick={togglePanel}
                         aria-label={t("topNav.openAgent")}
                     >

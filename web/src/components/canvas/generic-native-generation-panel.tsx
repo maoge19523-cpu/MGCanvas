@@ -131,15 +131,8 @@ export function GenericNativeGenerationPanel({
         if (!values.length) return null;
         return { label: "渠道模型", options: values.map((value) => ({ label: modelOptionLabel(config, value), value })) };
     }, [config, kind]);
-    const modelGroups = useMemo(() => {
-        const builtinGroups = genericNativeModelChoiceGroups(kind, operation.id);
-        // 已配置渠道模型时只列出渠道模型；没有可用渠道模型时回退内置目录，避免列表为空。
-        return channelModelGroup ? [channelModelGroup] : builtinGroups;
-    }, [kind, operation.id, channelModelGroup]);
-    const videoModelCategories = useMemo(() => (kind === "video" ? genericNativeVideoModelCategories(operation.id) : []), [kind, operation.id]);
-    // 视频节点在有渠道模型时也使用统一的下拉（否则才回退内置的两级分类选择器）。
-    const hasModelChoices =
-        kind === "video" && !channelModelGroup ? videoModelCategories.some((category) => category.options.length > 0) : modelGroups.some((group) => group.options.length > 0);
+    const modelGroups = useMemo(() => (channelModelGroup ? [channelModelGroup] : []), [channelModelGroup]);
+    const hasModelChoices = modelGroups.some((group) => group.options.length > 0);
     const parameters = useMemo(() => genericNativeParameterDefinitions(operation.id, effectivePayload), [effectivePayload, operation.id]);
     const prompt = readGenericNativePrompt(operation.id, payload);
     const visiblePrompt = prompt === "@Text 1" ? "" : prompt;
@@ -461,8 +454,9 @@ export function GenericNativeGenerationPanel({
                         onChange={selectModel}
                     />
                 ) : (
-                    <span className="min-w-0 flex-1 truncate px-1 text-xs font-medium" style={{ color: theme.node.muted }}>
-                        还没有可用的渠道模型，请到「配置」里添加
+                    <span className="min-w-0 flex-1 px-1 text-[11px] leading-4" style={{ color: theme.node.muted }}>
+                        还没有可用的渠道模型：请到「配置」里添加模型，并把该模型的 capabilities 设为
+                        <span className="mx-1 font-medium" style={{ color: theme.node.text }}>{kind}</span>
                     </span>
                 )}
                 <Popover

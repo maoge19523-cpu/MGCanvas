@@ -157,6 +157,53 @@ const ZHIPU_IMAGE_SCRIPT = [
 ].join("\n");
 
 /**
+ * 火山方舟（Volcengine Ark）Seedream 图片生成。
+ *
+ * 接口是 /images/generations，但字段与 OpenAI 不完全一致：
+ * 需要 response_format、watermark，且尺寸用的是 1K / 2K / 4K 档位或显式像素值。
+ */
+const ARK_IMAGE_SCRIPT = [
+    // 面板给的是具体像素，方舟接受 1K/2K/4K 档位，这里按像素大小归到最近的档位。
+    'const rawSize = params.size ? String(params.size).trim() : "";',
+    'const pixels = rawSize.includes("x") ? rawSize.split("x").reduce((a, b) => Math.max(Number(a) || 0, Number(b) || 0), 0) : 0;',
+    'const size = pixels >= 3000 ? "4K" : pixels >= 1500 ? "2K" : pixels > 0 ? "1K" : "2K";',
+    'const countRaw = Math.floor(Number(params.count));',
+    'const count = Number.isFinite(countRaw) && countRaw > 1 ? Math.min(countRaw, 4) : 1;',
+    '',
+    'const urls = [];',
+    'let lastData;',
+    'for (let index = 0; index < count; index += 1) {',
+    '  let data;',
+    '  try {',
+    '    data = await request({',
+    '      method: "post",',
+    '      url: "https://ark.cn-beijing.volces.com/api/v3/images/generations",',
+    '      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },',
+    '      data: { model, prompt, size, response_format: "url", watermark: false },',
+    '    });',
+    '  } catch (error) {',
+    '    const status = error?.response?.status;',
+    '    const body = error?.response?.data;',
+    '    const code = body?.error?.code || "";',
+    '    const hints = {',
+    '      ModelNotOpen: "该模型尚未开通：请到火山方舟控制台「开通管理」里开通这个模型。",',
+    '      "InvalidEndpointOrModel.NotFound": "模型名或接入点不存在：请填写控制台里的准确模型 ID，或 ep- 开头的接入点 ID。",',
+    '      AuthenticationError: "API Key 无效：请检查渠道里填写的方舟 API Key。",',
+    '    };',
+    '    const hint = hints[code] || (status === 401 ? hints.AuthenticationError : "");',
+    '    const raw = body ? JSON.stringify(body).slice(0, 400) : error?.message || String(error);',
+    '    throw new Error(`火山方舟图像接口调用失败${status ? `（HTTP ${status}）` : ""}：${hint ? hint + " " : ""}原始返回：${raw}`);',
+    '  }',
+    '  lastData = data;',
+    '  const batch = (data?.data || []).map((item) => item.url).filter(Boolean);',
+    '  urls.push(...batch);',
+    '}',
+    '',
+    'if (!urls.length) throw new Error("火山方舟返回里没有图片字段，原始响应：" + JSON.stringify(lastData).slice(0, 400));',
+    'return urls;',
+].join("\n");
+
+/**
  * 火山方舟（Volcengine Ark）Seedance 视频生成。
  *
  * 接口不是 OpenAI 兼容格式：分辨率 / 画幅 / 时长要通过提示词末尾的命令参数传递
@@ -269,6 +316,13 @@ export const BUILTIN_CHANNEL_SCRIPTS: readonly BuiltinChannelScript[] = [
         match: /bigmodel\.cn|zhipu|z\.ai/i,
         capability: "image",
         script: ZHIPU_IMAGE_SCRIPT,
+    },
+    {
+        id: "ark-image",
+        label: "火山方舟 Seedream 图像生成",
+        match: /volces\.com|volcengine|ark\.cn/i,
+        capability: "image",
+        script: ARK_IMAGE_SCRIPT,
     },
     {
         id: "ark-video",

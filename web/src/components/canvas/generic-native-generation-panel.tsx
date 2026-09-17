@@ -437,7 +437,8 @@ export function GenericNativeGenerationPanel({
                 {hasModelChoices && kind === "video" && !channelModelGroup ? (
                     <GenericVideoModelPicker
                         categories={videoModelCategories}
-                        value={selectedModelKey}
+                        placeholder="请选择模型"
+                        value={modelPinned ? selectedModelKey : undefined}
                         priceLabels={modelPriceLabels}
                         pricingLoading={pricingLoading}
                         automaticMode={automaticMode}

@@ -14,12 +14,14 @@ export type GenericVideoModelPickerProps = {
     priceLabels: ReadonlyMap<string, string>;
     pricingLoading?: boolean;
     automaticMode?: string | null;
+    /** 未选择模型时显示的占位文案。 */
+    placeholder?: string;
     disabled?: boolean;
     theme: CanvasTheme;
     onChange: (value: string) => void;
 };
 
-export function GenericVideoModelPicker({ categories, value, priceLabels, pricingLoading = false, automaticMode, disabled = false, theme, onChange }: GenericVideoModelPickerProps) {
+export function GenericVideoModelPicker({ categories, value, priceLabels, pricingLoading = false, automaticMode, placeholder = "选择视频模型", disabled = false, theme, onChange }: GenericVideoModelPickerProps) {
     const anchorRef = useRef<HTMLButtonElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
     const menuId = useId();
@@ -75,7 +77,7 @@ export function GenericVideoModelPicker({ categories, value, priceLabels, pricin
                 aria-expanded={open}
                 aria-controls={menuId}
                 disabled={disabled}
-                title={selected ? `${selected.category.label} · ${selected.choice.label}` : "选择视频模型"}
+                title={selected ? `${selected.category.label} · ${selected.choice.label}` : placeholder}
                 onClick={() => (open ? close() : openPicker())}
                 onKeyDown={(event) => {
                     if (event.key !== "ArrowDown") return;
@@ -85,7 +87,7 @@ export function GenericVideoModelPicker({ categories, value, priceLabels, pricin
             >
                 <Layers3 className="size-3.5 shrink-0" style={{ color: theme.node.muted }} />
                 <span data-video-model-selected-label className="min-w-0 flex-1 whitespace-normal break-words font-medium leading-4">
-                    {selected?.choice.label || "选择视频模型"}
+                    {selected?.choice.label || placeholder}
                 </span>
                 <ChevronDown className={`size-3.5 shrink-0 transition-transform duration-150 ${open ? "rotate-180" : ""}`} style={{ color: theme.node.faint }} />
             </button>

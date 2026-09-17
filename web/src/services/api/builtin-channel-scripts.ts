@@ -157,6 +157,52 @@ const ZHIPU_IMAGE_SCRIPT = [
 ].join("\n");
 
 /**
+ * 火山方舟（Volcengine Ark）Seedance 视频生成。
+ *
+ * 接口不是 OpenAI 兼容格式：分辨率 / 画幅 / 时长要通过提示词末尾的命令参数传递
+ * （形如 `--resolution 1080p --ratio 16:9 --duration 5`），并且是异步任务。
+ */
+const ARK_VIDEO_SCRIPT = [
+    'const RESOLUTIONS = { "480P": "480p", "720P": "720p", "1080P": "1080p" };',
+    'const RATIOS = { "16:9": "16:9", "9:16": "9:16", "1:1": "1:1", "4:3": "4:3", "3:4": "3:4" };',
+    'const resolution = RESOLUTIONS[String(params.resolution || "1080P").trim().toUpperCase()] || "1080p";',
+    'const ratio = RATIOS[String(params.size || "16:9").trim()] || "16:9";',
+    // Seedance 时长档位为 5 秒或 10 秒，超出范围按最近的档位处理。
+    'const secondsRaw = Math.floor(Number(params.seconds));',
+    'const duration = Number.isFinite(secondsRaw) && secondsRaw > 7 ? 10 : 5;',
+    'const flags = ` --resolution ${resolution} --ratio ${ratio} --duration ${duration} --watermark false`;',
+    '',
+    'const content = [{ type: "text", text: `${prompt}${flags}` }];',
+    'if (images && images[0]) content.push({ type: "image_url", image_url: { url: images[0] } });',
+    'const headers = { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };',
+    'const base = "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks";',
+    '',
+    'let submit;',
+    'try {',
+    '  submit = await request({ method: "post", url: base, headers, data: { model, content } });',
+    '} catch (error) {',
+    '  const status = error?.response?.status;',
+    '  const body = error?.response?.data;',
+    '  throw new Error(`火山方舟视频任务创建失败${status ? `（HTTP ${status}）` : ""}：` + (body ? JSON.stringify(body).slice(0, 500) : error?.message || String(error)));',
+    '}',
+    '',
+    'const taskId = submit?.id;',
+    'if (!taskId) throw new Error("火山方舟没有返回任务 id，原始响应：" + JSON.stringify(submit).slice(0, 500));',
+    '',
+    'const done = await poll(',
+    '  () => request({ method: "get", url: `${base}/${taskId}`, headers }),',
+    '  (state) => {',
+    '    const status = state?.status;',
+    '    if (status === "failed" || status === "cancelled") throw new Error(`火山方舟视频任务未完成（${status}）：` + JSON.stringify(state).slice(0, 400));',
+    '    const url = state?.content?.video_url;',
+    '    return status === "succeeded" && url ? url : null;',
+    '  },',
+    '  { intervalMs: 5000, timeoutMs: 900000 },',
+    ');',
+    'return { url: done };',
+].join("\n");
+
+/**
  * 智谱（BigModel）视频生成。异步任务：先创建拿 id，再轮询 async-result。
  */
 const ZHIPU_VIDEO_SCRIPT = [
@@ -213,6 +259,13 @@ export const BUILTIN_CHANNEL_SCRIPTS: readonly BuiltinChannelScript[] = [
         match: /bigmodel\.cn|zhipu|z\.ai/i,
         capability: "image",
         script: ZHIPU_IMAGE_SCRIPT,
+    },
+    {
+        id: "ark-video",
+        label: "火山方舟 Seedance 视频生成",
+        match: /volces\.com|volcengine|ark\.cn/i,
+        capability: "video",
+        script: ARK_VIDEO_SCRIPT,
     },
     {
         id: "zhipu-video",

@@ -116,7 +116,7 @@ const GENERAL_OPERATIONS: GenericOperationDefinition[] = [
     {
         id: "text.chat",
         group: "general",
-        label: "Kimi 文本对话",
+        label: "文本对话",
         description: "OpenAI Chat Completions 兼容的同步或流式文本对话。",
         method: "POST",
         path: "/v1/chat/completions",

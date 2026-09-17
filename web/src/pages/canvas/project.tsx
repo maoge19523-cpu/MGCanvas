@@ -46,6 +46,7 @@ import { useCanvasImageOperationPreview } from "@/components/canvas/use-canvas-i
 import { buildNodeGenerationContext, buildNodeGenerationInputs, buildNodeResponseMessages, hydrateNodeGenerationContext, type NodeGenerationInput } from "@/components/canvas/canvas-node-generation";
 import { CanvasNodeHoverToolbar, CanvasNodeInfoModal } from "@/components/canvas/canvas-node-hover-toolbar";
 import { GenericNativeGenerationPanel } from "@/components/canvas/generic-native-generation-panel";
+import { TextNodePanel } from "@/components/canvas/text-node-panel";
 import {
     genericNativeModels,
     genericNativeNodeKind,
@@ -3877,7 +3878,11 @@ function MGCanvasProjectPage() {
                     />
                 );
             }
-            const nativeKind = genericNativeNodeKind(panelNode.type);
+            // 文本节点是「内容载体」：直接编辑文字并连线给下游当提示词，
+            // 需要模型改写时用节点上的「编辑文字」，因此不提供模型选择与生成按钮。
+            if (panelNode.type === CanvasNodeType.Text) {
+                return <TextNodePanel node={panelNode} theme={theme} onChange={handleConfigNodeChange} />;
+            }            const nativeKind = genericNativeNodeKind(panelNode.type);
             if (nativeKind) {
                 const hasSubmittedTask = Boolean(panelNode.metadata?.providerTask?.taskId || panelNode.metadata?.providerTask?.taskIds?.length);
                 return (

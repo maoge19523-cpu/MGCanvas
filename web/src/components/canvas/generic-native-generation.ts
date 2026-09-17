@@ -620,18 +620,26 @@ function channelModelParameterDefinitions(operationId: string): readonly Generic
     if (operationId === "video.generate") {
         return [
             {
+                // 视频只区分横竖屏，其余比例（1:1 / 4:3 / 3:4）在生成视频里没有实际意义。
                 path: "metadata.size",
-                // 视频模型只输出 480p–1080p，写死像素值没有意义：
-                // 这里统一按画幅选择，由各渠道脚本按服务商支持的尺寸枚举落地。
                 label: "画幅",
                 control: "select",
                 optional: true,
                 options: [
                     { label: "16:9 横屏", value: "16:9" },
                     { label: "9:16 竖屏", value: "9:16" },
-                    { label: "1:1 方形", value: "1:1" },
-                    { label: "4:3 横屏", value: "4:3" },
-                    { label: "3:4 竖屏", value: "3:4" },
+                ],
+            },
+            {
+                // 清晰度决定最终像素尺寸，由各渠道脚本按服务商支持的枚举落地。
+                path: "metadata.resolution",
+                label: "清晰度",
+                control: "select",
+                optional: true,
+                options: [
+                    { label: "480P 标清", value: "480P" },
+                    { label: "720P 高清", value: "720P" },
+                    { label: "1080P 全高清", value: "1080P" },
                 ],
             },
             { path: "seconds", label: "时长（秒）", control: "number", min: 2, max: 15, step: 1, optional: true },

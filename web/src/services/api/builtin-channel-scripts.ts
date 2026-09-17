@@ -160,10 +160,11 @@ const ZHIPU_IMAGE_SCRIPT = [
  * 智谱（BigModel）视频生成。异步任务：先创建拿 id，再轮询 async-result。
  */
 const ZHIPU_VIDEO_SCRIPT = [
-    // 智谱视频的 size 是枚举值：把面板的五个比例档位全部映射到接口允许的取值。
-    'const SIZE_MAP = { "1280x720": "1920x1080", "16:9": "1920x1080", "720x1280": "1080x1920", "9:16": "1080x1920", "960x960": "1024x1024", "1:1": "1024x1024", "1088x832": "1280x960", "4:3": "1280x960", "832x1088": "960x1280", "3:4": "960x1280" };',
-    'const rawSize = params.size ? String(params.size).trim() : "";',
-    'const size = SIZE_MAP[rawSize];',
+    // 智谱视频的 size 是枚举值：按「画幅 + 清晰度」落到接口允许的尺寸。
+    'const RATIO_SIZE = { "16:9": { "480P": "1280x720", "720P": "1280x720", "1080P": "1920x1080" }, "9:16": { "480P": "720x1280", "720P": "720x1280", "1080P": "1080x1920" } };',
+    'const ratio = params.size ? String(params.size).trim() : "16:9";',
+    'const resolution = params.resolution ? String(params.resolution).trim().toUpperCase() : "1080P";',
+    'const size = (RATIO_SIZE[ratio] || RATIO_SIZE["16:9"])[resolution] || "1920x1080";',
     // cogvideox 系列只支持 5 秒或 10 秒，其余取值一律按 5 秒处理，避免被接口拒绝。
     'const secondsRaw = Math.floor(Number(params.seconds));',
     'const duration = Number.isFinite(secondsRaw) && secondsRaw >= 10 ? 10 : Number.isFinite(secondsRaw) && secondsRaw > 0 ? 5 : undefined;',

@@ -163,6 +163,8 @@ const ZHIPU_IMAGE_SCRIPT = [
  * 需要 response_format、watermark，且尺寸用的是 1K / 2K / 4K 档位或显式像素值。
  */
 const ARK_IMAGE_SCRIPT = [
+    // 方舟的模型 ID 一律小写并用短横线；用户常按控制台展示名填写（含大写与点号），这里自动纠正。
+    'const modelId = String(model || "").replace(/\\./g, "-").toLowerCase();',
     // 面板给的是具体像素，方舟接受 1K/2K/4K 档位，这里按像素大小归到最近的档位。
     'const rawSize = params.size ? String(params.size).trim() : "";',
     'const pixels = rawSize.includes("x") ? rawSize.split("x").reduce((a, b) => Math.max(Number(a) || 0, Number(b) || 0), 0) : 0;',
@@ -179,7 +181,7 @@ const ARK_IMAGE_SCRIPT = [
     '      method: "post",',
     '      url: "https://ark.cn-beijing.volces.com/api/v3/images/generations",',
     '      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },',
-    '      data: { model, prompt, size, response_format: "url", watermark: false },',
+    '      data: { model: modelId, prompt, size, response_format: "url", watermark: false },',
     '    });',
     '  } catch (error) {',
     '    const status = error?.response?.status;',
@@ -210,6 +212,8 @@ const ARK_IMAGE_SCRIPT = [
  * （形如 `--resolution 1080p --ratio 16:9 --duration 5`），并且是异步任务。
  */
 const ARK_VIDEO_SCRIPT = [
+    // 方舟的模型 ID 一律小写并用短横线；用户常按控制台展示名填写（含大写与点号），这里自动纠正。
+    'const modelId = String(model || "").replace(/\\./g, "-").toLowerCase();',
     'const RESOLUTIONS = { "480P": "480p", "720P": "720p", "1080P": "1080p" };',
     'const RATIOS = { "16:9": "16:9", "9:16": "9:16", "1:1": "1:1", "4:3": "4:3", "3:4": "3:4" };',
     'const resolution = RESOLUTIONS[String(params.resolution || "1080P").trim().toUpperCase()] || "1080p";',
@@ -226,7 +230,7 @@ const ARK_VIDEO_SCRIPT = [
     '',
     'let submit;',
     'try {',
-    '  submit = await request({ method: "post", url: base, headers, data: { model, content } });',
+    '  submit = await request({ method: "post", url: base, headers, data: { model: modelId, content } });',
     '} catch (error) {',
     '  const status = error?.response?.status;',
     '  const body = error?.response?.data;',

@@ -190,6 +190,9 @@ export type CanvasNodeMetadata = {
     genericModelPinned?: boolean;
     /** 文本节点的目标画风分类（用于扩写提示词）。 */
     style?: string;
+    /** 文本节点扩写时选择的组数与输出语言。 */
+    textVariants?: number;
+    textEnglish?: boolean;
     channelId?: string;
     providerTask?: GenericProviderTask;
     providerResult?: GenericProviderResult;

@@ -27,6 +27,8 @@ export function TextNodePanel({ node, theme, onChange }: TextNodePanelProps) {
     const [model, setModel] = useState(node.metadata?.model && models.includes(node.metadata.model) ? node.metadata.model : models[0] || "");
     const [idea, setIdea] = useState(node.metadata?.prompt || "");
     const [style, setStyle] = useState<string>(node.metadata?.style || DEFAULT_TEXT_PROMPT_STYLE);
+    const [count, setCount] = useState(Number(node.metadata?.textVariants) > 0 ? Number(node.metadata?.textVariants) : 1);
+    const [english, setEnglish] = useState(node.metadata?.textEnglish === true);
     const [running, setRunning] = useState(false);
 
     useEffect(() => {
@@ -47,9 +49,10 @@ export function TextNodePanel({ node, theme, onChange }: TextNodePanelProps) {
         }
         setRunning(true);
         try {
-            const optimized = await rewriteImagePrompt(trimmed, style as TextPromptStyle, model);
-            onChange(node.id, { content: optimized, prompt: trimmed, style, model, status: "success", errorDetails: undefined });
-            void message.success("提示词已生成，可直接连线给图片 / 视频节点。");
+            const variants = await rewriteImagePrompt(trimmed, style as TextPromptStyle, model, { count, english });
+            const nextContent = variants.length > 1 ? variants.map((item, index) => `${index + 1}. ${item}`).join("\n") : variants[0];
+            onChange(node.id, { content: nextContent, prompt: trimmed, style, model, textVariants: count, textEnglish: english, status: "success", errorDetails: undefined });
+            void message.success(variants.length > 1 ? `已生成 ${variants.length} 组，保留需要的那条即可。` : "提示词已生成，可直接连线给图片 / 视频节点。");
         } catch (error) {
             const detail = error instanceof Error ? error.message : String(error);
             onChange(node.id, { status: "error", errorDetails: detail });
@@ -81,7 +84,7 @@ export function TextNodePanel({ node, theme, onChange }: TextNodePanelProps) {
 
             <div className="flex items-center gap-2">
                 <Select
-                    className="min-w-[150px] flex-1"
+                    className="min-w-[180px] flex-1"
                     size="small"
                     value={style}
                     options={TEXT_PROMPT_STYLE_GROUPS.map((group) => ({ label: group.label, options: group.options.map((item) => ({ label: item.label, value: item.label })) }))}
@@ -91,7 +94,31 @@ export function TextNodePanel({ node, theme, onChange }: TextNodePanelProps) {
                     }}
                 />
                 <Select
-                    className="min-w-[160px] flex-[2]"
+                    className="min-w-[88px]"
+                    size="small"
+                    value={count}
+                    options={[1, 2, 3, 4].map((item) => ({ label: `${item} 组`, value: item }))}
+                    onChange={(value) => {
+                        setCount(value);
+                        onChange(node.id, { textVariants: value });
+                    }}
+                />
+                <Select
+                    className="min-w-[84px]"
+                    size="small"
+                    value={english ? "en" : "zh"}
+                    options={[
+                        { label: "中文", value: "zh" },
+                        { label: "English", value: "en" },
+                    ]}
+                    onChange={(value) => {
+                        const next = value === "en";
+                        setEnglish(next);
+                        onChange(node.id, { textEnglish: next });
+                    }}
+                />
+                <Select
+                    className="min-w-[150px] flex-[2]"
                     size="small"
                     value={model || undefined}
                     placeholder="请选择模型"
@@ -122,7 +149,7 @@ export function TextNodePanel({ node, theme, onChange }: TextNodePanelProps) {
                     data-canvas-no-zoom
                     value={content}
                     onChange={(event) => onChange(node.id, { content: event.target.value })}
-                    placeholder="点右侧按钮后，这里会出现专业提示词"
+                    placeholder="点右侧按钮后，这里会出现专业提示词（多组时每条一行，保留需要的那条即可）"
                     spellCheck={false}
                     className="min-h-[120px] w-full resize-y rounded-xl border p-2.5 leading-5 outline-none"
                     style={{ background: theme.node.fill, borderColor: theme.toolbar.border, color: theme.node.text }}

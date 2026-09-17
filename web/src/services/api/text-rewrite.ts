@@ -113,11 +113,14 @@ export type TextPromptStyle = string;
 
 const SYSTEM_PROMPT = [
     "你是资深的 AI 绘画提示词工程师。",
-    "请把用户的一句话想法扩写成一条可以直接用于文生图模型的中文提示词。",
+    "请把用户的一句话想法扩写成可以直接用于文生图模型的提示词。",
     "要求：覆盖主体、外观细节、动作、环境、光线、镜头与画幅、质感与画质关键词；",
     "可以合理补充与风格相符的细节，但不要改变用户想画的主体；",
-    "只输出提示词本身，不要解释、不要分点、不要加引号或前后缀，控制在 200 字以内。",
+    "每条提示词控制在 200 字以内，只输出提示词本身，不要任何解释。",
 ].join("");
+
+/** 输出语言与组数由用户在面板上选择。 */
+export type TextRewriteOptions = { count: number; english: boolean };
 
 function guideFor(style: string) {
     return TEXT_PROMPT_STYLE_OPTIONS.find((item) => item.label === style)?.guide || "高质量通用风格，主体清晰、整体协调";
@@ -127,7 +130,8 @@ function guideFor(style: string) {
  * 把简单想法扩写成专业生图提示词。
  * 直接请求渠道的 OpenAI 兼容接口，并走原生 HTTP 以避开跨域限制。
  */
-export async function rewriteImagePrompt(idea: string, style: TextPromptStyle, modelValue: string): Promise<string> {
+export async function rewriteImagePrompt(idea: string, style: TextPromptStyle, modelValue: string, options: TextRewriteOptions = { count: 1, english: false }): Promise<string[]> {
+    const count = Math.min(Math.max(Math.floor(options.count) || 1, 1), 4);
     const requestConfig = resolveModelRequestConfig(useConfigStore.getState().config, modelValue);
     if (!requestConfig.apiKey.trim() || !requestConfig.baseUrl.trim()) throw new Error("该渠道还没有填写接口地址或 API Key。");
 
@@ -139,7 +143,15 @@ export async function rewriteImagePrompt(idea: string, style: TextPromptStyle, m
             stream: false,
             messages: [
                 { role: "system", content: SYSTEM_PROMPT },
-                { role: "user", content: `目标画风：${style}（${guideFor(style)}）。\n我的想法：${idea}` },
+                {
+                    role: "user",
+                    content: [
+                        `目标画风：${style}（${guideFor(style)}）。`,
+                        `我的想法：${idea}`,
+                        count > 1 ? `请给出 ${count} 条互不相同的提示词，每条单独一行，行首用「1. 」「2. 」这样的编号，不要其它文字。` : "请给出 1 条提示词，直接输出内容，不要编号。",
+                        options.english ? "用英文输出。" : "用中文输出。",
+                    ].join("\n"),
+                },
             ],
         }),
     });
@@ -157,7 +169,21 @@ export async function rewriteImagePrompt(idea: string, style: TextPromptStyle, m
     }
     const content = readMessageContent(payload);
     if (!content) throw new Error(`模型没有返回内容：${text.slice(0, 300)}`);
-    return content.trim().replace(/^["“]|["”]$/g, "");
+    return splitVariants(content, count);
+}
+
+/** 把模型返回拆成若干条提示词：优先按编号行拆，其次按空行，最后按换行。 */
+function splitVariants(content: string, count: number): string[] {
+    const clean = (value: string) => value.trim().replace(/^\d+[.、)]\s*/, "").replace(/^[-*]\s*/, "").replace(/^["“]|["”]$/g, "").trim();
+    const numbered = content
+        .split(/\r?\n/)
+        .filter((line) => /^\s*\d+[.、)]/.test(line))
+        .map(clean)
+        .filter(Boolean);
+    const parts = numbered.length ? numbered : content.split(/\n\s*\n|\r?\n/).map(clean).filter(Boolean);
+    const variants = (parts.length ? parts : [clean(content)]).filter(Boolean);
+    if (!variants.length) throw new Error("模型没有返回可用的提示词。");
+    return variants.slice(0, count);
 }
 
 function readMessageContent(payload: unknown) {

@@ -85,6 +85,15 @@
 - Windows/macOS 可写业务文件统一放入系统 AppLocalData/Application Support，不要写安装目录或源码仓库。
 - Windows 安装包必须在 Windows 构建，macOS `.app/.dmg` 必须在 Mac 构建；双平台打包使用各自宿主或 CI。
 
+## 交付前必须完成构建（重要）
+
+改动源码后，**必须走完「提交 → 打包 → 安装」三步**，再让用户测试；只改源码不算完成。
+
+- 每次改完先 `git status --short` 确认没有未提交改动；有就提交。
+- 打包后对比时间戳，确认构建产物晚于所有改动过的源文件：
+  `构建产物(src-tauri/target/release/bundle/nsis/*.exe).LastWriteTime` 必须大于每个改动源文件的 `LastWriteTime`。
+- 曾出现过多次「源码已修好但没打包」，用户反复测试旧版本、同一问题重复上报。
+
 ## 项目注意事项
 
 - 当前画布项目和“我的素材”主要保存在桌面 WebView 本地，生成媒体写入系统应用数据目录；不要在文档中误写成已支持云同步。

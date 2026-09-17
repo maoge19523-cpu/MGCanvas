@@ -65,12 +65,20 @@ async function desktopScriptRequest(input: {
     }
     const isForm = typeof FormData !== "undefined" && input.data instanceof FormData;
     const body = input.data === undefined || input.method?.toLowerCase() === "get" ? undefined : isForm || typeof input.data === "string" ? (input.data as BodyInit) : JSON.stringify(input.data);
-    const response = await platformFetch(target.toString(), {
-        method: (input.method || "get").toUpperCase(),
-        headers: input.headers as HeadersInit,
-        body,
-        signal: input.signal,
-    });
+    // 失败时补上请求地址与原因：仅有「Failed to fetch」无法判断是权限、网络还是服务商拦截。
+    let response: Response;
+    try {
+        response = await platformFetch(target.toString(), {
+            method: (input.method || "get").toUpperCase(),
+            headers: input.headers as HeadersInit,
+            body,
+            signal: input.signal,
+        });
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        const desktop = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+        throw new Error(`请求 ${target.origin} 失败（${reason}）。桌面原生模式：${desktop ? "是" : "否（浏览器直连，可能被跨域策略拦截）"}`);
+    }
     const text = await response.text();
     let parsed: unknown = text;
     if (input.responseType !== "text" && text) {

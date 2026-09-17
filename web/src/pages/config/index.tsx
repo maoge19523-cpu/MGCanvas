@@ -18,6 +18,10 @@ export default function ConfigPage() {
                     <h2 className="mt-3 text-[15px] font-semibold text-stone-900 dark:text-zinc-100">{t("config.channelEditor.title")}</h2>
                     <p className="mt-2 text-[11px] leading-5 text-stone-500 dark:text-zinc-500">{t("config.channels.description")}</p>
                     <div className="mt-6 h-px bg-black/[0.07] dark:bg-white/[0.07]" />
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400 dark:text-zinc-600">PROMPTS</div>
+                    <h3 className="mt-3 text-[15px] font-semibold text-stone-900 dark:text-zinc-100">提示词来源</h3>
+                    <p className="mt-2 text-[11px] leading-5 text-stone-500 dark:text-zinc-500">从你指定的网址定时拉取提示词，汇总到提示词库供画布使用。</p>
+                    <div className="mt-6 h-px bg-black/[0.07] dark:bg-white/[0.07]" />
                     <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400 dark:text-zinc-600">FFmpeg</div>
                     <h3 className="mt-3 text-[15px] font-semibold text-stone-900 dark:text-zinc-100">本地 FFmpeg</h3>
                     <p className="mt-2 text-[11px] leading-5 text-stone-500 dark:text-zinc-500">视频合成节点调用本机 FFmpeg；不随安装包分发。</p>
@@ -28,7 +32,13 @@ export default function ConfigPage() {
                     <ChannelPanel />
                     <div>
                         <div className="mb-3 h-px bg-black/[0.07] dark:bg-white/[0.07]" />
-                        <ConfigPromptSources />
+                        <h3 className="text-[15px] font-semibold text-stone-900 dark:text-zinc-100">提示词来源</h3>
+                        <p className="mt-2 text-[11px] leading-5 text-stone-500 dark:text-zinc-500">
+                            填一个返回提示词 JSON 的网址，应用会定时拉取，汇总到左侧「提示词库」，并可在画布面板里直接插入。
+                        </p>
+                        <div className="mt-4">
+                            <ConfigPromptSources />
+                        </div>
                     </div>
                     <div>
                         <div className="mb-3 h-px bg-black/[0.07] dark:bg-white/[0.07]" />

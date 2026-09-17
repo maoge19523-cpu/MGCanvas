@@ -42,6 +42,15 @@ export function PromptSourceEditorDrawer({ open, source, onSave, onClose }: { op
                     </Button>
                 </Space>
             }
+            // 头部按钮在窗口较小时可能看不到，底部再放一组，保证随时能保存。
+            footer={
+                <div className="flex justify-end gap-2">
+                    <Button onClick={onClose}>{t("common.cancel")}</Button>
+                    <Button type="primary" onClick={save}>
+                        {t("common.save")}
+                    </Button>
+                </div>
+            }
         >
             <div className="space-y-5">
                 <label className="block">

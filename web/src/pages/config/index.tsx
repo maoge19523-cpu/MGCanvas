@@ -2,6 +2,7 @@ import { ExternalLink, Settings2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { ChannelPanel } from "@/components/layout/app-config-modal";
+import { ConfigPromptSources } from "@/components/layout/config-prompt-sources";
 import { APP_VERSION } from "@/constant/env";
 import { WorkspacePage } from "@/components/layout/workspace-page";
 import { DesktopFfmpegSettings } from "./desktop-ffmpeg-settings";
@@ -25,6 +26,10 @@ export default function ConfigPage() {
                 </aside>
                 <section className="flex flex-col gap-8 rounded-[18px] border border-black/[0.08] bg-black/[0.015] p-5 dark:border-white/[0.08] dark:bg-white/[0.025] sm:p-7">
                     <ChannelPanel />
+                    <div>
+                        <div className="mb-3 h-px bg-black/[0.07] dark:bg-white/[0.07]" />
+                        <ConfigPromptSources />
+                    </div>
                     <div>
                         <div className="mb-3 h-px bg-black/[0.07] dark:bg-white/[0.07]" />
                         <DesktopFfmpegSettings />

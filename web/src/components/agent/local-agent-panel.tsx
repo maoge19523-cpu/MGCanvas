@@ -949,9 +949,11 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         }
         const urlToken = searchParams.get("agentToken") || "";
         const urlEndpoint = searchParams.get("agentUrl") || "";
-        const discovered = urlToken ? null : await discoverAgentConfig(endpoint || DEFAULT_AGENT_URL);
+        // 无论本地是否已存 token 都先问一次 Agent：重装应用后本地会被清空，
+        // 而旧的 token 也可能是错的，用 Agent 返回的为准才能真正免去手填。
+        const discovered = await discoverAgentConfig(urlEndpoint || endpoint || DEFAULT_AGENT_URL);
         const nextEndpoint = (urlEndpoint || discovered?.url || endpoint || DEFAULT_AGENT_URL).trim().replace(/\/$/, "");
-        const nextToken = (urlToken || token.trim() || discovered?.token || "").trim();
+        const nextToken = (urlToken || discovered?.token || token.trim() || "").trim();
         if (!nextEndpoint) {
             const text = rt("addressRequired");
             if (!silent) {

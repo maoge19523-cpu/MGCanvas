@@ -33,25 +33,55 @@ type ToolCall = { id: string; type?: string; function?: { name?: string; argumen
 
 const MAX_ROUNDS = 24;
 
+/**
+ * 工具说明表。
+ *
+ * 模型只会调用「看得懂」的工具，所以每个工具都必须有明确的中文说明和参数定义；
+ * 只给名字的话模型会当作无关能力而完全不用（实测确认）。
+ */
+const TOOL_META: Record<string, { description: string; properties?: Record<string, unknown>; required?: string[] }> = {
+    site_navigate: { description: "跳转到站内某个页面，例如画布列表或某个画布。", properties: { path: { type: "string", description: "站内路径，例如 /canvas" } } },
+    canvas_list_projects: { description: "列出当前用户的所有画布（项目）及其 id、名称、节点数量。" },
+    canvas_get_state: { description: "读取当前打开画布的全部节点与连线。需要知道画布现状时先用它。", properties: { projectId: { type: "string", description: "可选，指定画布 id；省略则用当前打开的" } } },
+    canvas_get_selection: { description: "读取当前画布中被选中的节点。" },
+    canvas_export_snapshot: { description: "导出当前画布的快照数据（节点、连线、视口）。" },
+    canvas_apply_ops: { description: "对画布批量执行一组操作（最常用的工具）。ops 是操作数组，支持 add_node / update_node / delete_node / connect_nodes / set_viewport / select_nodes / run_generation。需要一次做多件事时优先用它。", properties: { ops: { type: "array", description: "操作数组", items: { type: "object" } }, projectId: { type: "string" } }, required: ["ops"] },
+    canvas_create_node: { description: "在画布上创建一个节点。type 可选 image / text / video / audio / config。", properties: { type: { type: "string", description: "节点类型：image / text / video / audio / config" }, title: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["type"] },
+    canvas_create_attachment_nodes: { description: "把已上传的素材（附件）创建为画布节点。", properties: { attachmentIds: { type: "array", items: { type: "string" } } }, required: ["attachmentIds"] },
+    canvas_create_text_node: { description: "在画布上创建一个文本节点，内容为 text。用户说「加一个文本节点/写一段字」时用它。", properties: { text: { type: "string", description: "节点里的文字内容" }, title: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["text"] },
+    canvas_create_text_nodes: { description: "一次创建多个文本节点。", properties: { texts: { type: "array", description: "文本内容数组", items: { type: "string" } } }, required: ["texts"] },
+    canvas_create_config_node: { description: "创建一个配置节点（把一组生成参数集中管理）。" },
+    canvas_create_image_prompt_flow: { description: "创建「文本提示词 + 图片节点」的成对结构，常用于从提示词直接出图。" },
+    canvas_create_generation_flow: { description: "创建一条完整的生成流程（提示词节点 + 生成节点 + 连线）。" },
+    canvas_generate_text: { description: "对文本节点发起一次文本生成。", properties: { nodeId: { type: "string", description: "目标节点 id" }, prompt: { type: "string" } }, required: ["nodeId"] },
+    canvas_generate_image: { description: "对图片节点发起一次图片生成。", properties: { nodeId: { type: "string" }, prompt: { type: "string" } }, required: ["nodeId"] },
+    canvas_generate_video: { description: "对视频节点发起一次视频生成。", properties: { nodeId: { type: "string" }, prompt: { type: "string" } }, required: ["nodeId"] },
+    canvas_generate_audio: { description: "对音频节点发起一次音频生成。", properties: { nodeId: { type: "string" }, prompt: { type: "string" } }, required: ["nodeId"] },
+    canvas_update_node: { description: "修改节点的属性或 metadata（例如改名、改提示词、换模型）。", properties: { id: { type: "string" }, patch: { type: "object" }, metadata: { type: "object" } }, required: ["id"] },
+    canvas_update_node_text: { description: "直接改写某个文本节点的文字内容。", properties: { id: { type: "string" }, text: { type: "string" } }, required: ["id", "text"] },
+    canvas_move_nodes: { description: "移动一个或多个节点。", properties: { ids: { type: "array", items: { type: "string" } }, x: { type: "number" }, y: { type: "number" } } },
+    canvas_resize_node: { description: "调整节点尺寸。", properties: { id: { type: "string" }, width: { type: "number" }, height: { type: "number" } }, required: ["id"] },
+    canvas_delete_nodes: { description: "删除节点。", properties: { id: { type: "string" }, ids: { type: "array", items: { type: "string" } } } },
+    canvas_connect_nodes: { description: "用连线连接两个节点（数据流向 from → to）。", properties: { fromNodeId: { type: "string" }, toNodeId: { type: "string" } }, required: ["fromNodeId", "toNodeId"] },
+    canvas_select_nodes: { description: "选中指定节点。", properties: { ids: { type: "array", items: { type: "string" } } }, required: ["ids"] },
+    canvas_set_viewport: { description: "设置画布视口（缩放与平移）。", properties: { viewport: { type: "object" } }, required: ["viewport"] },
+    canvas_run_generation: { description: "运行某个节点的生成任务。", properties: { nodeId: { type: "string" }, mode: { type: "string" }, prompt: { type: "string" } }, required: ["nodeId"] },
+    generation_get_status: { description: "查询生成任务的状态。" },
+    prompts_search: { description: "在提示词库里搜索提示词。", properties: { keyword: { type: "string" } } },
+    assets_list: { description: "列出用户素材库里的素材。" },
+    assets_add: { description: "把内容加入素材库。" },
+};
+
 /** 工具入参的 JSON Schema：只需要让模型知道字段含义，实际校验仍由 zod 兜底。 */
 function toolSchema(name: string) {
-    const common = { type: "object", additionalProperties: true, properties: {} as Record<string, unknown> };
-    if (name.startsWith("canvas_create_text_nodes")) {
-        return { ...common, properties: { items: { type: "array", items: { type: "object" } }, texts: { type: "array", items: { type: "string" } } } };
-    }
-    if (name === "canvas_create_text_node") return { ...common, properties: { text: { type: "string" }, title: { type: "string" }, x: { type: "number" }, y: { type: "number" } }, required: ["text"] };
-    if (name === "canvas_apply_ops") return { ...common, properties: { ops: { type: "array", items: { type: "object" } } }, required: ["ops"] };
-    if (name.startsWith("canvas_generate_")) return { ...common, properties: { nodeId: { type: "string" }, prompt: { type: "string" } } };
-    if (name === "canvas_connect_nodes") return { ...common, properties: { fromNodeId: { type: "string" }, toNodeId: { type: "string" } }, required: ["fromNodeId", "toNodeId"] };
-    if (name === "canvas_delete_nodes") return { ...common, properties: { id: { type: "string" }, ids: { type: "array", items: { type: "string" } } } };
-    if (name === "prompts_search") return { ...common, properties: { keyword: { type: "string" } } };
-    return common;
+    const meta = TOOL_META[name];
+    return { type: "object", additionalProperties: true, properties: meta?.properties || {}, ...(meta?.required ? { required: meta.required } : {}) };
 }
 
 function buildTools() {
     return toolNames.map((name) => ({
         type: "function" as const,
-        function: { name, description: `MGCanvas 画布工具：${name}`, parameters: toolSchema(name) },
+        function: { name, description: TOOL_META[name]?.description || `MGCanvas 画布工具：${name}`, parameters: toolSchema(name) },
     }));
 }
 

@@ -2073,3 +2073,41 @@ html:not(.dark) .td-desktop-titlebar {
     -webkit-backdrop-filter: blur(30px) saturate(2.2);
     backdrop-filter: blur(30px) saturate(2.2);
 }
+
+/* ===== 液态玻璃 · 强制版 =====
+   前面几轮发现有多层不透明容器把背景渐变盖住（外壳、页面容器、写死米色底）。
+   这里把渐变直接挂到外壳上，并强制清掉浅色模式下的不透明白底，保证玻璃一定透出背景。 */
+html:not(.dark) .mg-app-shell {
+    background-color: #eef1f8 !important;
+    background-image:
+        radial-gradient(900px 620px at 12% 8%, #ff9aa2 0%, rgba(255, 154, 162, 0) 62%),
+        radial-gradient(820px 580px at 88% 12%, #a8c8ff 0%, rgba(168, 200, 255, 0) 60%),
+        radial-gradient(880px 640px at 76% 92%, #8ee6f0 0%, rgba(142, 230, 240, 0) 62%),
+        radial-gradient(760px 560px at 22% 88%, #d9b3ff 0%, rgba(217, 179, 255, 0) 60%),
+        radial-gradient(700px 520px at 52% 46%, #ffd9a0 0%, rgba(255, 217, 160, 0) 64%) !important;
+    background-attachment: fixed !important;
+}
+
+/* 清掉所有不透明白/灰底容器，只保留半透明玻璃面。 */
+html:not(.dark) .mg-app-shell [class*="bg-white"]:not([class*="bg-white/"]),
+html:not(.dark) .mg-app-shell [class*="bg-background"],
+html:not(.dark) .mg-app-shell [class*="bg-card"],
+html:not(.dark) .mg-app-shell [class*="bg-[#f"],
+html:not(.dark) .mg-app-shell [class*="bg-[#e"],
+html:not(.dark) .mg-app-shell [class*="bg-stone-50"],
+html:not(.dark) .mg-app-shell [class*="bg-zinc-50"],
+html:not(.dark) .mg-app-shell [class*="bg-neutral-50"] {
+    background-color: rgba(255, 255, 255, .32) !important;
+    -webkit-backdrop-filter: blur(30px) saturate(2.2);
+    backdrop-filter: blur(30px) saturate(2.2);
+}
+
+/* 页面级容器直接透明，露出外壳渐变。 */
+html:not(.dark) .td-home-shell,
+html:not(.dark) .td-home-content,
+html:not(.dark) .td-home-page-glow,
+html:not(.dark) .td-home-page-grid,
+html:not(.dark) .td-workspace-page,
+html:not(.dark) .td-workspace-scroll {
+    background: transparent !important;
+}

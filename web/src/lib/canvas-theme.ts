@@ -3,7 +3,7 @@ export type CanvasBackgroundMode = "dots" | "lines" | "blank";
 
 export const canvasThemes = {
     light: {
-        // 液态玻璃（浅色）：冷调浅底 + 半透明玻璃面 + 冷蓝高亮。
+        // 液态玻璃（浅色）：外壳用高透玻璃，节点与面板则要保证文字可读性，取较高的不透明度。
         // 底色用柔和的彩色光斑渐变——磨砂面板要透过它才能显出「玻璃」质感，
         // 纯色平底会让 backdrop-filter 看起来毫无效果。
         canvas: {
@@ -23,9 +23,9 @@ export const canvasThemes = {
         },
         node: {
             label: "#3f4a5a",
-            fill: "rgba(255,255,255,.30)",
-            panel: "rgba(255,255,255,.30)",
-            stroke: "rgba(255,255,255,.75)",
+            fill: "rgba(255,255,255,.62)",
+            panel: "rgba(255,255,255,.78)",
+            stroke: "rgba(148,163,184,.35)",
             activeStroke: "#2563eb",
             placeholder: "#8194ab",
             text: "#0f172a",
@@ -33,7 +33,7 @@ export const canvasThemes = {
             faint: "#93a3b8",
         },
         toolbar: {
-            panel: "rgba(255,255,255,.30)",
+            panel: "rgba(255,255,255,.78)",
             border: "rgba(255,255,255,.85)",
             item: "#3f4a5a",
             itemHover: "rgba(37,99,235,.10)",

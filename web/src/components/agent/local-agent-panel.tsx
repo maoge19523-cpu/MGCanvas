@@ -405,6 +405,11 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 : current.messages.filter((item) => !isConnectionErrorMessage(item));
             errorLoggedRef.current = false;
             connectedRef.current = true;
+            // Agent 侧若已配置 API 后端（DeepSeek / 豆包），连接后自动切换到该通路，
+            // 这样没有安装 Codex 的用户也能直接用对话指挥画布。
+            void fetchAgentJson<{ ok?: boolean; current?: { model?: string } | null }>(endpoint, token, "/agent/api/config")
+                .then((api) => setApiBackendEnabled(Boolean(api?.current?.model)))
+                .catch(() => setApiBackendEnabled(false));
             setAgentState({
                 connected: true,
                 activity: pendingApprovals.length ? rt("awaitingApproval") : busy ? rt("codexRunning") : rt("connected"),

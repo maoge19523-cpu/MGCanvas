@@ -134,7 +134,7 @@ export default function CanvasPage() {
     return (
         <main
             data-canvas-home
-            className="td-home-shell relative h-full min-h-0 overflow-y-auto overflow-x-hidden bg-[#f4f2ed] text-stone-950 dark:bg-[#090a0b] dark:text-zinc-100"
+            className="td-home-shell relative h-full min-h-0 overflow-y-auto overflow-x-hidden bg-transparent text-stone-950 dark:bg-[#090a0b] dark:text-zinc-100"
             onPointerMove={updatePointerAtmosphere}
             onPointerLeave={resetPointerAtmosphere}
         >

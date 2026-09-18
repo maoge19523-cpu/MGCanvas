@@ -34,6 +34,64 @@ type ToolCall = { id: string; type?: string; function?: { name?: string; argumen
 const MAX_ROUNDS = 24;
 
 /**
+ * 生成类工具集合。
+ *
+ * 这些工具会真正打到服务商的生成接口，而多数服务商对并发有严格限制
+ * （实测同时触发多个会返回 HTTP 429「速率限制」）。因此它们统一排队串行执行。
+ */
+const GENERATION_TOOLS = new Set([
+    "canvas_generate_image",
+    "canvas_generate_video",
+    "canvas_generate_audio",
+    "canvas_generate_text",
+    "canvas_run_generation",
+    "canvas_create_generation_flow",
+    "canvas_create_image_prompt_flow",
+    "canvas_create_config_node",
+]);
+
+/** 队尾：新的生成任务挂到它后面，实现「先进先出、并发为 1」。 */
+let generationQueueTail: Promise<unknown> = Promise.resolve();
+
+const RATE_LIMIT_PATTERN = /429|速率限制|频率|rate.?limit|too many requests/i;
+
+function sleep(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** 命中限流时按 5s / 10s / 15s 退避重试，最多 4 次。 */
+async function withRateLimitRetry<T>(run: () => Promise<T>): Promise<T> {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+        try {
+            return await run();
+        } catch (error) {
+            const text = errorMessage(error);
+            if (attempt === 3 || !RATE_LIMIT_PATTERN.test(text)) throw error;
+            logger.warn("Generation rate limited, retrying", { attempt: attempt + 1, text: text.slice(0, 160) });
+            await sleep(5000 * (attempt + 1));
+        }
+    }
+    throw new Error("生成任务重试次数已用尽");
+}
+
+/** 生成类工具排队串行执行；其它工具直接执行。 */
+async function runToolQueued(name: string, parsed: unknown, runner: ToolRunner) {
+    if (!GENERATION_TOOLS.has(name)) return runner.callTool(name, parsed);
+    const previous = generationQueueTail;
+    let release: () => void = () => undefined;
+    generationQueueTail = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    await previous.catch(() => undefined);
+    logger.info("Generation tool started", { name });
+    try {
+        return await withRateLimitRetry(() => runner.callTool(name, parsed));
+    } finally {
+        release();
+    }
+}
+
+/**
  * 工具说明表。
  *
  * 模型只会调用「看得懂」的工具，所以每个工具都必须有明确的中文说明和参数定义；
@@ -186,7 +244,7 @@ export async function runApiAgentTurn(input: {
                 let output: unknown;
                 let failed = "";
                 try {
-                    output = await runner.callTool(name, parsed);
+                    output = await runToolQueued(name, parsed, runner);
                 } catch (error) {
                     failed = errorMessage(error);
                     output = { error: failed };

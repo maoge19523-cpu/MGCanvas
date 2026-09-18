@@ -112,3 +112,4 @@ The Chinese version contains the complete item-by-item acceptance checklist.
 - canvas-agent 的 API 后端（DeepSeek / 豆包）已跑通：模型能读取画布、调用 canvas_create_text_node 等工具并在画布上真实创建节点。
 - 使用前提：网页必须停留在画布编辑页（不在画布页时工具会返回「当前不在画布页」）。
 - 命令行用法：先用 POST /agent/api/config 配置 baseUrl / apiKey / model，再用 POST /agent/api/turn 发送任务；DeepSeek 需使用 deepseek-chat（reasoner 不支持工具调用）。
+- Agent 生成任务队列：生成类工具串行执行并自动重试限流，多镜头生成不再因并发 429 全部失败。

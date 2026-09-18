@@ -1,5 +1,5 @@
 import { AGENT_PROMPT } from "../config.js";
-import { toolNames } from "../canvas/schemas.js";
+import { toolDescriptions, toolNames } from "../canvas/schemas.js";
 import { logger } from "../utils/logger.js";
 import { errorMessage, field } from "../utils/value.js";
 import type { AgentEmit } from "./types.js";
@@ -47,22 +47,22 @@ const TOOL_META: Record<string, { description: string; properties?: Record<strin
     canvas_export_snapshot: { description: "导出当前画布的快照数据（节点、连线、视口）。" },
     canvas_apply_ops: { description: "对画布批量执行一组操作（最常用的工具）。ops 是操作数组，每一项都必须带 type 字段，且 type 只能是以下八种之一：add_node、update_node、delete_node、delete_connections、connect_nodes、set_viewport、select_nodes、run_generation。各类型的字段：add_node={nodeType(必填，image/text/video/audio/config), title, x, y, width, height, metadata}；update_node={id(必填), patch, metadata}；delete_node={id 或 ids}；connect_nodes={fromNodeId(必填), toNodeId(必填)}；set_viewport={viewport:{x,y,k}}；select_nodes={ids}；run_generation={nodeId(必填), mode, prompt}。", properties: { ops: { type: "array", description: "操作数组，每项都要有 type 字段，取值见工具说明", items: { type: "object", properties: { type: { type: "string", description: "操作类型：add_node / update_node / delete_node / delete_connections / connect_nodes / set_viewport / select_nodes / run_generation" } }, required: ["type"] } }, projectId: { type: "string" } }, required: ["ops"] },
     canvas_create_node: { description: "在画布上创建一个节点。", properties: { nodeType: { type: "string", description: "节点类型，必须是 image / text / video / audio / config 之一" }, title: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" }, metadata: { type: "object" } }, required: ["nodeType"] },
-    canvas_create_attachment_nodes: { description: "把已上传的素材（附件）创建为画布节点。", properties: { attachmentIds: { type: "array", items: { type: "string" } } }, required: ["attachmentIds"] },
+    canvas_create_attachment_nodes: { description: "把用户上传的图片附件创建为画布图片节点。", properties: { attachmentIds: { type: "array", description: "本轮附件清单里的 ID", items: { type: "string" } } }, required: ["attachmentIds"] },
     canvas_create_text_node: { description: "在画布上创建一个文本节点，内容为 text。用户说「加一个文本节点/写一段字」时用它。", properties: { text: { type: "string", description: "节点里的文字内容" }, title: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["text"] },
-    canvas_create_text_nodes: { description: "一次创建多个文本节点。", properties: { texts: { type: "array", description: "文本内容数组", items: { type: "string" } } }, required: ["texts"] },
+    canvas_create_text_nodes: { description: "一次创建多个文本节点。", properties: { items: { type: "array", description: "文本节点数组，每项含 text（必填）与可选 title/x/y", items: { type: "object", properties: { text: { type: "string" }, title: { type: "string" }, x: { type: "number" }, y: { type: "number" } }, required: ["text"] } } }, required: ["items"] },
     canvas_create_config_node: { description: "创建一个配置节点（把一组生成参数集中管理）。" },
     canvas_create_image_prompt_flow: { description: "创建「文本提示词 + 图片节点」的成对结构，常用于从提示词直接出图。" },
     canvas_create_generation_flow: { description: "创建一条生成流程（提示词节点 + 生成节点 + 连线）。注意：它会连带创建配套占位节点，画布上已有文本提示词或只需要单个生成节点时不要用它，改用 canvas_create_text_node 加 canvas_create_node，避免多出空白节点。" },
-    canvas_generate_text: { description: "对文本节点发起一次文本生成。", properties: { nodeId: { type: "string", description: "目标节点 id" }, prompt: { type: "string" } }, required: ["nodeId"] },
-    canvas_generate_image: { description: "对图片节点发起一次图片生成。", properties: { nodeId: { type: "string" }, prompt: { type: "string" } }, required: ["nodeId"] },
-    canvas_generate_video: { description: "对视频节点发起一次视频生成。", properties: { nodeId: { type: "string" }, prompt: { type: "string" } }, required: ["nodeId"] },
-    canvas_generate_audio: { description: "对音频节点发起一次音频生成。", properties: { nodeId: { type: "string" }, prompt: { type: "string" } }, required: ["nodeId"] },
+    canvas_generate_text: { description: "创建文本生成流程并立即触发生成。", properties: { prompt: { type: "string", description: "生成用的提示词（必填）" }, title: { type: "string" }, model: { type: "string" }, referenceNodeIds: { type: "array", items: { type: "string" } } }, required: ["prompt"] },
+    canvas_generate_image: { description: "创建图片生成流程并立即触发生图。", properties: { prompt: { type: "string", description: "生成用的提示词（必填）" }, title: { type: "string" }, model: { type: "string" }, size: { type: "string" }, referenceNodeIds: { type: "array", items: { type: "string" } } }, required: ["prompt"] },
+    canvas_generate_video: { description: "创建视频生成流程并立即触发生成。", properties: { prompt: { type: "string", description: "生成用的提示词（必填）" }, title: { type: "string" }, model: { type: "string" }, seconds: { type: "string" }, referenceNodeIds: { type: "array", items: { type: "string" } } }, required: ["prompt"] },
+    canvas_generate_audio: { description: "创建音频生成流程并立即触发配音。", properties: { prompt: { type: "string", description: "生成用的提示词（必填）" }, title: { type: "string" }, model: { type: "string" }, audioVoice: { type: "string" } }, required: ["prompt"] },
     canvas_update_node: { description: "修改节点的属性或 metadata（例如改名、改提示词、换模型）。", properties: { id: { type: "string" }, patch: { type: "object" }, metadata: { type: "object" } }, required: ["id"] },
     canvas_update_node_text: { description: "直接改写某个文本节点的文字内容。", properties: { id: { type: "string" }, text: { type: "string" } }, required: ["id", "text"] },
-    canvas_move_nodes: { description: "移动一个或多个节点。", properties: { ids: { type: "array", items: { type: "string" } }, x: { type: "number" }, y: { type: "number" } } },
+    canvas_move_nodes: { description: "移动节点。", properties: { items: { type: "array", description: "每项含 id 与 x/y 或 dx/dy", items: { type: "object", properties: { id: { type: "string" }, x: { type: "number" }, y: { type: "number" }, dx: { type: "number" }, dy: { type: "number" } }, required: ["id"] } } }, required: ["items"] },
     canvas_resize_node: { description: "调整节点尺寸。", properties: { id: { type: "string" }, width: { type: "number" }, height: { type: "number" } }, required: ["id"] },
-    canvas_delete_nodes: { description: "删除节点。", properties: { id: { type: "string" }, ids: { type: "array", items: { type: "string" } } } },
-    canvas_connect_nodes: { description: "用连线连接两个节点（数据流向 from → to）。", properties: { fromNodeId: { type: "string" }, toNodeId: { type: "string" } }, required: ["fromNodeId", "toNodeId"] },
+    canvas_delete_nodes: { description: "删除节点。", properties: { ids: { type: "array", description: "要删除的节点 id 数组", items: { type: "string" } } }, required: ["ids"] },
+    canvas_connect_nodes: { description: "用连线连接节点（数据流向 from → to）。", properties: { connections: { type: "array", description: "连线数组，每项含 fromNodeId 与 toNodeId", items: { type: "object", properties: { fromNodeId: { type: "string" }, toNodeId: { type: "string" } }, required: ["fromNodeId", "toNodeId"] } } }, required: ["connections"] },
     canvas_select_nodes: { description: "选中指定节点。", properties: { ids: { type: "array", items: { type: "string" } } }, required: ["ids"] },
     canvas_set_viewport: { description: "设置画布视口（缩放与平移）。", properties: { viewport: { type: "object" } }, required: ["viewport"] },
     canvas_run_generation: { description: "运行某个节点的生成任务。", properties: { nodeId: { type: "string" }, mode: { type: "string" }, prompt: { type: "string" } }, required: ["nodeId"] },
@@ -91,7 +91,7 @@ function buildTools() {
         .filter((name) => !API_TOOL_EXCLUDED.has(name))
         .map((name) => ({
             type: "function" as const,
-            function: { name, description: TOOL_META[name]?.description || `MGCanvas 画布工具：${name}`, parameters: toolSchema(name) },
+            function: { name, description: toolDescriptions[name] || TOOL_META[name]?.description || `MGCanvas 画布工具：${name}`, parameters: toolSchema(name) },
         }));
 }
 

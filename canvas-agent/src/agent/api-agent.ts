@@ -78,11 +78,21 @@ function toolSchema(name: string) {
     return { type: "object", additionalProperties: true, properties: meta?.properties || {}, ...(meta?.required ? { required: meta.required } : {}) };
 }
 
+/**
+ * API 后端只暴露画布操作类工具。
+ *
+ * 实测：把 canvas_list_projects / site_navigate 一起给模型时，它会先去「列画布」，
+ * 拿到空列表就停手，反而不去改当前画布。这里只保留真正能操作当前画布的工具。
+ */
+const API_TOOL_EXCLUDED = new Set(["site_navigate", "canvas_list_projects", "canvas_export_snapshot"]);
+
 function buildTools() {
-    return toolNames.map((name) => ({
-        type: "function" as const,
-        function: { name, description: TOOL_META[name]?.description || `MGCanvas 画布工具：${name}`, parameters: toolSchema(name) },
-    }));
+    return toolNames
+        .filter((name) => !API_TOOL_EXCLUDED.has(name))
+        .map((name) => ({
+            type: "function" as const,
+            function: { name, description: TOOL_META[name]?.description || `MGCanvas 画布工具：${name}`, parameters: toolSchema(name) },
+        }));
 }
 
 /** 把工具执行结果压成一段短文本，避免上下文被撑爆。 */
@@ -116,7 +126,17 @@ export async function runApiAgentTurn(input: {
     }
 
     const messages: ChatMessage[] = [
-        { role: "system", content: AGENT_PROMPT },
+        {
+            role: "system",
+            content: [
+                AGENT_PROMPT,
+                "",
+                "补充要求（API 模式）：",
+                "- 用户说的「画布」就是网页当前打开的那一个，直接用画布工具操作，不要去找项目列表。",
+                "- 需要了解现状时调用 canvas_get_state；要落笔就直接调用 canvas_create_text_node 等工具。",
+                "- 任务完成后用一两句中文说明你做了什么，不要罗列工具名。",
+            ].join("\n"),
+        },
         { role: "user", content: prompt },
     ];
     emit("agent_bootstrap", { type: `${agent}.preparing` });

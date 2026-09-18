@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- [修复] API 后端只暴露画布操作类工具（去掉列画布与页面跳转），并在系统提示里明确「默认操作当前画布」，避免模型跑去列项目后停手。
 - [修复] API 后端的工具此前只有名称没有说明，模型不会调用；现补充每个画布工具的中文用途与参数定义。
 - [新增] canvas-agent 接入 API 后端路由：/agent/api/config 读写配置、/agent/api/turn 直接驱动 DeepSeek / 豆包等接口完成画布操作。
 - [修复] CSP 的 connect-src 补充本机 http 地址，修复 Agent 面板连接本地 Agent 失败的问题。

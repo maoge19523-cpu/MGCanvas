@@ -508,6 +508,19 @@ const ENUM_LABELS: Record<string, string> = {
     max: "最高精度（较慢）",
 };
 
+/**
+ * 取枚举值的展示文案。
+ *
+ * 未收录的值做一次温和清理：去掉 `native:` 这类前缀与括号里的英文说明，
+ * 避免下拉里直接暴露 `native:1080p` 这种原始串（看着像乱码）。
+ */
+function formatEnumLabel(value: string): string {
+    const mapped = ENUM_LABELS[value];
+    if (mapped) return mapped;
+    const tail = value.includes(":") ? value.slice(value.lastIndexOf(":") + 1) : value;
+    const cleaned = tail.replace(/\s*\(.*?\)\s*/g, " ").trim();
+    return cleaned || value;
+}
 /** 清空素材时使用的占位值：ComfyUI 把 None 视为「没有素材」。 */
 const EMPTY_MEDIA = "None";
 
@@ -628,7 +641,7 @@ function ParameterControl({ input, value, onChange, onPickMedia, uploadingMedia,
         return (
             <div className="block">
                 {label}
-                <Select className="w-full" size="small" value={typeof value === "string" ? value : undefined} options={(input.enumValues || []).map((item) => ({ value: item, label: ENUM_LABELS[item] ?? item }))} onChange={onChange} />
+                <Select className="w-full" size="small" value={typeof value === "string" ? value : undefined} options={(input.enumValues || []).map((item) => ({ value: item, label: formatEnumLabel(item) }))} onChange={onChange} />
             </div>
         );
     // 分辨率档位用固定三档下拉，比让用户填百万像素直观。

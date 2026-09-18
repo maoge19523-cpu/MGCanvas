@@ -2015,3 +2015,22 @@ html:not(.dark) .td-home-page-glow {
     -webkit-backdrop-filter: blur(24px) saturate(1.8);
     backdrop-filter: blur(24px) saturate(1.8);
 }
+
+/* 外壳原本是不透明白底，会把 body 的渐变整层盖住，玻璃面就只剩「模糊纯白」。
+   这里让外壳透明，渐变才能透上来，磨砂才有东西可模糊。 */
+html:not(.dark) .mg-app-shell,
+html:not(.dark) .mg-app-shell > div,
+html:not(.dark) .td-page-enter {
+    background-color: transparent !important;
+}
+
+/* 玻璃面再透一点，颜色才透得出来。 */
+html:not(.dark) .td-workspace-body,
+html:not(.dark) .td-workspace-inner,
+html:not(.dark) .td-workspace-toolbar,
+html:not(.dark) section[class*="rounded-"],
+html:not(.dark) div[class*="rounded-"][class*="border-black/"] {
+    background-color: rgba(255, 255, 255, .42) !important;
+    -webkit-backdrop-filter: blur(26px) saturate(1.9);
+    backdrop-filter: blur(26px) saturate(1.9);
+}

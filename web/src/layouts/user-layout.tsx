@@ -22,7 +22,7 @@ export default function UserLayout({ children }: { children: ReactNode }) {
     const showAgentDock = panelMounted && !panelOpen;
 
     return (
-        <div className="flex h-full min-h-0 overflow-hidden bg-background text-foreground">
+        <div className="mg-app-shell flex h-full min-h-0 overflow-hidden bg-background text-foreground">
             {hideSideNav ? null : <AppSideNav />}
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
                 <AppTopNav />

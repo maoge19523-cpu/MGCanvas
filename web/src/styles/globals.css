@@ -2157,3 +2157,104 @@ html:not(.dark) [class*="bg-neutral-50"] {
     -webkit-backdrop-filter: blur(30px) saturate(2.2);
     backdrop-filter: blur(30px) saturate(2.2);
 }
+
+/* ===== 液态玻璃 · 细节打磨 =====
+   按钮 / 输入框 / 下拉菜单 / 弹窗 / 抽屉统一成玻璃面，
+   让浮层和主体一样透出背景色，边缘补白色高光。 */
+
+/* —— 按钮 —— */
+html:not(.dark) .ant-btn-default {
+    background-color: rgba(255, 255, 255, .42) !important;
+    border-color: rgba(255, 255, 255, .75) !important;
+    -webkit-backdrop-filter: blur(18px) saturate(1.8);
+    backdrop-filter: blur(18px) saturate(1.8);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .85);
+}
+html:not(.dark) .ant-btn-default:hover {
+    background-color: rgba(255, 255, 255, .62) !important;
+    border-color: rgba(255, 255, 255, .95) !important;
+}
+html:not(.dark) .ant-btn-primary {
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, .4),
+        0 8px 22px rgba(117, 107, 255, .28);
+}
+html:not(.dark) .ant-btn-text:hover,
+html:not(.dark) .ant-btn-link:hover {
+    background-color: rgba(255, 255, 255, .45) !important;
+}
+
+/* —— 输入类 —— */
+html:not(.dark) .ant-input,
+html:not(.dark) .ant-input-affix-wrapper,
+html:not(.dark) .ant-input-number,
+html:not(.dark) .ant-select .ant-select-selector,
+html:not(.dark) .ant-picker {
+    background-color: rgba(255, 255, 255, .45) !important;
+    border-color: rgba(255, 255, 255, .75) !important;
+    -webkit-backdrop-filter: blur(16px) saturate(1.8);
+    backdrop-filter: blur(16px) saturate(1.8);
+}
+html:not(.dark) .ant-input-affix-wrapper:focus-within,
+html:not(.dark) .ant-select-focused .ant-select-selector {
+    border-color: rgba(37, 99, 235, .55) !important;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, .12) !important;
+}
+
+/* —— 下拉菜单 / 气泡 / 日期面板 —— */
+html:not(.dark) .ant-select-dropdown,
+html:not(.dark) .ant-dropdown-menu,
+html:not(.dark) .ant-popover-inner,
+html:not(.dark) .ant-picker-panel-container,
+html:not(.dark) .ant-cascader-dropdown {
+    background-color: rgba(255, 255, 255, .55) !important;
+    border: 1px solid rgba(255, 255, 255, .78) !important;
+    -webkit-backdrop-filter: blur(30px) saturate(2);
+    backdrop-filter: blur(30px) saturate(2);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, .92),
+        0 18px 44px rgba(15, 23, 42, .14) !important;
+}
+html:not(.dark) .ant-select-item-option-active:not(.ant-select-item-option-selected),
+html:not(.dark) .ant-dropdown-menu-item:hover {
+    background-color: rgba(117, 107, 255, .14) !important;
+}
+
+/* —— 弹窗 / 抽屉 —— */
+html:not(.dark) .ant-modal-content,
+html:not(.dark) .ant-drawer-content {
+    background-color: rgba(255, 255, 255, .62) !important;
+    border: 1px solid rgba(255, 255, 255, .8) !important;
+    -webkit-backdrop-filter: blur(36px) saturate(2.1);
+    backdrop-filter: blur(36px) saturate(2.1);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, .95),
+        0 28px 72px rgba(15, 23, 42, .2) !important;
+}
+html:not(.dark) .ant-modal-header,
+html:not(.dark) .ant-drawer-header {
+    background-color: transparent !important;
+    border-bottom: 1px solid rgba(255, 255, 255, .6) !important;
+}
+html:not(.dark) .ant-modal-footer,
+html:not(.dark) .ant-drawer-footer {
+    background-color: transparent !important;
+    border-top: 1px solid rgba(255, 255, 255, .6) !important;
+}
+html:not(.dark) .ant-modal-mask,
+html:not(.dark) .ant-drawer-mask {
+    background-color: rgba(15, 23, 42, .18) !important;
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+}
+
+/* —— 工作区按钮 / 工具条 —— */
+html:not(.dark) .td-workspace-action {
+    background-color: rgba(255, 255, 255, .42) !important;
+    border-color: rgba(255, 255, 255, .75) !important;
+    -webkit-backdrop-filter: blur(18px) saturate(1.8);
+    backdrop-filter: blur(18px) saturate(1.8);
+}
+html:not(.dark) .td-workspace-action:hover {
+    background-color: rgba(255, 255, 255, .62) !important;
+}

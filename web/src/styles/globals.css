@@ -2034,3 +2034,42 @@ html:not(.dark) div[class*="rounded-"][class*="border-black/"] {
     -webkit-backdrop-filter: blur(26px) saturate(1.9);
     backdrop-filter: blur(26px) saturate(1.9);
 }
+
+/* ===== 液态玻璃 · 鲜明版 =====
+   参考 iOS 控件的质感：背景用高饱和彩色光斑，玻璃面做得很透、模糊很强、
+   白边明显——这样才看得出「透过去的是彩色」。 */
+html:not(.dark) body {
+    background-color: #eef1f8;
+    background-image:
+        radial-gradient(900px 620px at 12% 8%, #ff9aa2 0%, rgba(255, 154, 162, 0) 62%),
+        radial-gradient(820px 580px at 88% 12%, #a8c8ff 0%, rgba(168, 200, 255, 0) 60%),
+        radial-gradient(880px 640px at 76% 92%, #8ee6f0 0%, rgba(142, 230, 240, 0) 62%),
+        radial-gradient(760px 560px at 22% 88%, #d9b3ff 0%, rgba(217, 179, 255, 0) 60%),
+        radial-gradient(700px 520px at 52% 46%, #ffd9a0 0%, rgba(255, 217, 160, 0) 64%);
+    background-attachment: fixed;
+}
+
+html:not(.dark) .td-workspace-body,
+html:not(.dark) .td-workspace-inner,
+html:not(.dark) .td-workspace-toolbar,
+html:not(.dark) section[class*="rounded-"],
+html:not(.dark) div[class*="rounded-"][class*="border-black/"] {
+    background-color: rgba(255, 255, 255, .30) !important;
+    border-color: rgba(255, 255, 255, .72) !important;
+    -webkit-backdrop-filter: blur(30px) saturate(2.2);
+    backdrop-filter: blur(30px) saturate(2.2);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, .92),
+        inset 0 0 0 1px rgba(255, 255, 255, .30),
+        0 14px 40px rgba(15, 23, 42, .12);
+}
+
+/* 侧栏、顶栏、标题栏同样做透。 */
+html:not(.dark) .td-app-top-nav,
+html:not(.dark) .td-canvas-side-panel,
+html:not(.dark) .td-desktop-titlebar {
+    background-color: rgba(255, 255, 255, .30) !important;
+    border-color: rgba(255, 255, 255, .7) !important;
+    -webkit-backdrop-filter: blur(30px) saturate(2.2);
+    backdrop-filter: blur(30px) saturate(2.2);
+}

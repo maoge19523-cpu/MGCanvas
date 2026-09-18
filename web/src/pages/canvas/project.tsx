@@ -13,7 +13,7 @@ import type { GenericOutput } from "@/services/api/generic-protocol";
 import { persistGenericRunResult } from "@/services/api/generic-storage";
 import { clearGenericTaskJournal, journalGenericSubmission, mergeGenericTaskJournal } from "@/services/api/generic-task-journal";
 import { requestGenericWalletRefresh } from "@/services/api/generic-wallet";
-import { resolveModelChannel, resolveModelRequestConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
+import {resolveModelChannel, resolveModelRequestConfig, useConfigStore, useEffectiveConfig, selectableModelsByCapability } from "@/stores/use-config-store";
 import { uploadImage, type UploadedImage } from "@/services/image-storage";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { downloadBlobBackedMedia, downloadFilenameFromTitle, resolveDownloadBlob, type DownloadableMediaKind } from "@/services/media-download";
@@ -3127,10 +3127,16 @@ function MGCanvasProjectPage() {
     const handleGenerateNode = useCallback(
         async (nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => {
             const sourceNode = nodesRef.current.find((node) => node.id === nodeId);
-            const generationConfig = buildGenerationConfig(effectiveConfig, sourceNode, mode);
+            let generationConfig = buildGenerationConfig(effectiveConfig, sourceNode, mode);
             if (!isAiConfigReady(generationConfig, generationConfig.model)) {
-                openConfigDialog(true);
-                return;
+                // 节点还没选模型时，自动挑一个已配置的同能力渠道模型；
+                // 只有用户完全没配渠道时才弹配置窗口（此前会误弹，被当成「没配置」）。
+                const autoModel = selectableModelsByCapability(effectiveConfig, mode)[0];
+                if (!autoModel) {
+                    openConfigDialog(true);
+                    return;
+                }
+                generationConfig = { ...generationConfig, model: autoModel };
             }
 
             // useBuiltinPanel.writeBackToSelf reuses built-in generation while writing the result back to the plugin node.

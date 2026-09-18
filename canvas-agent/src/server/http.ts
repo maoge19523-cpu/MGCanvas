@@ -121,7 +121,16 @@ export function startHttpServer() {
         next();
     });
     app.get("/health", (_req, res) => res.json(session.health()));
-    app.get("/config", (_req, res) => res.json({ ok: true, protocolVersion: AGENT_PROTOCOL_VERSION, url: config.url, hasToken: true }));
+    /**
+     * 连接信息只对「本机无来源请求」或「已登记过的来源」返回 token。
+     * 这样网页首次连接后就不必再手填 token（重装应用也能自动恢复），
+     * 同时避免任意网页通过 /config 读到 token。
+     */
+    app.get("/config", (req, res) => {
+        const origin = String(req.headers.origin || "");
+        const known = !origin || (config.origins || []).includes(origin);
+        res.json({ ok: true, protocolVersion: AGENT_PROTOCOL_VERSION, url: config.url, hasToken: true, ...(known ? { token: config.token } : {}) });
+    });
     app.use((req, res, next) => {
         if (validToken(req, requestUrl(req, config), config.token)) return next();
         res.status(401).json({ ok: false, error: "invalid token" });

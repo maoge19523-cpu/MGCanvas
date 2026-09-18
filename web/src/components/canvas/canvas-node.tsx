@@ -464,7 +464,9 @@ export const CanvasNode = React.memo(function CanvasNode({
                 {hasImageContent ? <ImageHistoryControl node={data} onSelect={(historyId) => onSelectImageHistory?.(data.id, historyId)} /> : null}
 
                 {!isGroup && !hasImageContent && !hasVideoContent && !hasAudioContent ? (
-                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12" style={{ background: `linear-gradient(to top, ${theme.canvas.background}66, transparent)` }} />
+                    // 底部渐隐带是节点的兄弟元素，不参与圆角裁剪，需要自己带圆角，
+                    // 否则会在节点底部露出两个直角。
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 rounded-b-3xl" style={{ background: `linear-gradient(to top, ${theme.canvas.background}66, transparent)` }} />
                 ) : null}
 
                 <ResizeHandle corner="top-left" onMouseDown={handleResizeMouseDown} />

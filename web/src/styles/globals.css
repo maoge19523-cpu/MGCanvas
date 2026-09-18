@@ -588,6 +588,8 @@
         background: linear-gradient(90deg, #111827 0%, #111827 36%, #6b7280 54%, #111827 72%, #111827 100%);
         background-size: 220% 100%;
         -webkit-background-clip: text;
+    /* 纸面上的金属字：先一圈极淡白晕脱离背景，再落一层暖褐投影做出厚度。 */
+    filter: drop-shadow(0 0 1px rgba(255, 255, 255, .95)) drop-shadow(0 2px 5px rgba(122, 92, 20, .35));
         background-clip: text;
         color: transparent;
         animation: ai-title-aurora 7s ease-in-out infinite;
@@ -597,6 +599,8 @@
         background: linear-gradient(90deg, #fafaf9 0%, #fafaf9 36%, #a8a29e 54%, #fafaf9 72%, #fafaf9 100%);
         background-size: 220% 100%;
         -webkit-background-clip: text;
+    /* 纸面上的金属字：先一圈极淡白晕脱离背景，再落一层暖褐投影做出厚度。 */
+    filter: drop-shadow(0 0 1px rgba(255, 255, 255, .95)) drop-shadow(0 2px 5px rgba(122, 92, 20, .35));
         background-clip: text;
     }
 
@@ -1441,13 +1445,15 @@ body,
     /* 楷书系：优先用户已装的霞鹜文楷，其次系统楷体，带出文艺书卷气。 */
     font-family: "LXGW WenKai", "霞鹜文楷", "KaiTi", "楷体", "STKaiti", "Kaiti SC", "Songti SC", serif;
     font-size: clamp(0.95rem, 1.45cqi, 1.6rem);
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-indent: 0.1em;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-indent: 0.16em;
     white-space: nowrap;
-    /* 彩虹渐变文字：取饱和偏深的色阶，保证在米白纸面上依然清晰。 */
-    background-image: linear-gradient(90deg, #e11d48 0%, #f97316 16%, #d97706 32%, #16a34a 50%, #0284c7 68%, #7c3aed 84%, #db2777 100%);
+    /* 香槟金金属渐变：深金—亮金—高光—亮金—深金，形成金属反光带。 */
+    background-image: linear-gradient(100deg, #7a5c14 0%, #c9a227 20%, #f2dd9a 40%, #fffdf0 50%, #f2dd9a 60%, #c9a227 80%, #7a5c14 100%);
     -webkit-background-clip: text;
+    /* 纸面上的金属字：先一圈极淡白晕脱离背景，再落一层暖褐投影做出厚度。 */
+    filter: drop-shadow(0 0 1px rgba(255, 255, 255, .95)) drop-shadow(0 2px 5px rgba(122, 92, 20, .35));
     background-clip: text;
     color: transparent;
     filter: drop-shadow(0 1px 1px rgb(255 255 255 / 65%));

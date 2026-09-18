@@ -189,7 +189,7 @@ export function GenericVideoModelMenu({
             aria-label="选择视频模型"
             data-generic-video-model-menu
             className="grid size-full min-h-0 overflow-hidden rounded-[14px] border shadow-2xl"
-            style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text, gridTemplateColumns: "minmax(164px, 190px) minmax(0, 1fr)", boxShadow: "0 16px 48px rgba(0,0,0,.32)" }}
+            style={{ background: (theme.node.panelSolid || theme.toolbar.panel), borderColor: theme.toolbar.border, color: theme.node.text, gridTemplateColumns: "minmax(164px, 190px) minmax(0, 1fr)", boxShadow: "0 16px 48px rgba(0,0,0,.32)" }}
             onKeyDown={onKeyDown}
         >
             <section className="flex min-h-0 flex-col border-r" style={{ borderColor: theme.toolbar.border }}>

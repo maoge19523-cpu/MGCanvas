@@ -63,7 +63,8 @@ export function TextNodePanel({ node, theme, onChange }: TextNodePanelProps) {
     };
 
     return (
-        <div className="flex flex-col gap-2 text-xs" style={{ color: theme.node.text }}>
+        // 参数栏承载表单，必须用不透明底色：半透明时会透出下层节点的文字造成重叠。
+        <div className="flex flex-col gap-2 rounded-2xl p-3 text-xs" style={{ background: theme.node.panelSolid, color: theme.node.text }}>
             <label className="block">
                 <span className="mb-1 block text-[11px] font-medium" style={{ color: theme.node.muted }}>
                     想画什么（一句话就够）

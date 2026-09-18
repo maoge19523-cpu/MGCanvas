@@ -265,7 +265,7 @@ export function GenericNativeGenerationPanel({
         <div
             data-canvas-no-zoom
             className="overflow-visible rounded-2xl border shadow-xl backdrop-blur"
-            style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
+            style={{ background: (theme.node.panelSolid || theme.toolbar.panel), borderColor: theme.toolbar.border, color: theme.node.text }}
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
             onWheel={(event) => event.stopPropagation()}

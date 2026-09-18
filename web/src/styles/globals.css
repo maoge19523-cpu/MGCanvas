@@ -1947,7 +1947,6 @@ body,
 .mg-glass-ring {
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, .75),
-        inset 0 0 0 1px rgba(255, 255, 255, .35),
         0 12px 32px rgba(15, 23, 42, .08);
 }
 
@@ -1955,9 +1954,8 @@ body,
 .mg-glass .mg-panel {
     -webkit-backdrop-filter: blur(28px) saturate(2);
     backdrop-filter: blur(28px) saturate(2);
-    /* 上缘一道亮线 + 外投影，模拟玻璃厚度与悬浮感。 */
+    /* 只保留上缘一道亮线与外投影：再加内描边会和面板自身边框叠成两道框。 */
     box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, .95),
-        inset 0 0 0 1px rgba(255, 255, 255, .55),
-        0 22px 56px rgba(15, 23, 42, .13);
+        inset 0 1px 0 rgba(255, 255, 255, .9),
+        0 18px 44px rgba(15, 23, 42, .12);
 }

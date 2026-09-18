@@ -3137,6 +3137,9 @@ function MGCanvasProjectPage() {
                     return;
                 }
                 generationConfig = { ...generationConfig, model: autoModel };
+                // 把自动选中的模型写回节点：否则面板上仍显示「请选择模型」，
+                // 用户看到的是「没选模型却跑起来了」。
+                setNodes((prev) => prev.map((item) => (item.id === nodeId ? { ...item, metadata: { ...item.metadata, model: autoModel } } : item)));
             }
 
             // useBuiltinPanel.writeBackToSelf reuses built-in generation while writing the result back to the plugin node.

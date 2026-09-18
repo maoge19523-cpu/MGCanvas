@@ -89,7 +89,9 @@ async function desktopScriptRequest(input: {
         }
     }
     if (!response.ok) {
-        throw Object.assign(new Error(`Request failed with status code ${response.status}`), {
+        // 把服务商返回的原文带进错误信息：只给状态码时完全无法定位问题（例如 400 分不清是参数还是内容）。
+        const detail = typeof parsed === "string" ? parsed.slice(0, 400) : JSON.stringify(parsed).slice(0, 400);
+        throw Object.assign(new Error(`HTTP ${response.status}：${detail}`), {
             isAxiosError: true,
             response: { status: response.status, statusText: response.statusText, data: parsed },
         });

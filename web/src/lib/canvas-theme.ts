@@ -4,8 +4,15 @@ export type CanvasBackgroundMode = "dots" | "lines" | "blank";
 export const canvasThemes = {
     light: {
         // 液态玻璃（浅色）：冷调浅底 + 半透明玻璃面 + 冷蓝高亮。
+        // 底色用柔和的彩色光斑渐变——磨砂面板要透过它才能显出「玻璃」质感，
+        // 纯色平底会让 backdrop-filter 看起来毫无效果。
         canvas: {
-            background: "#e9eff8",
+            background:
+                "radial-gradient(1200px 820px at 10% 6%, #d7e6fb 0%, rgba(215,230,251,0) 62%)," +
+                "radial-gradient(1000px 720px at 92% 10%, #e2e2fb 0%, rgba(226,226,251,0) 58%)," +
+                "radial-gradient(1150px 900px at 76% 96%, #d4f0f4 0%, rgba(212,240,244,0) 62%)," +
+                "radial-gradient(900px 700px at 26% 92%, #f2e4f7 0%, rgba(242,228,247,0) 60%)," +
+                "#eef3fb",
             dot: "rgba(71,85,105,.26)",
             line: "rgba(71,85,105,.10)",
             selectionStroke: "#2563eb",
@@ -13,9 +20,9 @@ export const canvasThemes = {
         },
         node: {
             label: "#3f4a5a",
-            fill: "rgba(255,255,255,.58)",
-            panel: "rgba(255,255,255,.78)",
-            stroke: "rgba(148,163,184,.38)",
+            fill: "rgba(255,255,255,.44)",
+            panel: "rgba(255,255,255,.62)",
+            stroke: "rgba(255,255,255,.85)",
             activeStroke: "#2563eb",
             placeholder: "#8194ab",
             text: "#0f172a",
@@ -23,8 +30,8 @@ export const canvasThemes = {
             faint: "#93a3b8",
         },
         toolbar: {
-            panel: "rgba(255,255,255,.72)",
-            border: "rgba(148,163,184,.36)",
+            panel: "rgba(255,255,255,.58)",
+            border: "rgba(255,255,255,.85)",
             item: "#3f4a5a",
             itemHover: "rgba(37,99,235,.10)",
             activeBg: "rgba(37,99,235,.14)",

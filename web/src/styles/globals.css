@@ -2121,3 +2121,39 @@ html:not(.dark) .td-desktop-titlebar {
     border-bottom: 1px solid rgba(255, 255, 255, .75) !important;
     box-shadow: 0 8px 28px rgba(15, 23, 42, .06);
 }
+
+/* ===== 液态玻璃 · 根节点版 =====
+   标题栏与部分浮层并不在 .mg-app-shell 之内，之前把渐变挂在外壳上时，
+   它们背后仍是纯白，模糊出来还是白。这里把渐变挂到 html 根节点，
+   并把「清理不透明底」的范围从外壳放宽到全站，保证任何层级都能透出背景。 */
+html:not(.dark) {
+    background-color: #eef1f8 !important;
+    background-image:
+        radial-gradient(900px 620px at 12% 8%, #ff9aa2 0%, rgba(255, 154, 162, 0) 62%),
+        radial-gradient(820px 580px at 88% 12%, #a8c8ff 0%, rgba(168, 200, 255, 0) 60%),
+        radial-gradient(880px 640px at 76% 92%, #8ee6f0 0%, rgba(142, 230, 240, 0) 62%),
+        radial-gradient(760px 560px at 22% 88%, #d9b3ff 0%, rgba(217, 179, 255, 0) 60%),
+        radial-gradient(700px 520px at 52% 46%, #ffd9a0 0%, rgba(255, 217, 160, 0) 64%) !important;
+    background-attachment: fixed !important;
+}
+
+html:not(.dark) body,
+html:not(.dark) #root,
+html:not(.dark) #app {
+    background: transparent !important;
+}
+
+/* 全站清理不透明白/浅底（只处理纯色工具类，半透明的保留）。 */
+html:not(.dark) [class*="bg-white"]:not([class*="bg-white/"]),
+html:not(.dark) [class*="bg-background"]:not([class*="dark:"]),
+html:not(.dark) [class*="bg-card"]:not([class*="dark:"]),
+html:not(.dark) [class*="bg-[#f"],
+html:not(.dark) [class*="bg-[#e"],
+html:not(.dark) [class*="bg-[#d"],
+html:not(.dark) [class*="bg-stone-50"],
+html:not(.dark) [class*="bg-zinc-50"],
+html:not(.dark) [class*="bg-neutral-50"] {
+    background-color: rgba(255, 255, 255, .30) !important;
+    -webkit-backdrop-filter: blur(30px) saturate(2.2);
+    backdrop-filter: blur(30px) saturate(2.2);
+}

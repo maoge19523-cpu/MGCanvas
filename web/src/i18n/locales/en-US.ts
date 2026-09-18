@@ -1971,6 +1971,8 @@ randomSeedHint: "Turn off to keep a fixed seed; local runs reproduce exactly, cl
             connecting: "Connecting",
             creatingConversation: "Creating conversation",
             newConversation: "New conversation",
+            clearConversation: "Clear chat",
+            clearedConversation: "Chat cleared",
             newConversationFailed: "Failed to create conversation",
             conversationResumed: "Conversation resumed",
             resumeConversationFailed: "Failed to resume conversation",

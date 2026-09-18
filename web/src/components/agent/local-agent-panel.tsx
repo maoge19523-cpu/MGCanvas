@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { App, Button, Tooltip } from "antd";
 import dayjs from "dayjs";
-import { Bot, History, MessageSquare, PanelRightClose, PlugZap, Plus, Sparkles, Terminal } from "lucide-react";
+import { Bot, History, MessageSquare, PanelRightClose, PlugZap, Plus, Sparkles, Terminal, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
@@ -1033,6 +1033,22 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         setAgentState({ loadingThreads: false });
     };
 
+    /**
+     * 清空当前对话：先清掉本地消息列表，再尽力重置服务端线程。
+     * API 后端的上下文只存在本地，因此本地清空即可生效。
+     */
+    const clearConversation = async () => {
+        const current = useAgentStore.getState();
+        if (!current.connected || current.sending || current.waiting) return;
+        setAgentState({ messages: [], activity: rt("newConversation"), activeTurnId: "" });
+        addEventLog(rt("clearConversation"), rt("clearedConversation"));
+        try {
+            const result = await fetchAgentJson<AgentWorkspaceResponse>(endpoint, token, "/agent/codex/threads/reset", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clientId: clientIdRef.current, permissionMode }) });
+            if (result.conversation) applyConversationState(result.conversation);
+        } catch {
+            // 服务端重置失败不影响本地已清空的结果。
+        }
+    };
     const startNewThread = async () => {
         const current = useAgentStore.getState();
         if (!current.connected || current.sending || current.waiting || current.loadingThreads || ["preparing", "running"].includes(current.conversation.status)) return;
@@ -1350,6 +1366,9 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                             <Button size="small" type="text" className="!h-8 !w-8 !min-w-8 !px-0 @min-[560px]:!w-auto @min-[560px]:!min-w-0 @min-[560px]:!px-[7px]" aria-label={t("agent.panel.connectionSettingsLabel", { status: connectionStatus })} icon={<PlugZap className="size-3.5" style={{ color: connectionStatusColor }} />} onClick={() => setAgentState({ activeTab: "setup" })}>
                                 <span className="hidden @min-[560px]:inline">{connectionStatus}</span>
                             </Button>
+                        </Tooltip>
+                        <Tooltip title={rt("clearConversation")} placement="bottom">
+                            <Button size="small" type="text" className="!h-8 !w-8 !min-w-8 !px-0" aria-label={rt("clearConversation")} icon={<Trash2 className="size-3.5" />} onClick={() => void clearConversation()} />
                         </Tooltip>
                     </div>
                 }

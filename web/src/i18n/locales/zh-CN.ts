@@ -1929,6 +1929,8 @@ randomSeedHint: "关闭后写入固定种子；本地环境可精确复现，云
             connecting: "连接中",
             creatingConversation: "正在新建对话",
             newConversation: "新对话",
+            clearConversation: "清空对话",
+            clearedConversation: "已清空当前对话",
             newConversationFailed: "新建对话失败",
             conversationResumed: "已恢复会话",
             resumeConversationFailed: "恢复对话失败",

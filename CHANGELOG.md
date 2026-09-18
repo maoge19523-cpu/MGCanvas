@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- [修复] CSP 的 connect-src 补充本机 http 地址，修复 Agent 面板连接本地 Agent 失败的问题。
 - [新增] canvas-agent 增加基于 API Key 的 Agent 后端（DeepSeek / 豆包等兼容 OpenAI 的接口）：自行完成工具调用循环并直接调用画布工具，事件按现有 Codex 风格发出，前端无需改动。
 - [修复] 节点底部渐隐带缺圆角，导致节点下方露出两个直角。
 - [优化] 首页 slogan「梦开始的地方」由彩虹渐变改为香槟金金属质感，字距与投影一并打磨。

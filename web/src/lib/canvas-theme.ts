@@ -8,6 +8,9 @@ export const canvasThemes = {
         // 纯色平底会让 backdrop-filter 看起来毫无效果。
         canvas: {
             background:
+                // 先铺细网格纹理再铺光斑：玻璃面需要高频细节才能显出磨砂。
+                "linear-gradient(rgba(148,163,184,.10) 1px, transparent 1px)," +
+                "linear-gradient(90deg, rgba(148,163,184,.10) 1px, transparent 1px)," +
                 "radial-gradient(1200px 820px at 10% 6%, #b9d4f7 0%, rgba(185,212,247,0) 62%)," +
                 "radial-gradient(1000px 720px at 92% 10%, #cdcdf8 0%, rgba(205,205,248,0) 58%)," +
                 "radial-gradient(1150px 900px at 76% 96%, #b3e6ee 0%, rgba(179,230,238,0) 62%)," +

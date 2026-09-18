@@ -62,7 +62,7 @@ export function DesktopTitlebar() {
         <header
             data-tauri-drag-region
             data-window-focused={focused}
-            className="td-desktop-titlebar relative z-[1200] flex h-12 shrink-0 select-none items-center bg-[#f4f2ed] text-[#78716c] dark:bg-[#090a0c] dark:text-[#8b8f94]"
+            className="td-desktop-titlebar relative z-[1200] flex h-12 shrink-0 select-none items-center bg-white/50 backdrop-blur-xl text-[#78716c] dark:bg-[#090a0c] dark:text-[#8b8f94]"
         >
             {/* 品牌与主导航已移到左侧边栏（AppSideNav），标题栏左侧留作拖动区域。 */}
             <div data-tauri-drag-region className="td-desktop-titlebar-brand flex h-full min-w-0 shrink-0 items-center pl-4 pr-5" />

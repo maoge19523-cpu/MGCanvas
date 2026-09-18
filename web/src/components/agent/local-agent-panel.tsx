@@ -119,6 +119,27 @@ function conversationBootstrapView(conversation: AgentConversationState) {
     return { bootstrapStatus, mcpStartupStatuses };
 }
 
+const API_BACKEND_LABEL = "DeepSeek / 豆包";
+
+/** 是否启用 API 后端（DeepSeek / 豆包）。开关存在本地，接口配置存在 Agent 侧。 */
+export function isApiBackendEnabled() {
+    try {
+        return window.localStorage.getItem("mgcanvas:agent-api-mode") === "1";
+    } catch {
+        return false;
+    }
+}
+
+/** 切换 API 后端开关。 */
+export function setApiBackendEnabled(enabled: boolean) {
+    try {
+        window.localStorage.setItem("mgcanvas:agent-api-mode", enabled ? "1" : "0");
+    } catch {
+        // 本地存储不可用时忽略，按本次会话使用。
+    }
+    return enabled;
+}
+
 export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?: boolean; headless?: boolean; autoConnect?: boolean }) {
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
@@ -651,6 +672,29 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         const selectedSkillRevision = skillState.selectionRevision;
         const requestPrompt = promptWithAttachments(text, files);
         const currentState = useAgentStore.getState();
+
+        // API 后端（DeepSeek / 豆包）：不依赖 Codex 会话与技能，直接把任务交给 Agent 的 API 通路。
+        if (isApiBackendEnabled()) {
+            if (!currentState.connected || !requestPrompt || currentState.sending) return;
+            const apiMessageId = createId();
+            const apiUserText = text || rt("imagesSent", { count: files.length });
+            setAgentState({ prompt: "", attachments: [], activity: rt("sending"), sending: true, loadingThreads: false, activeTurnId: "" });
+            addMessage({ id: apiMessageId, itemId: "synthetic:user", clientMessageId: apiMessageId, threadId: "", turnId: "", role: "user", text: apiUserText, historyText: requestPrompt, attachments: files });
+            addEventLog(rt("sendTask"), `${API_BACKEND_LABEL} · ${compactText(text) || rt("attachmentsOnly")}`);
+            try {
+                await fetchAgentJson(endpoint, token, "/agent/api/turn", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ prompt: requestPrompt }),
+                });
+            } catch (error) {
+                addMessage({ role: "error", title: rt("sendFailed"), text: error instanceof Error ? error.message : String(error) });
+            } finally {
+                setAgentState({ sending: false, activity: "" });
+            }
+            return;
+        }
+
         if (!currentState.connected || !requestPrompt || currentState.sending || currentState.waiting || currentState.loadingThreads || !["ready", "warning"].includes(currentState.conversation.status)) return;
         if (attachmentPayloadBytes(files) > MAX_ATTACHMENT_PAYLOAD_BYTES) {
             addMessage({ role: "error", title: rt("imageTooLarge"), text: rt("imagePayloadTooLarge") });

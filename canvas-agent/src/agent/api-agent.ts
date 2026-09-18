@@ -172,7 +172,6 @@ export async function runApiAgentTurn(input: {
                     parsed = {};
                 }
                 logger.info("API agent will call tool", { name, input: JSON.stringify(parsed).slice(0, 200) });
-                emit("agent_event", { agent, type: "item.started", item: { id: call.id, type: "dynamic_tool_call", name, input: parsed } });
                 let output: unknown;
                 let failed = "";
                 try {
@@ -182,11 +181,14 @@ export async function runApiAgentTurn(input: {
                     output = { error: failed };
                 }
                 logger.info("API agent tool finished", { name, failed: failed || undefined });
-                emit("agent_event", {
-                    agent,
-                    type: "item.completed",
-                    item: { id: call.id, type: "dynamic_tool_call", name, input: parsed, output, ...(failed ? { error: { message: failed } } : {}) },
-                });
+                // 失败只写日志、不往对话框推红色卡片：模型仍能从工具结果里看到失败原因并自行重试，
+                // 而用户看到的对话保持干净。
+                if (failed) {
+                    emit("agent_log", { text: `工具 ${name} 失败：${failed}` });
+                } else {
+                    emit("agent_event", { agent, type: "item.started", item: { id: call.id, type: "dynamic_tool_call", name, input: parsed } });
+                    emit("agent_event", { agent, type: "item.completed", item: { id: call.id, type: "dynamic_tool_call", name, input: parsed, output } });
+                }
                 messages.push({ role: "tool", tool_call_id: call.id, content: summarizeToolResult(output) });
             }
         }

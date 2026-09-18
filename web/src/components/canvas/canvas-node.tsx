@@ -652,20 +652,31 @@ function useGenerationProgress(node: CanvasNodeData) {
     // 原生生成节点没有 comfyuiRun，用任务提交时间作为计时起点。
     const startedAt = run?.startedAt ?? (submittedAt ? Date.parse(submittedAt) : undefined);
     const [tick, setTick] = useState(() => Date.now());
+    // 兜底计时：某些生成路径（例如 AI 触发的运行）不会写入 startedAt，
+    // 此时用本组件首次观察到「生成中」的时刻作为起点，否则进度环会永远停在 8%。
+    const localStartRef = useRef<number | null>(null);
+    const active = phase === "preparing" || phase === "queued" || phase === "running" || status === "loading";
 
     useEffect(() => {
-        if (phase !== "preparing" && phase !== "queued" && phase !== "running" && status !== "loading") return undefined;
+        if (active && localStartRef.current === null) localStartRef.current = Date.now();
+        if (!active) localStartRef.current = null;
+    }, [active]);
+
+    const effectiveStart = startedAt && Number.isFinite(startedAt) ? startedAt : localStartRef.current;
+
+    useEffect(() => {
+        if (!active) return undefined;
         const timer = setInterval(() => setTick(Date.now()), 500);
         return () => clearInterval(timer);
-    }, [phase, status]);
+    }, [active]);
 
     // 上报值为 0 视为「未上报」：否则进度环会一直停在 0%，看着像卡住。
     if (typeof reported === "number" && Number.isFinite(reported) && reported > 0) return Math.min(99, Math.max(0, Math.round(reported)));
     if (phase === "succeeded" || status === "success") return 100;
-    if (phase !== "preparing" && phase !== "queued" && phase !== "running" && status !== "loading") return status === "error" ? 0 : 8;
-    if (!startedAt || !Number.isFinite(startedAt)) return 8;
+    if (!active) return status === "error" ? 0 : 8;
+    if (!effectiveStart) return 8;
 
-    const elapsed = Math.max(0, tick - startedAt) / 1000;
+    const elapsed = Math.max(0, tick - effectiveStart) / 1000;
     // 原生节点没有阶段信息时按已用时间推断阶段，保证进度持续推进。
     const effectivePhase = phase ?? (elapsed < 6 ? "preparing" : elapsed < 16 ? "queued" : "running");
     if (effectivePhase !== phase) {

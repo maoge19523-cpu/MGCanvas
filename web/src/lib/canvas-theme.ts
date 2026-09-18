@@ -25,6 +25,8 @@ export const canvasThemes = {
             label: "#3f4a5a",
             fill: "rgba(255,255,255,.62)",
             panel: "rgba(255,255,255,.78)",
+            // 表单类面板（参数设置等）必须不透明：半透明会透出下层节点文字造成重叠。
+            panelSolid: "rgba(253,253,255,.97)",
             stroke: "rgba(148,163,184,.35)",
             activeStroke: "#2563eb",
             placeholder: "#8194ab",
@@ -53,6 +55,8 @@ export const canvasThemes = {
             label: "#c7c9cc",
             fill: "#17191a",
             panel: "#141617",
+            // 表单类面板（参数设置等）必须不透明：半透明会透出下层节点文字造成重叠。
+            panelSolid: "#141617",
             stroke: "#3b3e40",
             activeStroke: "#f4f4f5",
             placeholder: "#8b8f94",

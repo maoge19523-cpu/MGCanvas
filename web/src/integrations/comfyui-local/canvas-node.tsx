@@ -207,7 +207,7 @@ function ComfyWorkflowNodePanel({ ctx, onClose }: { ctx: CanvasNodeContext; onCl
     return (
         <div
             className="overflow-hidden rounded-[22px] border p-5 shadow-[0_22px_70px_rgba(0,0,0,.28)] backdrop-blur-2xl"
-            style={{ background: ctx.theme.node.panel, borderColor: ctx.theme.node.stroke, color: ctx.theme.node.text }}
+            style={{ background: ctx.theme.node.panelSolid, borderColor: ctx.theme.node.stroke, color: ctx.theme.node.text }}
             data-canvas-no-zoom
             onPointerDown={(event) => event.stopPropagation()}
         >

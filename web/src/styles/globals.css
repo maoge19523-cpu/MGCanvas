@@ -1438,23 +1438,20 @@ body,
 }
 
 .td-home-hero-slogan {
-    position: absolute;
-    /* 写在画本纸面的正中：既像「在画布上落笔」，也和纸面倾角保持一致。 */
-    left: 73%;
-    top: 40%;
-    transform: translate(-50%, -50%) rotate(-8deg);
-    margin: 0;
+    /* 放在左侧文案区按钮下方：水平排布，不遮挡右侧插画。 */
+    position: static;
+    margin: 22px 0 0;
     /* 楷书系：优先用户已装的霞鹜文楷，其次系统楷体，带出文艺书卷气。 */
     font-family: "LXGW WenKai", "霞鹜文楷", "KaiTi", "楷体", "STKaiti", "Kaiti SC", "Songti SC", serif;
-    font-size: clamp(1.15rem, 1.8cqi, 1.85rem);
+    font-size: clamp(1.05rem, 1.35cqi, 1.45rem);
     font-weight: 700;
-    letter-spacing: 0.22em;
-    text-indent: 0.22em;
+    letter-spacing: 0.3em;
+    text-indent: 0.3em;
     white-space: nowrap;
     /* 香槟金金属渐变：深金—亮金—高光—亮金—深金，形成金属反光带。 */
     background-image: linear-gradient(100deg, #5b3f0a 0%, #8a6412 16%, #b8892a 34%, #f0dca0 47%, #b8892a 60%, #8a6412 84%, #5b3f0a 100%);
     -webkit-background-clip: text;
-    /* 深金为主、中间一道窄高光；再加细描边与白晕，避免与米白纸面糊在一起。 */
+    /* 深金为主、中间一道窄高光；再加细描边与白晕，避免与浅底糊在一起。 */
     -webkit-text-stroke: 0.35px rgba(74, 50, 8, .6);
     filter: drop-shadow(0 1px 0 rgba(255, 255, 255, .95)) drop-shadow(0 2px 4px rgba(74, 50, 8, .4));
     background-clip: text;

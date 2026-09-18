@@ -147,7 +147,6 @@ export default function CanvasPage() {
                     <div className="td-home-hero-art" aria-hidden="true">
                         {/* 透明底插画：页面背景自带渐变光晕，不透明底会露出色块边界。 */}
                         <img src="/hero-art.png" alt="" />
-                        <p className="td-home-hero-slogan">{t("canvas.start.heroSlogan")}</p>
                     </div>
 
                     <motion.div {...contentMotion(0.02)} className="td-home-hero-copy relative z-10 max-w-[650px]">
@@ -171,6 +170,9 @@ export default function CanvasPage() {
                                 <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
                             </button>
                         </div>
+
+                        {/* 标语放在按钮下方，水平排布，不遮挡右侧插画。 */}
+                        <p className="td-home-hero-slogan">{t("canvas.start.heroSlogan")}</p>
                     </motion.div>
                 </section>
 

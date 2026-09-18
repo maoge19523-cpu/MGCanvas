@@ -8,10 +8,10 @@ export const canvasThemes = {
         // 纯色平底会让 backdrop-filter 看起来毫无效果。
         canvas: {
             background:
-                "radial-gradient(1200px 820px at 10% 6%, #d7e6fb 0%, rgba(215,230,251,0) 62%)," +
-                "radial-gradient(1000px 720px at 92% 10%, #e2e2fb 0%, rgba(226,226,251,0) 58%)," +
-                "radial-gradient(1150px 900px at 76% 96%, #d4f0f4 0%, rgba(212,240,244,0) 62%)," +
-                "radial-gradient(900px 700px at 26% 92%, #f2e4f7 0%, rgba(242,228,247,0) 60%)," +
+                "radial-gradient(1200px 820px at 10% 6%, #b9d4f7 0%, rgba(185,212,247,0) 62%)," +
+                "radial-gradient(1000px 720px at 92% 10%, #cdcdf8 0%, rgba(205,205,248,0) 58%)," +
+                "radial-gradient(1150px 900px at 76% 96%, #b3e6ee 0%, rgba(179,230,238,0) 62%)," +
+                "radial-gradient(900px 700px at 26% 92%, #e8cdf2 0%, rgba(232,205,242,0) 60%)," +
                 "#eef3fb",
             dot: "rgba(71,85,105,.26)",
             line: "rgba(71,85,105,.10)",
@@ -20,8 +20,8 @@ export const canvasThemes = {
         },
         node: {
             label: "#3f4a5a",
-            fill: "rgba(255,255,255,.44)",
-            panel: "rgba(255,255,255,.62)",
+            fill: "rgba(255,255,255,.28)",
+            panel: "rgba(255,255,255,.40)",
             stroke: "rgba(255,255,255,.85)",
             activeStroke: "#2563eb",
             placeholder: "#8194ab",
@@ -30,7 +30,7 @@ export const canvasThemes = {
             faint: "#93a3b8",
         },
         toolbar: {
-            panel: "rgba(255,255,255,.58)",
+            panel: "rgba(255,255,255,.32)",
             border: "rgba(255,255,255,.85)",
             item: "#3f4a5a",
             itemHover: "rgba(37,99,235,.10)",

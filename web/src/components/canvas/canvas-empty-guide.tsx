@@ -48,7 +48,7 @@ export function CanvasEmptyGuide({ onCreate, onUploadMaterial }: { onCreate: (ty
                     ))}
                     <button
                         type="button"
-                        className="pointer-events-auto flex h-9 items-center gap-2 rounded-full border border-dashed bg-[var(--empty-guide-panel)] px-3.5 text-xs font-medium text-[var(--empty-guide-text)] opacity-80 backdrop-blur transition-[background-color,color,opacity,transform] duration-[160ms] ease-out hover:-translate-y-px hover:bg-[var(--empty-guide-hover)] hover:text-[var(--empty-guide-active)] hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                        className="mg-panel pointer-events-auto flex h-9 items-center gap-2 rounded-full border border-dashed bg-[var(--empty-guide-panel)] px-3.5 text-xs font-medium text-[var(--empty-guide-text)] opacity-80 backdrop-blur transition-[background-color,color,opacity,transform] duration-[160ms] ease-out hover:-translate-y-px hover:bg-[var(--empty-guide-hover)] hover:text-[var(--empty-guide-active)] hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
                         style={guideStyle}
                         onClick={onUploadMaterial}
                         onPointerDown={(event) => event.stopPropagation()}

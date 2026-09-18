@@ -1446,10 +1446,10 @@ body,
     margin: 0;
     /* 楷书系：优先用户已装的霞鹜文楷，其次系统楷体，带出文艺书卷气。 */
     font-family: "LXGW WenKai", "霞鹜文楷", "KaiTi", "楷体", "STKaiti", "Kaiti SC", "Songti SC", serif;
-    font-size: clamp(1.1rem, 1.75cqi, 1.95rem);
+    font-size: clamp(1.15rem, 1.8cqi, 1.85rem);
     font-weight: 700;
-    letter-spacing: 0.16em;
-    text-indent: 0.16em;
+    letter-spacing: 0.22em;
+    text-indent: 0.22em;
     white-space: nowrap;
     /* 香槟金金属渐变：深金—亮金—高光—亮金—深金，形成金属反光带。 */
     background-image: linear-gradient(100deg, #5b3f0a 0%, #8a6412 16%, #b8892a 34%, #f0dca0 47%, #b8892a 60%, #8a6412 84%, #5b3f0a 100%);

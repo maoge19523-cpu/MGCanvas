@@ -109,3 +109,6 @@ The Chinese version contains the complete item-by-item acceptance checklist.
 - 文本节点流水线用法：文本节点连线到图片 / 视频 / 音频节点后可作为提示词来源（@Text 1）；用「编辑文字」可让模型按指令改写原文，再交给下游生成。
 - 文本节点面板改为纯文本编辑（含字数统计与用法提示），不再提供模型选择与生成按钮。
 - 文本节点：一句想法 + 画风分类 → 模型扩写为专业生图提示词，结果写回节点内容，可连线给下游使用。
+- canvas-agent 的 API 后端（DeepSeek / 豆包）已跑通：模型能读取画布、调用 canvas_create_text_node 等工具并在画布上真实创建节点。
+- 使用前提：网页必须停留在画布编辑页（不在画布页时工具会返回「当前不在画布页」）。
+- 命令行用法：先用 POST /agent/api/config 配置 baseUrl / apiKey / model，再用 POST /agent/api/turn 发送任务；DeepSeek 需使用 deepseek-chat（reasoner 不支持工具调用）。

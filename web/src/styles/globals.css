@@ -2111,3 +2111,13 @@ html:not(.dark) .td-workspace-page,
 html:not(.dark) .td-workspace-scroll {
     background: transparent !important;
 }
+
+/* 标题栏：之前是接近纯白，这里做透，让顶部的彩色渐变透上来，
+   并补一道白色高光边，形成玻璃「厚度」。 */
+html:not(.dark) .td-desktop-titlebar {
+    background-color: rgba(255, 255, 255, .18) !important;
+    -webkit-backdrop-filter: blur(32px) saturate(2.2);
+    backdrop-filter: blur(32px) saturate(2.2);
+    border-bottom: 1px solid rgba(255, 255, 255, .75) !important;
+    box-shadow: 0 8px 28px rgba(15, 23, 42, .06);
+}

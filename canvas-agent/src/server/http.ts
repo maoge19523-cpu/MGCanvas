@@ -3,12 +3,13 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 
+import { API_BACKEND_PRESETS, runApiAgentTurn } from "../agent/api-agent.js";
 import { runClaudeTurn } from "../agent/claude.js";
 import { archiveCodexThread, CodexSkillLookupError, configureCodexSkill, generateCodexSkillDraft, interruptCodexTurn, isRecoverableThreadError, listCodexModels, listCodexSkills, listCodexThreads, readCodexThread, resolveCodexApproval, resolveCodexSkill, resumeCodexThread, runCodexTurn, startCodexThread, summarizeCodexThread } from "../agent/codex.js";
 import type { CodexReasoningEffort, CodexSkillSelector } from "../agent/codex-protocol.js";
 import type { AgentAttachment, AgentPermissionMode } from "../agent/types.js";
 import { AGENT_PROTOCOL_VERSION, CanvasSession } from "../canvas/session.js";
-import { DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWorkspace, type MGCanvasAgentConfig } from "../config.js";
+import {DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWorkspace, type MGCanvasAgentConfig, readApiBackendSettings, saveApiBackendSettings } from "../config.js";
 import { logger } from "../utils/logger.js";
 import { checkVersions } from "../version-check.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
@@ -410,6 +411,30 @@ export function startHttpServer() {
     }));
     app.post("/agent/claude/turn", (req, res) => {
         runClaudeTurn(String(req.body?.prompt || ""), emit);
+        res.json({ ok: true });
+    });
+    // 基于 API Key 的后端（DeepSeek / 豆包）：由本进程完成工具调用循环。
+    app.get("/agent/api/config", (_req, res) => {
+        res.json({ ok: true, presets: API_BACKEND_PRESETS, current: readApiBackendSettings(config) });
+    });
+    app.post("/agent/api/config", (req, res) => {
+        const saved = saveApiBackendSettings(config, {
+            baseUrl: req.body?.baseUrl,
+            apiKey: req.body?.apiKey,
+            model: req.body?.model,
+            label: req.body?.label,
+            enabled: req.body?.enabled,
+        });
+        res.json({ ok: true, current: { ...saved, apiKey: saved.apiKey ? "***" : "" } });
+    });
+    app.post("/agent/api/turn", async (req, res) => {
+        const prompt = String(req.body?.prompt || "");
+        if (!prompt.trim()) return res.status(400).json({ ok: false, error: "请输入任务内容" });
+        const settings = readApiBackendSettings(config);
+        if (!settings) return res.status(409).json({ ok: false, error: "还没有配置 API 后端，请先填写接口地址与模型名。" });
+        if (!settings.apiKey) return res.status(409).json({ ok: false, error: "还没有填写 API Key。" });
+        // 直接复用画布会话执行工具；写操作仍由网页侧边栏二次确认。
+        void runApiAgentTurn({ prompt, config: settings, runner: session, emit });
         res.json({ ok: true });
     });
     app.use((_req, res) => res.status(404).json({ ok: false, error: "not found" }));

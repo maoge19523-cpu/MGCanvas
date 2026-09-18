@@ -11,7 +11,31 @@ export const AGENT_PROMPT = fs.readFileSync(new URL("../agent-instructions.md", 
 const initializedWorkspaces = new Set<string>();
 
 export type SiteWorkspaceConfig = { workspacePath: string; activeThreadId?: string; pinnedThreadIds?: string[] };
-export type MGCanvasAgentConfig = { url: string; token: string; origins?: string[]; workspace?: SiteWorkspaceConfig };
+
+/** 基于 API Key 的 Agent 后端配置（DeepSeek / 豆包等兼容 OpenAI 的接口）。 */
+export type ApiBackendSettings = { baseUrl: string; apiKey: string; model: string; label: string; enabled?: boolean };
+
+export type MGCanvasAgentConfig = { url: string; token: string; origins?: string[]; workspace?: SiteWorkspaceConfig; api?: ApiBackendSettings };
+
+/** 读取已保存的 API 后端配置，未配置时返回空值。 */
+export function readApiBackendSettings(config: MGCanvasAgentConfig): ApiBackendSettings | null {
+    const api = config.api;
+    if (!api?.baseUrl || !api?.model) return null;
+    return { baseUrl: api.baseUrl, apiKey: api.apiKey || "", model: api.model, label: api.label || "API 后端", enabled: api.enabled !== false };
+}
+
+/** 保存 API 后端配置。 */
+export function saveApiBackendSettings(config: MGCanvasAgentConfig, patch: Partial<ApiBackendSettings>) {
+    config.api = {
+        baseUrl: String(patch.baseUrl ?? config.api?.baseUrl ?? "").trim(),
+        apiKey: String(patch.apiKey ?? config.api?.apiKey ?? "").trim(),
+        model: String(patch.model ?? config.api?.model ?? "").trim(),
+        label: String(patch.label ?? config.api?.label ?? "API 后端").trim() || "API 后端",
+        enabled: patch.enabled ?? config.api?.enabled ?? true,
+    };
+    saveConfig(config);
+    return config.api;
+}
 
 /** 读取本地 MGCanvas Agent 配置，不存在时生成默认配置。 */
 export function loadConfig(create = false): MGCanvasAgentConfig {

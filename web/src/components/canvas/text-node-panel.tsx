@@ -83,7 +83,8 @@ export function TextNodePanel({ node, theme, onChange }: TextNodePanelProps) {
                 />
             </label>
 
-            <div className="flex items-center gap-2">
+            {/* 允许换行：窄面板下运行按钮必须留在框内，不能被挤出去。 */}
+            <div className="flex flex-wrap items-center gap-2">
                 <Select
                     className="w-[104px] shrink-0"
                     size="small"

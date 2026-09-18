@@ -119,7 +119,7 @@ export function TextNodePanel({ node, theme, onChange }: TextNodePanelProps) {
                     }}
                 />
                 <Select
-                    className="min-w-[200px] flex-1"
+                    className="min-w-0 flex-1"
                     size="small"
                     value={model || undefined}
                     placeholder="请选择模型"
@@ -134,6 +134,7 @@ export function TextNodePanel({ node, theme, onChange }: TextNodePanelProps) {
                         type="button"
                         onClick={() => void run()}
                         disabled={running || !model}
+                        // 固定尺寸 + shrink-0：窄面板下也必须留在框内，不能把运行按钮挤出去。
                         className="flex size-8 shrink-0 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-45"
                         style={{ background: theme.toolbar.activeBg, color: theme.node.text }}
                     >

@@ -1,5 +1,6 @@
 import { AGENT_PROMPT } from "../config.js";
 import { toolNames } from "../canvas/schemas.js";
+import { logger } from "../utils/logger.js";
 import { errorMessage, field } from "../utils/value.js";
 import type { AgentEmit } from "./types.js";
 
@@ -89,9 +90,11 @@ export async function runApiAgentTurn(input: {
         { role: "user", content: prompt },
     ];
     emit("agent_bootstrap", { type: `${agent}.preparing` });
+    logger.info("API agent turn started", { label: agent, model: config.model, baseUrl: config.baseUrl, promptLength: prompt.length });
 
     try {
         for (let round = 0; round < MAX_ROUNDS; round += 1) {
+            logger.info("API agent calling model", { round, messageCount: messages.length });
             const response = await callChat(config, messages, input.signal);
             const message = response?.choices?.[0]?.message as { content?: string | null; tool_calls?: ToolCall[] } | undefined;
             if (!message) throw new Error(`模型没有返回内容：${JSON.stringify(response).slice(0, 300)}`);
@@ -102,6 +105,7 @@ export async function runApiAgentTurn(input: {
             messages.push({ role: "assistant", content: message.content ?? "", tool_calls: message.tool_calls });
 
             const calls = message.tool_calls || [];
+            logger.info("API agent model replied", { round, contentLength: (message.content || "").length, toolCallCount: calls.length });
             if (!calls.length) break;
 
             for (const call of calls) {
@@ -112,6 +116,7 @@ export async function runApiAgentTurn(input: {
                 } catch {
                     parsed = {};
                 }
+                logger.info("API agent will call tool", { name, input: JSON.stringify(parsed).slice(0, 200) });
                 emit("agent_event", { agent, type: "item.started", item: { id: call.id, type: "dynamic_tool_call", name, input: parsed } });
                 let output: unknown;
                 let failed = "";
@@ -121,6 +126,7 @@ export async function runApiAgentTurn(input: {
                     failed = errorMessage(error);
                     output = { error: failed };
                 }
+                logger.info("API agent tool finished", { name, failed: failed || undefined });
                 emit("agent_event", {
                     agent,
                     type: "item.completed",
@@ -129,8 +135,10 @@ export async function runApiAgentTurn(input: {
                 messages.push({ role: "tool", tool_call_id: call.id, content: summarizeToolResult(output) });
             }
         }
+        logger.info("API agent turn finished", { label: agent });
         emit("agent_done", { agent, code: 0 });
     } catch (error) {
+        logger.error("API agent turn failed", { label: agent, error: errorMessage(error) });
         emit("agent_error", { message: `${agent} 调用失败：${errorMessage(error)}` });
         emit("agent_done", { agent, code: 1 });
     }

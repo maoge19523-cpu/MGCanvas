@@ -1200,7 +1200,7 @@ randomSeedHint: "Turn off to keep a fixed seed; local runs reproduce exactly, cl
         readFailed: "Failed to read version",
         changelogFailed: "Failed to read changelog",
         updated: "Latest version information loaded",
-        updateFailed: "Failed to load the latest version information",
+        updateFailed: "Failed to load the latest version information. Check your network or proxy and retry.",
         available: "Version {{version}} is available",
         availableMessage: "Version {{version}} is ready to download",
         alreadyLatest: "You are using the latest version",

@@ -1179,7 +1179,7 @@ randomSeedHint: "关闭后写入固定种子；本地环境可精确复现，云
         readFailed: "版本读取失败",
         changelogFailed: "更新日志读取失败",
         updated: "已获取最新版本信息",
-        updateFailed: "获取最新版本信息失败",
+        updateFailed: "获取最新版本信息失败，请检查网络或代理后重试",
         available: "发现新版本 {{version}}",
         availableMessage: "新版本 {{version}} 已可下载",
         alreadyLatest: "当前已是最新版本",

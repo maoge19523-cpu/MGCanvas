@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { App, Button, Checkbox, Input, InputNumber, Modal, Select, Tag } from "antd";
-import { Clapperboard, LoaderCircle, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Clapperboard, LoaderCircle, Plus, Sparkles, Trash2, UploadCloud } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { DIRECTOR_MODES, DIRECTOR_TARGETS, type DirectorMode, type DirectorTarget } from "@/lib/director/specs";
@@ -18,12 +18,15 @@ export function CanvasDirectorDialog({
     onClose,
     imageCandidates,
     audioCandidates,
+    onUploadMaterial,
     onApply,
 }: {
     open: boolean;
     onClose: () => void;
     imageCandidates: DirectorCandidate[];
     audioCandidates: DirectorCandidate[];
+    /** 直接从面板触发上传；上传完成后画布新增节点会作为新材料出现在候选里。 */
+    onUploadMaterial?: () => void;
     /** 把生成结果落到画布：每个镜头一个文本节点，可选同时创建视频生成节点并连线。 */
     onApply: (shots: string[], withGeneration: boolean) => void;
 }) {
@@ -112,6 +115,7 @@ export function CanvasDirectorDialog({
                         hint={t("canvas.director.imagesHint")}
                         items={images}
                         candidates={imageCandidates}
+                        onUpload={onUploadMaterial}
                         onChange={setImages}
                         onAdd={(candidate) => addReference(candidate, "image")}
                     />
@@ -220,6 +224,7 @@ function RefRow({
     hint,
     items,
     candidates,
+    onUpload,
     onChange,
     onAdd,
 }: {
@@ -227,6 +232,7 @@ function RefRow({
     hint: string;
     items: DirectorReference[];
     candidates: DirectorCandidate[];
+    onUpload?: () => void;
     onChange: (value: DirectorReference[]) => void;
     onAdd: (candidate: DirectorCandidate) => void;
 }) {
@@ -265,6 +271,11 @@ function RefRow({
                 ) : (
                     <span className="text-[11px] opacity-45">{t("canvas.director.noCandidate")}</span>
                 )}
+                {onUpload ? (
+                    <Button size="small" icon={<UploadCloud className="size-3" />} onClick={onUpload}>
+                        {t("canvas.material.uploadAction")}
+                    </Button>
+                ) : null}
                 {items.length ? (
                     <Button size="small" danger type="text" icon={<Trash2 className="size-3" />} onClick={() => onChange([])}>
                         {t("common.clear")}

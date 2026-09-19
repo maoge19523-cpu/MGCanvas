@@ -4239,7 +4239,14 @@ function MGCanvasProjectPage() {
 
                 {nodes.length === 0 ? <CanvasEmptyGuide onCreate={(type) => createNode(type)} onUploadMaterial={() => createUploadMaterialNode()} onOpenDirector={() => setDirectorOpen(true)} /> : null}
 
-                <CanvasDirectorDialog open={directorOpen} onClose={() => setDirectorOpen(false)} imageCandidates={directorImageCandidates} audioCandidates={directorAudioCandidates} onApply={applyDirectorShots} />
+                <CanvasDirectorDialog
+                    open={directorOpen}
+                    onClose={() => setDirectorOpen(false)}
+                    imageCandidates={directorImageCandidates}
+                    audioCandidates={directorAudioCandidates}
+                    onUploadMaterial={() => createUploadMaterialNode()}
+                    onApply={applyDirectorShots}
+                />
 
                 <CanvasNodeHoverToolbar
                     node={isNodeDragging || isNodeResizing || nodeImageSettingsOpen ? null : toolbarNode}

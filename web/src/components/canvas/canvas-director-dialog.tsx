@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { App, Button, Checkbox, Image, Input, InputNumber, Mentions, Modal, Select, Tooltip } from "antd";
+import { App, Button, Checkbox, Image, Input, InputNumber, Mentions, Modal, Progress, Select, Tooltip } from "antd";
 import { Clapperboard, Eye, LoaderCircle, Music2, Plus, Sparkles, UploadCloud, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -59,12 +59,31 @@ export function CanvasDirectorDialog({
     const [result, setResult] = useState("");
     const [withGeneration, setWithGeneration] = useState(true);
     const [running, setRunning] = useState(false);
+    const [stage, setStage] = useState<"images" | "request" | "retry">("images");
+    const [elapsed, setElapsed] = useState(0);
+    // 候选里被手动隐藏的素材 id：只是不在面板里显示，画布上的节点不受影响。
+    const [hidden, setHidden] = useState<string[]>([]);
     const dragImageIndex = useRef<number | null>(null);
     const dragAudioIndex = useRef<number | null>(null);
 
     useEffect(() => {
         if (!model && modelOptions.length) setModel(modelOptions[0]);
     }, [model, modelOptions]);
+
+    // 生成期间走秒，让用户知道还在跑。
+    useEffect(() => {
+        if (!running) return undefined;
+        const started = Date.now();
+        setElapsed(0);
+        const timer = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 500);
+        return () => clearInterval(timer);
+    }, [running]);
+
+    const visibleImageCandidates = useMemo(() => imageCandidates.filter((item) => !hidden.includes(item.id)), [imageCandidates, hidden]);
+    const visibleAudioCandidates = useMemo(() => audioCandidates.filter((item) => !hidden.includes(item.id)), [audioCandidates, hidden]);
+
+    const stageText = stage === "images" ? t("canvas.director.stageImages") : stage === "retry" ? t("canvas.director.stageRetry") : t("canvas.director.stageRequest");
+    const progressPercent = !running ? 0 : stage === "images" ? 12 : stage === "retry" ? 20 : Math.min(92, 30 + Math.round(elapsed * 1.1));
 
     /** 标签按位置生成，@ 引用和送给模型的素材名始终一致。 */
     const imageRefs = useMemo<DirectorReference[]>(
@@ -100,8 +119,19 @@ export function CanvasDirectorDialog({
             return;
         }
         setRunning(true);
+        setStage("images");
         try {
-            const outcome = await generateDirectorPrompt({ brief, mode, target, modelValue: model, duration, aspect, images: imageRefs, audios: audioRefs });
+            const outcome = await generateDirectorPrompt({
+                brief,
+                mode,
+                target,
+                modelValue: model,
+                duration,
+                aspect,
+                images: imageRefs,
+                audios: audioRefs,
+                onStage: setStage,
+            });
             setResult(outcome.prompt);
             if (outcome.fallback) message.warning(outcome.fallback);
             message.success(t("canvas.director.generated"));
@@ -182,22 +212,31 @@ export function CanvasDirectorDialog({
                                 </div>
                             ))}
 
-                            {imageCandidates.map((candidate) => (
-                                <button
-                                    key={candidate.id}
-                                    type="button"
-                                    onClick={() => addReference(candidate, "image")}
-                                    className="relative size-[88px] overflow-hidden rounded-lg border-2 border-dashed border-black/20 transition hover:border-[#2f80ff] dark:border-white/20"
-                                    title={`${t("canvas.director.clickToAdd")}：${candidate.label}`}
-                                >
-                                    {candidate.url ? <img src={candidate.url} alt="" className="size-full object-cover opacity-45" /> : null}
-                                    <span className="absolute inset-0 flex items-center justify-center">
-                                        <span className="rounded-full bg-white/90 p-1 text-[#2f80ff] shadow-sm">
-                                            <Plus className="size-4" />
+                            {visibleImageCandidates.map((candidate) => (
+                                <div key={candidate.id} className="group relative size-[88px]">
+                                    <button
+                                        type="button"
+                                        onClick={() => addReference(candidate, "image")}
+                                        className="size-full overflow-hidden rounded-lg border-2 border-dashed border-black/20 transition hover:border-[#2f80ff] dark:border-white/20"
+                                        title={`${t("canvas.director.clickToAdd")}：${candidate.label}`}
+                                    >
+                                        {candidate.url ? <img src={candidate.url} alt="" className="size-full object-cover opacity-45" /> : null}
+                                        <span className="absolute inset-0 flex items-center justify-center">
+                                            <span className="rounded-full bg-white/90 p-1 text-[#2f80ff] shadow-sm">
+                                                <Plus className="size-4" />
+                                            </span>
                                         </span>
-                                    </span>
-                                    <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-black/60 px-1 text-[10px] leading-4 text-white">{candidate.label}</span>
-                                </button>
+                                        <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-black/60 px-1 text-[10px] leading-4 text-white">{candidate.label}</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setHidden((prev) => [...prev, candidate.id])}
+                                        className="absolute right-0.5 top-0.5 z-10 rounded-full bg-black/60 p-0.5 text-white transition hover:bg-red-500"
+                                        title={t("canvas.director.hideCandidate")}
+                                    >
+                                        <X className="size-3" />
+                                    </button>
+                                </div>
                             ))}
 
                             {onUploadMaterial ? (
@@ -211,7 +250,15 @@ export function CanvasDirectorDialog({
                                 </button>
                             ) : null}
                         </div>
-                        {images.length > 1 ? <div className="mt-2 text-[11px] opacity-50">{t("canvas.director.reorderHint")}</div> : null}
+                        <div className="mt-2 flex flex-wrap items-center gap-x-3 text-[11px] opacity-55">
+                            <span>{t("canvas.director.candidateHint")}</span>
+                            {images.length > 1 ? <span>{t("canvas.director.reorderHint")}</span> : null}
+                            {hidden.length ? (
+                                <button type="button" className="underline" onClick={() => setHidden([])}>
+                                    {t("canvas.director.showHidden", { count: hidden.length })}
+                                </button>
+                            ) : null}
+                        </div>
                     </div>
 
                     {/* 参考音频：已加入的可直接试听并拖拽排序；候选也能先试听再加入。 */}
@@ -247,12 +294,15 @@ export function CanvasDirectorDialog({
                                 </div>
                             ))}
 
-                            {audioCandidates.map((candidate) => (
+                            {visibleAudioCandidates.map((candidate) => (
                                 <div key={candidate.id} className="flex items-center gap-2 rounded-lg border border-dashed border-black/20 px-2 py-1.5 dark:border-white/20">
                                     <Music2 className="size-4 shrink-0 opacity-45" />
                                     <span className="w-28 shrink-0 truncate text-[11px] opacity-70">{candidate.label}</span>
                                     <audio src={candidate.url} controls className="h-8 min-w-0 flex-1" data-canvas-no-zoom />
                                     <Button size="small" type="text" icon={<Plus className="size-3.5" />} onClick={() => addReference(candidate, "audio")} title={t("canvas.director.clickToAdd")} />
+                                    <button type="button" onClick={() => setHidden((prev) => [...prev, candidate.id])} className="shrink-0 rounded p-1 opacity-60 transition hover:text-red-500 hover:opacity-100" title={t("canvas.director.hideCandidate")}>
+                                        <X className="size-3.5" />
+                                    </button>
                                 </div>
                             ))}
 
@@ -315,10 +365,23 @@ export function CanvasDirectorDialog({
                     </label>
                 </section>
 
-                <div className="flex justify-end">
-                    <Button type="primary" icon={running ? <LoaderCircle className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />} loading={running} onClick={() => void run()}>
-                        {t("canvas.director.generate")}
-                    </Button>
+                <div className="space-y-2">
+                    <div className="flex justify-end">
+                        <Button type="primary" icon={running ? <LoaderCircle className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />} loading={running} onClick={() => void run()}>
+                            {running ? t("canvas.director.generating") : t("canvas.director.generate")}
+                        </Button>
+                    </div>
+                    {/* 生成中：给出阶段说明、已等待时长与进度条，避免用户干等。 */}
+                    {running ? (
+                        <div className="rounded-xl border border-black/[0.08] px-3 py-2.5 dark:border-white/[0.08]">
+                            <div className="mb-1.5 flex items-center justify-between text-[11px]">
+                                <span>{stageText}</span>
+                                <span className="opacity-60">{t("canvas.director.waiting", { seconds: elapsed })}</span>
+                            </div>
+                            <Progress percent={progressPercent} status="active" showInfo={false} size="small" />
+                            <div className="mt-1.5 text-[11px] opacity-50">{t("canvas.director.waitingHint")}</div>
+                        </div>
+                    ) : null}
                 </div>
 
                 {result ? (

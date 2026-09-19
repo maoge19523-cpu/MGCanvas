@@ -16,6 +16,8 @@ export type DirectorRequest = {
     aspect: string;
     images: DirectorReference[];
     audios: DirectorReference[];
+    /** 阶段回调：读取参考图 / 请求模型 / 退回纯文本，面板据此显示进度。 */
+    onStage?: (stage: "images" | "request" | "retry") => void;
 };
 
 export type DirectorResult = {
@@ -153,6 +155,7 @@ export async function generateDirectorPrompt(request: DirectorRequest): Promise<
 
     const text = lines.join("\n");
     const payloads: string[] = [];
+    request.onStage?.("images");
     for (const item of request.images) {
         const payload = await imagePayload(item.url);
         if (payload) payloads.push(payload);
@@ -175,11 +178,13 @@ export async function generateDirectorPrompt(request: DirectorRequest): Promise<
         return { response, body: await response.text() };
     };
 
+    request.onStage?.("request");
     let { response, body } = await send(true);
     let attachedImages = payloads.length;
 
     if (!response.ok && attachedImages && looksLikeImageRejection(body)) {
         // 图片被拒时退回纯文本再试一次，至少让用户拿到可用的分镜。
+        request.onStage?.("retry");
         ({ response, body } = await send(false));
         attachedImages = 0;
     }

@@ -49,7 +49,7 @@ export default function PromptsPage() {
                         <PromptFilter label={t("prompts.category")} options={promptCategoryOptions} selected={selectedCategory} onChange={setSelectedCategory} />
                         <div className="mt-7 border-t border-black/[0.06] pt-6 dark:border-white/[0.06]">
                             <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400 dark:text-zinc-600">{t("prompts.tags")}</div>
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-wrap gap-2 py-0.5 pl-1">
                                 {promptTags.map((tag) => {
                                     const active = tag === ALL_PROMPTS_OPTION ? selectedTags.length === 0 : selectedTags.includes(tag);
                                     return (

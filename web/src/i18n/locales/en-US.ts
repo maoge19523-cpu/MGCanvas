@@ -448,6 +448,8 @@ export default {
             audiosHint: "1-3 clips",
             brief: "Creative brief",
             briefPlaceholder: "e.g. A girl walks along the beach at dusk, mood turning from calm to joyful",
+            briefMentionHint: "Type @ to reference the assets above",
+            briefMentionEmpty: "Add an asset above to reference it with @",
             model: "Reasoning model",
             modelPlaceholder: "Select a model",
             target: "Target model",

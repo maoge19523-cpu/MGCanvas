@@ -3,7 +3,7 @@ import { buildApiUrl, resolveModelRequestConfig, useConfigStore } from "@/stores
 import { buildDirectorSystemPrompt, DIRECTOR_MODES, DIRECTOR_TARGETS, type DirectorMode, type DirectorTarget } from "@/lib/director/specs";
 
 /** 参考素材：label 用于在提示词里区分素材，url 存在时会一并送给支持视觉的模型。 */
-export type DirectorReference = { label: string; url?: string };
+export type DirectorReference = { id: string; label: string; url?: string };
 
 export type DirectorRequest = {
     /** 创意需求：要拍什么。 */
@@ -63,6 +63,9 @@ export async function generateDirectorPrompt(request: DirectorRequest): Promise<
     if (request.audios.length) {
         lines.push(`参考音频（按顺序，共 ${request.audios.length} 个）：`);
         request.audios.forEach((item, index) => lines.push(`  音频 ${index + 1}：${item.label}`));
+    }
+    if (request.images.length || request.audios.length) {
+        lines.push("创意需求里形如 @名称 的写法，指的就是上面同名的参考素材，请把它们当成对应素材来引用，不要当成普通文字。");
     }
     lines.push(
         `请为每个镜头输出一条独立、完整、可单独投产的提示词，共 ${request.shots} 条。`,

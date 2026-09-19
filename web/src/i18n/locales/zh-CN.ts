@@ -442,6 +442,8 @@ export default {
             audiosHint: "1-3 个",
             brief: "创意需求",
             briefPlaceholder: "例如：海边少女在黄昏散步，情绪从平静到雀跃",
+            briefMentionHint: "输入 @ 可引用上面的参考素材",
+            briefMentionEmpty: "先添加参考素材，就能用 @ 引用",
             model: "推理模型",
             modelPlaceholder: "请选择模型",
             target: "目标模型",

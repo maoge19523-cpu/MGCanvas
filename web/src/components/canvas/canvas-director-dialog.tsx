@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { App, Button, Checkbox, Input, InputNumber, Modal, Select, Tag } from "antd";
-import { Clapperboard, LoaderCircle, Plus, Sparkles, Trash2, UploadCloud } from "lucide-react";
+import { App, Button, Checkbox, Image, Input, InputNumber, Mentions, Modal, Select } from "antd";
+import { Clapperboard, Eye, LoaderCircle, Music2, Plus, Sparkles, UploadCloud, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { DIRECTOR_MODES, DIRECTOR_TARGETS, type DirectorMode, type DirectorTarget } from "@/lib/director/specs";
@@ -12,6 +12,8 @@ export type DirectorCandidate = { id: string; label: string; url?: string };
 const DEFAULT_SHOTS = 3;
 const DEFAULT_DURATION = 15;
 const ASPECTS = ["16:9", "9:16", "1:1", "21:9", "4:3"];
+const IMAGE_LIMIT = 6;
+const AUDIO_LIMIT = 3;
 
 export function CanvasDirectorDialog({
     open,
@@ -52,18 +54,29 @@ export function CanvasDirectorDialog({
         if (!model && modelOptions.length) setModel(modelOptions[0]);
     }, [model, modelOptions]);
 
-    /** 把候选素材追加进参考列表，默认标签按序号生成。 */
+    /** 加入参考素材：按 id 去重，标签重复时补序号，保证 @ 引用唯一。 */
     const addReference = (candidate: DirectorCandidate, kind: "image" | "audio") => {
         const list = kind === "image" ? images : audios;
-        const limit = kind === "image" ? 6 : 3;
+        const limit = kind === "image" ? IMAGE_LIMIT : AUDIO_LIMIT;
         if (list.length >= limit) {
             message.warning(kind === "image" ? t("canvas.director.imageLimit") : t("canvas.director.audioLimit"));
             return;
         }
-        if (list.some((item) => item.label === candidate.label)) return;
-        const next = [...list, { label: candidate.label, url: candidate.url }];
+        if (list.some((item) => item.id === candidate.id)) return;
+
+        const base = candidate.label.trim() || (kind === "image" ? t("canvas.director.imageLabel", { index: list.length + 1 }) : t("canvas.director.audioLabel", { index: list.length + 1 }));
+        let label = base;
+        let suffix = 2;
+        while (list.some((item) => item.label === label)) label = `${base} ${suffix++}`;
+
+        const next = [...list, { id: candidate.id, label, url: candidate.url }];
         if (kind === "image") setImages(next);
         else setAudios(next);
+    };
+
+    const removeReference = (kind: "image" | "audio", id: string) => {
+        if (kind === "image") setImages((prev) => prev.filter((item) => item.id !== id));
+        else setAudios((prev) => prev.filter((item) => item.id !== id));
     };
 
     const run = async () => {
@@ -92,11 +105,14 @@ export function CanvasDirectorDialog({
         return blocks.length > 1 ? blocks : [text.trim()];
     };
 
+    // @ 引用候选：面板里已加入的参考素材，插入的文本与送给模型时的标签一致。
+    const mentionOptions = useMemo(() => [...images, ...audios].map((item) => ({ value: item.label, label: item.label })), [images, audios]);
+
     return (
         <Modal
             open={open}
             onCancel={onClose}
-            width={880}
+            width={960}
             centered
             footer={null}
             title={
@@ -106,33 +122,116 @@ export function CanvasDirectorDialog({
                 </span>
             }
         >
-            <div className="max-h-[68vh] space-y-4 overflow-y-auto pr-1 pt-1 text-[12px]">
-                {/* 参考素材 */}
+            <div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1 pt-1 text-[12px]">
+                {/* 素材台：参考图可放大观看，参考音频可直接试听 */}
                 <section className="space-y-2">
                     <div className="font-medium">{t("canvas.director.refs")}</div>
-                    <RefRow
-                        title={t("canvas.director.images", { count: images.length })}
-                        hint={t("canvas.director.imagesHint")}
-                        items={images}
-                        candidates={imageCandidates}
-                        onUpload={onUploadMaterial}
-                        onChange={setImages}
-                        onAdd={(candidate) => addReference(candidate, "image")}
-                    />
-                    <RefRow
-                        title={t("canvas.director.audios", { count: audios.length })}
-                        hint={t("canvas.director.audiosHint")}
-                        items={audios}
-                        candidates={audioCandidates}
-                        onChange={setAudios}
-                        onAdd={(candidate) => addReference(candidate, "audio")}
-                    />
+
+                    <div className="rounded-xl border border-black/[0.08] p-3 dark:border-white/[0.08]">
+                        <div className="mb-2 flex items-center justify-between">
+                            <span className="font-medium">{t("canvas.director.images", { count: images.length })}</span>
+                            <span className="text-[11px] opacity-55">{t("canvas.director.imagesHint")}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            {images.map((item) => (
+                                <div key={item.id} className="group relative size-[76px] overflow-hidden rounded-lg border border-black/[0.08] dark:border-white/[0.1]">
+                                    {item.url ? (
+                                        <Image src={item.url} width={76} height={76} className="!size-[76px] object-cover" preview={{ mask: <Eye className="size-4" /> }} />
+                                    ) : (
+                                        <div className="flex size-full items-center justify-center opacity-45">—</div>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => removeReference("image", item.id)}
+                                        className="absolute right-0.5 top-0.5 rounded-full bg-black/55 p-0.5 text-white opacity-0 transition group-hover:opacity-100"
+                                        title={t("common.delete")}
+                                    >
+                                        <X className="size-3" />
+                                    </button>
+                                    <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-black/55 px-1 text-[10px] leading-4 text-white">{item.label}</span>
+                                </div>
+                            ))}
+
+                            {imageCandidates.map((candidate) => (
+                                <button
+                                    key={candidate.id}
+                                    type="button"
+                                    onClick={() => addReference(candidate, "image")}
+                                    className="group relative size-[76px] overflow-hidden rounded-lg border border-dashed border-black/15 transition hover:border-[#2f80ff] dark:border-white/15"
+                                    title={`${t("common.add")} ${candidate.label}`}
+                                >
+                                    {candidate.url ? <img src={candidate.url} alt="" className="size-full object-cover opacity-55 transition group-hover:opacity-80" /> : null}
+                                    <span className="absolute inset-0 flex items-center justify-center bg-black/25 text-white opacity-0 transition group-hover:opacity-100">
+                                        <Plus className="size-5" />
+                                    </span>
+                                    <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-black/55 px-1 text-[10px] leading-4 text-white">{candidate.label}</span>
+                                </button>
+                            ))}
+
+                            {onUploadMaterial ? (
+                                <button
+                                    type="button"
+                                    onClick={onUploadMaterial}
+                                    className="flex size-[76px] flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-black/15 text-[11px] opacity-70 transition hover:border-[#2f80ff] hover:opacity-100 dark:border-white/15"
+                                >
+                                    <UploadCloud className="size-4" />
+                                    {t("canvas.material.uploadAction")}
+                                </button>
+                            ) : null}
+
+                            {!images.length && !imageCandidates.length && !onUploadMaterial ? <span className="text-[11px] opacity-45">{t("canvas.director.noCandidate")}</span> : null}
+                        </div>
+                    </div>
+
+                    <div className="rounded-xl border border-black/[0.08] p-3 dark:border-white/[0.08]">
+                        <div className="mb-2 flex items-center justify-between">
+                            <span className="font-medium">{t("canvas.director.audios", { count: audios.length })}</span>
+                            <span className="text-[11px] opacity-55">{t("canvas.director.audiosHint")}</span>
+                        </div>
+                        <div className="space-y-2">
+                            {audios.map((item) => (
+                                <div key={item.id} className="flex items-center gap-2 rounded-lg border border-black/[0.08] px-2 py-1.5 dark:border-white/[0.1]">
+                                    <Music2 className="size-4 shrink-0 opacity-55" />
+                                    <span className="w-24 shrink-0 truncate text-[11px]">{item.label}</span>
+                                    {/* 与音频节点一致：直接播放 metadata.content。 */}
+                                    <audio src={item.url} controls className="h-8 min-w-0 flex-1" data-canvas-no-zoom />
+                                    <button type="button" onClick={() => removeReference("audio", item.id)} className="shrink-0 rounded p-1 opacity-55 transition hover:opacity-100" title={t("common.delete")}>
+                                        <X className="size-3.5" />
+                                    </button>
+                                </div>
+                            ))}
+                            <div className="flex flex-wrap gap-2">
+                                {audioCandidates.map((candidate) => (
+                                    <Button key={candidate.id} size="small" icon={<Plus className="size-3" />} onClick={() => addReference(candidate, "audio")}>
+                                        {candidate.label}
+                                    </Button>
+                                ))}
+                                {onUploadMaterial ? (
+                                    <Button size="small" icon={<UploadCloud className="size-3" />} onClick={onUploadMaterial}>
+                                        {t("canvas.material.uploadAction")}
+                                    </Button>
+                                ) : null}
+                                {!audios.length && !audioCandidates.length && !onUploadMaterial ? <span className="text-[11px] opacity-45">{t("canvas.director.noCandidate")}</span> : null}
+                            </div>
+                        </div>
+                    </div>
                 </section>
 
-                {/* 创意需求 */}
+                {/* 创意需求：输入 @ 可引用上面的素材 */}
                 <section className="space-y-2">
-                    <div className="font-medium">{t("canvas.director.brief")}</div>
-                    <Input.TextArea rows={2} value={brief} onChange={(event) => setBrief(event.target.value)} placeholder={t("canvas.director.briefPlaceholder")} />
+                    <div className="flex items-center justify-between">
+                        <span className="font-medium">{t("canvas.director.brief")}</span>
+                        <span className="text-[11px] opacity-55">{mentionOptions.length ? t("canvas.director.briefMentionHint") : t("canvas.director.briefMentionEmpty")}</span>
+                    </div>
+                    <Mentions
+                        rows={3}
+                        value={brief}
+                        onChange={setBrief}
+                        prefix="@"
+                        options={mentionOptions}
+                        placeholder={t("canvas.director.briefPlaceholder")}
+                        className="!text-[12px]"
+                    />
                 </section>
 
                 {/* 三个选择项 */}
@@ -143,12 +242,7 @@ export function CanvasDirectorDialog({
                     </label>
                     <label className="space-y-1.5">
                         <span className="block font-medium">{t("canvas.director.target")}</span>
-                        <Select
-                            className="w-full"
-                            value={target}
-                            onChange={(value) => setTarget(value)}
-                            options={DIRECTOR_TARGETS.map((item) => ({ label: item.zh, value: item.value }))}
-                        />
+                        <Select className="w-full" value={target} onChange={(value) => setTarget(value)} options={DIRECTOR_TARGETS.map((item) => ({ label: item.zh, value: item.value }))} />
                     </label>
                 </section>
 
@@ -191,7 +285,6 @@ export function CanvasDirectorDialog({
                     </Button>
                 </div>
 
-                {/* 结果 */}
                 {result ? (
                     <section className="space-y-2">
                         <div className="font-medium">{t("canvas.director.result")}</div>
@@ -215,73 +308,5 @@ export function CanvasDirectorDialog({
                 ) : null}
             </div>
         </Modal>
-    );
-}
-
-/** 一行参考素材：已选列表 + 从画布候选中添加。 */
-function RefRow({
-    title,
-    hint,
-    items,
-    candidates,
-    onUpload,
-    onChange,
-    onAdd,
-}: {
-    title: string;
-    hint: string;
-    items: DirectorReference[];
-    candidates: DirectorCandidate[];
-    onUpload?: () => void;
-    onChange: (value: DirectorReference[]) => void;
-    onAdd: (candidate: DirectorCandidate) => void;
-}) {
-    const { t } = useTranslation();
-    return (
-        <div className="rounded-xl border border-black/[0.08] p-2.5 dark:border-white/[0.08]">
-            <div className="mb-1.5 flex items-center justify-between">
-                <span className="font-medium">{title}</span>
-                <span className="text-[11px] opacity-55">{hint}</span>
-            </div>
-            <div className="mb-2 flex flex-wrap gap-1.5">
-                {items.length ? (
-                    items.map((item, index) => (
-                        <Tag
-                            key={`${item.label}-${index}`}
-                            closable
-                            onClose={(event) => {
-                                event.preventDefault();
-                                onChange(items.filter((_, position) => position !== index));
-                            }}
-                        >
-                            {item.label}
-                        </Tag>
-                    ))
-                ) : (
-                    <span className="text-[11px] opacity-45">{t("canvas.director.noneSelected")}</span>
-                )}
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-                {candidates.length ? (
-                    candidates.map((candidate) => (
-                        <Button key={candidate.id} size="small" icon={<Plus className="size-3" />} onClick={() => onAdd(candidate)}>
-                            {candidate.label}
-                        </Button>
-                    ))
-                ) : (
-                    <span className="text-[11px] opacity-45">{t("canvas.director.noCandidate")}</span>
-                )}
-                {onUpload ? (
-                    <Button size="small" icon={<UploadCloud className="size-3" />} onClick={onUpload}>
-                        {t("canvas.material.uploadAction")}
-                    </Button>
-                ) : null}
-                {items.length ? (
-                    <Button size="small" danger type="text" icon={<Trash2 className="size-3" />} onClick={() => onChange([])}>
-                        {t("common.clear")}
-                    </Button>
-                ) : null}
-            </div>
-        </div>
     );
 }

@@ -44,12 +44,12 @@ export default function PromptsPage() {
     return (
         <>
             <WorkspacePage icon={FileText} title={t("prompts.title")} description={t("prompts.description")} meta={t("prompts.total", { count: totalPrompts })} onScroll={handleListScroll}>
-                <div className="grid items-start gap-7 lg:grid-cols-[220px_minmax(0,1fr)]">
-                    <aside className="td-workspace-sidebar thin-scrollbar max-h-[calc(100dvh-12.5rem)] overflow-y-auto pr-1 lg:sticky lg:top-0 lg:border-r lg:border-black/[0.07] lg:pr-6 dark:lg:border-white/[0.07]">
+                <div className="grid items-start gap-8 lg:grid-cols-[230px_minmax(0,1fr)]">
+                    <aside className="td-workspace-sidebar thin-scrollbar max-h-[calc(100dvh-12.5rem)] overflow-y-auto pr-1 lg:sticky lg:top-0 lg:border-r lg:border-black/[0.07] lg:pr-8 dark:lg:border-white/[0.07]">
                         <PromptFilter label={t("prompts.category")} options={promptCategoryOptions} selected={selectedCategory} onChange={setSelectedCategory} />
                         <div className="mt-7 border-t border-black/[0.06] pt-6 dark:border-white/[0.06]">
                             <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400 dark:text-zinc-600">{t("prompts.tags")}</div>
-                            <div className="flex flex-wrap gap-1.5">
+                            <div className="flex flex-wrap gap-2">
                                 {promptTags.map((tag) => {
                                     const active = tag === ALL_PROMPTS_OPTION ? selectedTags.length === 0 : selectedTags.includes(tag);
                                     return (

@@ -4,7 +4,7 @@ export function WorkspacePage({ icon: Icon, title, description, meta, actions, c
     return (
         <div className="td-workspace-page h-full overflow-hidden bg-background text-stone-900 dark:text-zinc-100">
             <main className="td-workspace-scroll h-full overflow-y-auto" onScroll={onScroll}>
-                <div className="td-workspace-inner mx-auto min-h-full w-full max-w-[1440px] px-6 pb-12">
+                <div className="td-workspace-inner mx-auto min-h-full w-full max-w-[1440px] px-9 pb-20 pt-2">
                     <header className="td-workspace-header flex min-h-[112px] items-center justify-between gap-6 border-b border-black/[0.07] py-6 dark:border-white/[0.07]">
                         <div className="flex min-w-0 items-center gap-4">
                             <span className="grid size-10 shrink-0 place-items-center rounded-[13px] border border-black/[0.08] bg-black/[0.035] text-stone-700 dark:border-white/[0.08] dark:bg-white/[0.045] dark:text-zinc-200">

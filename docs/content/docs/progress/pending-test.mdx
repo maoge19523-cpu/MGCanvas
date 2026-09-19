@@ -113,3 +113,4 @@ The Chinese version contains the complete item-by-item acceptance checklist.
 - 使用前提：网页必须停留在画布编辑页（不在画布页时工具会返回「当前不在画布页」）。
 - 命令行用法：先用 POST /agent/api/config 配置 baseUrl / apiKey / model，再用 POST /agent/api/turn 发送任务；DeepSeek 需使用 deepseek-chat（reasoner 不支持工具调用）。
 - Agent 生成任务队列：生成类工具串行执行并自动重试限流，多镜头生成不再因并发 429 全部失败。
+- AI 导演：空画布创作区或左侧「+」菜单进入，选参考素材与三项设置后生成分镜提示词，点「落到画布」生成文本节点。

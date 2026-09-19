@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { FileText, ImageIcon, Music2, UploadCloud, Video, type LucideIcon } from "lucide-react";
+import { Clapperboard, FileText, ImageIcon, Music2, UploadCloud, Video, type LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -13,7 +13,7 @@ const quickActions: Array<{ type: CanvasNodeType; label: "text" | "image" | "vid
     { type: CanvasNodeType.Audio, label: "audio", icon: Music2 },
 ];
 
-export function CanvasEmptyGuide({ onCreate, onUploadMaterial }: { onCreate: (type: CanvasNodeType) => void; onUploadMaterial: () => void }) {
+export function CanvasEmptyGuide({ onCreate, onUploadMaterial, onOpenDirector }: { onCreate: (type: CanvasNodeType) => void; onUploadMaterial: () => void; onOpenDirector?: () => void }) {
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const guideStyle = {
@@ -46,6 +46,20 @@ export function CanvasEmptyGuide({ onCreate, onUploadMaterial }: { onCreate: (ty
                             <span>{t(`canvas.emptyGuide.${label}`)}</span>
                         </button>
                     ))}
+                    {/* AI 导演：上传参考素材后按 H3 / Seedance 规范生成分镜提示词。 */}
+                    {onOpenDirector ? (
+                        <button
+                            type="button"
+                            className="pointer-events-auto flex h-9 items-center gap-2 rounded-full border bg-[var(--empty-guide-panel)] px-3.5 text-xs font-medium text-[var(--empty-guide-text)] opacity-80 backdrop-blur transition-[background-color,color,opacity,transform] duration-[160ms] ease-out hover:-translate-y-px hover:bg-[var(--empty-guide-hover)] hover:text-[var(--empty-guide-active)] hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                            style={guideStyle}
+                            onClick={onOpenDirector}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onDoubleClick={(event) => event.stopPropagation()}
+                        >
+                            <Clapperboard className="size-3.5" aria-hidden="true" />
+                            <span>{t("canvas.director.title")}</span>
+                        </button>
+                    ) : null}
                     <button
                         type="button"
                         className="mg-panel pointer-events-auto flex h-9 items-center gap-2 rounded-full border border-dashed bg-[var(--empty-guide-panel)] px-3.5 text-xs font-medium text-[var(--empty-guide-text)] opacity-80 backdrop-blur transition-[background-color,color,opacity,transform] duration-[160ms] ease-out hover:-translate-y-px hover:bg-[var(--empty-guide-hover)] hover:text-[var(--empty-guide-active)] hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"

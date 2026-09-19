@@ -25,6 +25,7 @@ export function CanvasToolbar({
     onAddText,
     onAddMaterial,
     onAddGroup,
+    onOpenDirector,
     onAddExtensionNode,
     onUndo,
     onRedo,
@@ -51,6 +52,7 @@ export function CanvasToolbar({
     onAddConfig?: () => void;
     onAddGeneric?: () => void;
     onAddGroup: () => void;
+    onOpenDirector?: () => void;
     onAddExtensionNode: (type: string) => void;
     onUndo: () => void;
     onRedo: () => void;
@@ -295,6 +297,7 @@ export function CanvasToolbar({
                         <CreateMenuItem icon={<Video />} label={t("canvas.toolbar.video")} theme={theme} onClick={() => runCreateAction(onAddVideo)} />
                         <CreateMenuItem icon={<Music2 />} label={t("canvas.toolbar.audio")} theme={theme} onClick={() => runCreateAction(onAddAudio)} />
                         <CreateMenuItem icon={<Clapperboard />} label={t("canvas.toolbar.composite")} theme={theme} onClick={() => runCreateAction(onAddComposite)} />
+                        {onOpenDirector ? <CreateMenuItem icon={<Sparkles />} label={t("canvas.director.title")} theme={theme} onClick={() => runCreateAction(onOpenDirector)} /> : null}
                         {primaryExtensionDefs.map((definition) => (
                             <CreateMenuItem key={definition.type} icon={definition.icon} label={definition.title} theme={theme} onClick={() => runCreateAction(() => onAddExtensionNode(definition.type))} />
                         ))}

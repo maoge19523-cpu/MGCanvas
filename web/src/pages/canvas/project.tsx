@@ -47,6 +47,7 @@ import { buildNodeGenerationContext, buildNodeGenerationInputs, buildNodeRespons
 import { CanvasNodeHoverToolbar, CanvasNodeInfoModal } from "@/components/canvas/canvas-node-hover-toolbar";
 import { GenericNativeGenerationPanel } from "@/components/canvas/generic-native-generation-panel";
 import { TextNodePanel } from "@/components/canvas/text-node-panel";
+import { CanvasDirectorDialog, type DirectorCandidate } from "@/components/canvas/canvas-director-dialog";
 import {
     genericNativeModels,
     genericNativeNodeKind,
@@ -812,6 +813,38 @@ function MGCanvasProjectPage() {
             return node.id;
         },
         [getCanvasCenter, t],
+    );
+
+    // AI 导演：把画布上已有的图片/音频节点作为参考素材候选。
+    const [directorOpen, setDirectorOpen] = useState(false);
+    const directorImageCandidates = useMemo<DirectorCandidate[]>(
+        () =>
+            nodes
+                .filter((node) => node.type === CanvasNodeType.Image && typeof node.metadata?.content === "string" && node.metadata.content)
+                .slice(0, 12)
+                .map((node, index) => ({ id: node.id, label: node.title || t("canvas.director.imageLabel", { index: index + 1 }), url: node.metadata?.content as string })),
+        [nodes, t],
+    );
+    const directorAudioCandidates = useMemo<DirectorCandidate[]>(
+        () =>
+            nodes
+                .filter((node) => node.type === CanvasNodeType.Audio && typeof node.metadata?.content === "string" && node.metadata.content)
+                .slice(0, 6)
+                .map((node, index) => ({ id: node.id, label: node.title || t("canvas.director.audioLabel", { index: index + 1 }), url: node.metadata?.content as string })),
+        [nodes, t],
+    );
+
+    // 生成的每个镜头落成一个文本节点，排成一行放在画布中心。
+    const applyDirectorShots = useCallback(
+        (shots: string[]) => {
+            const center = getCanvasCenter();
+            const created = shots.map((shot, index) => createCanvasNode(CanvasNodeType.Text, { x: center.x + index * 420, y: center.y }, { content: shot, status: NODE_STATUS_IDLE }));
+            setNodes((prev) => [...prev, ...created]);
+            setSelectedNodeIds(new Set(created.map((node) => node.id)));
+            setSelectedConnectionId(null);
+            message.success(t("canvas.director.applied", { count: created.length }));
+        },
+        [createCanvasNode, getCanvasCenter, message, t],
     );
 
     const createReferenceMaterialForNode = useCallback(
@@ -4180,7 +4213,9 @@ function MGCanvasProjectPage() {
                     ) : null}
                 </MGCanvasSurface>
 
-                {nodes.length === 0 ? <CanvasEmptyGuide onCreate={(type) => createNode(type)} onUploadMaterial={() => createUploadMaterialNode()} /> : null}
+                {nodes.length === 0 ? <CanvasEmptyGuide onCreate={(type) => createNode(type)} onUploadMaterial={() => createUploadMaterialNode()} onOpenDirector={() => setDirectorOpen(true)} /> : null}
+
+                <CanvasDirectorDialog open={directorOpen} onClose={() => setDirectorOpen(false)} imageCandidates={directorImageCandidates} audioCandidates={directorAudioCandidates} onApply={applyDirectorShots} />
 
                 <CanvasNodeHoverToolbar
                     node={isNodeDragging || isNodeResizing || nodeImageSettingsOpen ? null : toolbarNode}
@@ -4224,6 +4259,7 @@ function MGCanvasProjectPage() {
                     onAddText={() => createNode(CanvasNodeType.Text)}
                     onAddMaterial={() => createUploadMaterialNode()}
                     onAddGroup={() => createNode(CanvasNodeType.Group)}
+                onOpenDirector={() => setDirectorOpen(true)}
                     onAddExtensionNode={(type) => createNode(type)}
                     onUndo={undoCanvas}
                     onRedo={redoCanvas}

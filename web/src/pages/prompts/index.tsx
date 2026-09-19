@@ -48,7 +48,7 @@ export default function PromptsPage() {
                     <aside className="td-workspace-sidebar thin-scrollbar max-h-[calc(100dvh-12.5rem)] overflow-y-auto pr-1 lg:sticky lg:top-0 lg:border-r lg:border-black/[0.07] lg:pr-8 dark:lg:border-white/[0.07]">
                         <PromptFilter label={t("prompts.category")} options={promptCategoryOptions} selected={selectedCategory} onChange={setSelectedCategory} />
                         <div className="mt-7 border-t border-black/[0.06] pt-6 dark:border-white/[0.06]">
-                            <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400 dark:text-zinc-600">{t("prompts.tags")}</div>
+                            <div className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400 dark:text-zinc-600">{t("prompts.tags")}</div>
                             <div className="flex flex-wrap gap-2 py-0.5 pl-1">
                                 {promptTags.map((tag) => {
                                     const active = tag === ALL_PROMPTS_OPTION ? selectedTags.length === 0 : selectedTags.includes(tag);
@@ -102,7 +102,7 @@ function PromptFilter({ label, options, selected, onChange }: { label: string; o
     const { t } = useTranslation();
     return (
         <div>
-            <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400 dark:text-zinc-600">{label}</div>
+            <div className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400 dark:text-zinc-600">{label}</div>
             <div className="space-y-1">
                 {options.map((option) => {
                     const active = selected === option;

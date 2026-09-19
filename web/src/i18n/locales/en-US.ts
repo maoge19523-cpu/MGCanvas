@@ -464,6 +464,10 @@ export default {
             audioLimit: "At most 3 reference audio clips",
             noneSelected: "No references selected",
             noCandidate: "No usable assets on the canvas yet",
+            imageLabel: "Image {{index}}",
+            audioLabel: "Audio {{index}}",
+            applied: "Added {{count}} shot nodes and {{links}} connections",
+            withGeneration: "Also create a video generation node per shot and connect it",
         },
         emptyGuide: {
             hint: "Double-click the canvas to create freely",

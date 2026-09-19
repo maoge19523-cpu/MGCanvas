@@ -458,6 +458,10 @@ export default {
             audioLimit: "参考音频最多 3 个",
             noneSelected: "还没有选择素材",
             noCandidate: "画布上还没有可用的素材",
+            imageLabel: "参考图 {{index}}",
+            audioLabel: "音频 {{index}}",
+            applied: "已生成 {{count}} 个镜头节点，建立 {{links}} 条连线",
+            withGeneration: "同时为每个镜头创建视频生成节点并连线",
         },
         emptyGuide: {
             hint: "双击画布，自由创作",

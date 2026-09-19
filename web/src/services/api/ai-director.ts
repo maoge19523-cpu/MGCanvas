@@ -64,7 +64,11 @@ export async function generateDirectorPrompt(request: DirectorRequest): Promise<
         lines.push(`参考音频（按顺序，共 ${request.audios.length} 个）：`);
         request.audios.forEach((item, index) => lines.push(`  音频 ${index + 1}：${item.label}`));
     }
-    lines.push(`请输出 ${request.shots} 个镜头的完整提示词，直接给出内容，不要解释。`);
+    lines.push(
+        `请为每个镜头输出一条独立、完整、可单独投产的提示词，共 ${request.shots} 条。`,
+        "每条都必须自带官方格式要求的全部字段或段落，不要依赖其它条的内容；",
+        "条与条之间用一行「=== 镜头 N ===」分隔（N 从 1 开始），分隔行之外不要写任何解释。",
+    );
 
     // 有图片地址时按多模态下发，让支持视觉的模型能直接读到画面细节。
     const imageParts = request.images

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { App, Button, Input, InputNumber, Modal, Select, Tag } from "antd";
+import { App, Button, Checkbox, Input, InputNumber, Modal, Select, Tag } from "antd";
 import { Clapperboard, LoaderCircle, Plus, Sparkles, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -24,8 +24,8 @@ export function CanvasDirectorDialog({
     onClose: () => void;
     imageCandidates: DirectorCandidate[];
     audioCandidates: DirectorCandidate[];
-    /** 把生成结果落到画布：每个镜头一个文本节点。 */
-    onApply: (shots: string[]) => void;
+    /** 把生成结果落到画布：每个镜头一个文本节点，可选同时创建视频生成节点并连线。 */
+    onApply: (shots: string[], withGeneration: boolean) => void;
 }) {
     const { t } = useTranslation();
     const { message } = App.useApp();
@@ -42,6 +42,7 @@ export function CanvasDirectorDialog({
     const [images, setImages] = useState<DirectorReference[]>([]);
     const [audios, setAudios] = useState<DirectorReference[]>([]);
     const [result, setResult] = useState("");
+    const [withGeneration, setWithGeneration] = useState(true);
     const [running, setRunning] = useState(false);
 
     useEffect(() => {
@@ -79,11 +80,11 @@ export function CanvasDirectorDialog({
         }
     };
 
-    /** 按镜头块切分结果；识别不了就整段作为一个镜头。 */
+    /** 按「=== 镜头 N ===」分隔符切分；识别不了就整段作为一条。 */
     const splitShots = (text: string): string[] => {
         const blocks = text
-            .split(/\n(?=\s*(?:\[Shot\s*\d+\]|【镜头\s*\d+】|$$\s*Shot\s*\d+$$))/i)
-            .map((item) => item.trim())
+            .split(/\n\s*={2,}\s*镜头\s*\d+\s*={2,}\s*\n/)
+            .map((item) => item.replace(/^\s*={2,}\s*镜头\s*\d+\s*={2,}\s*$/gm, "").trim())
             .filter(Boolean);
         return blocks.length > 1 ? blocks : [text.trim()];
     };
@@ -191,12 +192,15 @@ export function CanvasDirectorDialog({
                     <section className="space-y-2">
                         <div className="font-medium">{t("canvas.director.result")}</div>
                         <Input.TextArea rows={12} value={result} onChange={(event) => setResult(event.target.value)} className="font-mono text-[11px]" />
+                        <Checkbox checked={withGeneration} onChange={(event) => setWithGeneration(event.target.checked)}>
+                            {t("canvas.director.withGeneration")}
+                        </Checkbox>
                         <div className="flex justify-end gap-2">
                             <Button onClick={() => void navigator.clipboard.writeText(result).then(() => message.success(t("common.copied")))}>{t("common.copy")}</Button>
                             <Button
                                 type="primary"
                                 onClick={() => {
-                                    onApply(splitShots(result));
+                                    onApply(splitShots(result), withGeneration);
                                     onClose();
                                 }}
                             >

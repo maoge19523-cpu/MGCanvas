@@ -834,15 +834,39 @@ function MGCanvasProjectPage() {
         [nodes, t],
     );
 
-    // 生成的每个镜头落成一个文本节点，排成一行放在画布中心。
+    // 生成的每个镜头落成一个文本节点；勾选时再各配一个视频生成节点并连线。
+    // 一个生成节点只能接一个提示词，所以是「一镜头一节点」，不要串到同一个生成节点上。
     const applyDirectorShots = useCallback(
-        (shots: string[]) => {
+        (shots: string[], withGeneration: boolean) => {
             const center = getCanvasCenter();
-            const created = shots.map((shot, index) => createCanvasNode(CanvasNodeType.Text, { x: center.x + index * 420, y: center.y }, { content: shot, status: NODE_STATUS_IDLE }));
+            const created: CanvasNodeData[] = [];
+            const links: NonNullable<ReturnType<typeof normalizeConnectionHandles>>[] = [];
+
+            shots.forEach((shot, index) => {
+                const x = center.x + index * 460;
+                const textNode = createCanvasNode(CanvasNodeType.Text, { x, y: center.y }, { content: shot, status: NODE_STATUS_IDLE });
+                created.push(textNode);
+                if (!withGeneration) return;
+
+                const configNode = createCanvasNode(CanvasNodeType.Config, { x, y: center.y + 320 }, { mode: "video", count: 1 });
+                created.push(configNode);
+                const fromPort = getHandlePorts(textNode, "source")[0];
+                const toPort = getHandlePorts(configNode, "target")[0];
+                if (!fromPort || !toPort) return;
+                const normalized = normalizeConnectionHandles(
+                    canvasPortHandle(textNode.id, "source", fromPort),
+                    canvasPortHandle(configNode.id, "target", toPort),
+                    [...nodesRef.current, ...created],
+                    connectionsRef.current,
+                );
+                if (normalized) links.push(normalized);
+            });
+
             setNodes((prev) => [...prev, ...created]);
+            if (links.length) setConnections((prev) => [...prev, ...links.map((link) => ({ id: nanoid(), ...link }))]);
             setSelectedNodeIds(new Set(created.map((node) => node.id)));
             setSelectedConnectionId(null);
-            message.success(t("canvas.director.applied", { count: created.length }));
+            message.success(t("canvas.director.applied", { count: shots.length, links: links.length }));
         },
         [createCanvasNode, getCanvasCenter, message, t],
     );

@@ -12,7 +12,6 @@ export type DirectorRequest = {
     target: DirectorTarget;
     /** 渠道模型值，例如 channelId::modelName。 */
     modelValue: string;
-    shots: number;
     duration: number;
     aspect: string;
     images: DirectorReference[];
@@ -53,7 +52,7 @@ export async function generateDirectorPrompt(request: DirectorRequest): Promise<
     const lines = [
         `创意需求：${request.brief.trim() || "（未填写，请按参考素材自行设计一个连贯短片）"}`,
         `目标模型：${targetInfo?.zh ?? request.target}；生成模式：${modeInfo?.zh ?? request.mode}（${modeInfo?.h3 ?? ""}）。`,
-        `镜头数量：${request.shots} 个；总时长：${request.duration} 秒；画幅：${request.aspect}。`,
+        `总时长：${request.duration} 秒；画幅：${request.aspect}。`,
     ];
 
     if (request.images.length) {
@@ -68,7 +67,8 @@ export async function generateDirectorPrompt(request: DirectorRequest): Promise<
         lines.push("创意需求里形如 @名称 的写法，指的就是上面同名的参考素材，请把它们当成对应素材来引用，不要当成普通文字。");
     }
     lines.push(
-        `请为每个镜头输出一条独立、完整、可单独投产的提示词，共 ${request.shots} 条。`,
+        "镜头数量由你按官方规范自行决定：结合总时长与叙事节奏合理切分，不要固定数量，也不要在输出里解释你的取舍。",
+        "请为每个镜头输出一条独立、完整、可单独投产的提示词。",
         "每条都必须自带官方格式要求的全部字段或段落，不要依赖其它条的内容；",
         "条与条之间用一行「=== 镜头 N ===」分隔（N 从 1 开始），分隔行之外不要写任何解释。",
     );

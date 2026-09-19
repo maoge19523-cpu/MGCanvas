@@ -101,8 +101,9 @@ export function CanvasDirectorDialog({
         }
         setRunning(true);
         try {
-            const prompt = await generateDirectorPrompt({ brief, mode, target, modelValue: model, duration, aspect, images: imageRefs, audios: audioRefs });
-            setResult(prompt);
+            const outcome = await generateDirectorPrompt({ brief, mode, target, modelValue: model, duration, aspect, images: imageRefs, audios: audioRefs });
+            setResult(outcome.prompt);
+            if (outcome.fallback) message.warning(outcome.fallback);
             message.success(t("canvas.director.generated"));
         } catch (error) {
             message.error(error instanceof Error ? error.message : String(error));

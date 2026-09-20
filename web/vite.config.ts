@@ -41,7 +41,7 @@ function localPluginsManifest(): Plugin {
     };
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
     base: process.env.VITE_BASE || "/",
     plugins: [react(), localPluginsManifest(), createMediaDownloadProxyPlugin(), createMediaCachePlugin({ cacheDir: mediaCache.cacheDir, allowedDataRoot: mediaCache.dataRoot })],
     resolve: {
@@ -52,6 +52,8 @@ export default defineConfig({
     define: {
         __APP_VERSION__: JSON.stringify(localVersion),
         __APP_RELEASES__: JSON.stringify(parseChangelog(localChangelog)),
+        // 测试版与正式版共用一份源码，只靠构建模式区分运行渠道。
+        __APP_CHANNEL__: JSON.stringify(mode === "beta" ? "beta" : "release"),
     },
     build: {
         rollupOptions: {
@@ -68,4 +70,4 @@ export default defineConfig({
             ignored: ["**/src-tauri/**"],
         },
     },
-});
+}));

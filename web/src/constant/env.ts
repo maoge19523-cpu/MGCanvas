@@ -1,5 +1,10 @@
 export const APP_VERSION = __APP_VERSION__ || "dev";
 
+// 正式版与测试版共用一份源码，靠构建渠道区分；测试版使用独立的应用标识与数据目录。
+export const APP_CHANNEL = __APP_CHANNEL__;
+export const IS_BETA_CHANNEL = APP_CHANNEL === "beta";
+export const APP_WINDOW_TITLE = IS_BETA_CHANNEL ? "猫歌映画 测试版" : "猫歌映画";
+
 export const DOCS_URL = import.meta.env.VITE_DOC_URL?.trim() || "";
 
 export const PLUGIN_REGISTRY_URL = import.meta.env.VITE_PLUGIN_REGISTRY_URL?.trim() || "";

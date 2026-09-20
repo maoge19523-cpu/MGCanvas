@@ -2,6 +2,8 @@
 
 declare const __APP_VERSION__: string;
 declare const __APP_RELEASES__: import("@/lib/release").ReleaseInfo[];
+// 构建渠道：正式版为 "release"，测试版为 "beta"。
+declare const __APP_CHANNEL__: "release" | "beta";
 
 interface ImportMetaEnv {
     // Comma-separated local development plugin URLs, refetched on every startup without caching or persistence.

@@ -7,6 +7,8 @@
         "dev": "vite --host 0.0.0.0 --port 3000",
         "desktop:dev": "tauri dev",
         "desktop:build": "tauri build",
+        "desktop:build:beta": "tauri build --config src-tauri/tauri.beta.conf.json --bundles nsis",
+        "build:beta": "vite build --mode beta",
         "desktop:package": "node scripts/package-desktop.mjs",
         "desktop:package:windows": "node scripts/package-desktop.mjs --target windows",
         "desktop:package:macos": "node scripts/package-desktop.mjs --target macos",

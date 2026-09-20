@@ -46,6 +46,11 @@ export async function syncDesktopWindowTheme(theme: Theme) {
     await getDesktopWindow()?.setTheme(theme);
 }
 
+/** 测试版与正式版共用窗口配置，启动时按构建渠道改写主窗口标题以示区分。 */
+export async function syncDesktopWindowTitle(title: string) {
+    await getDesktopWindow()?.setTitle(title);
+}
+
 export async function saveBlobToDownloads(blob: Blob, filename: string) {
     if (!isTauriRuntime()) return false;
     let directory = readCustomDownloadDirectory();

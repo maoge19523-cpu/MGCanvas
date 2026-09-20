@@ -3,7 +3,7 @@ import { App, Button, Checkbox, Image, Input, InputNumber, Mentions, Modal, Prog
 import { CircleAlert, Clapperboard, Eye, LoaderCircle, Music2, Plus, Sparkles, UploadCloud, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { lintDirectorOutput } from "@/lib/director/prompt-lint";
+import { lintDirectorOutput, splitDirectorShots } from "@/lib/director/prompt-lint";
 import { DIRECTOR_MODES, DIRECTOR_TARGETS, type DirectorMode, type DirectorTarget } from "@/lib/director/specs";
 import { generateDirectorPrompt, type DirectorReference } from "@/services/api/ai-director";
 import { selectableModelsByCapability, useConfigStore } from "@/stores/use-config-store";
@@ -68,6 +68,8 @@ export function CanvasDirectorDialog({
     const [hidden, setHidden] = useState<string[]>([]);
     const dragImageIndex = useRef<number | null>(null);
     const dragAudioIndex = useRef<number | null>(null);
+    // 落画布与生成只吃提示词本身：`=== 镜头 N ===` 是面板自己的切分标记，发给模型是噪音。
+    const promptOnly = useMemo(() => splitDirectorShots(result).join("\n\n"), [result]);
 
     useEffect(() => {
         if (!model && modelOptions.length) setModel(modelOptions[0]);
@@ -426,7 +428,7 @@ export function CanvasDirectorDialog({
                                         cancelText: t("common.cancel"),
                                         onOk: async () => {
                                             onClose();
-                                            await onShoot(result);
+                                            await onShoot(promptOnly);
                                         },
                                     });
                                 }}
@@ -436,7 +438,7 @@ export function CanvasDirectorDialog({
                             <Button
                                 type="primary"
                                 onClick={() => {
-                                    onApply(result, withGeneration);
+                                    onApply(promptOnly, withGeneration);
                                     onClose();
                                 }}
                             >

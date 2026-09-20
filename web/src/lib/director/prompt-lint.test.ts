@@ -256,6 +256,21 @@ describe("字段与时间轴（移植自官方校验脚本）", () => {
         expect(codes(lint(text))).toContain("vagueMusic");
     });
 
+    // 回归：模型常省掉描述段的字段名，内容其实是明确的，只提醒不报错。
+    it("省掉描述段字段名只算警告，不再算错误", () => {
+        const text = H3_T2V.replace("integrated_multimodal_description: ", "");
+        const issues = lint(text);
+        const missing = issues.find((item) => item.code === "missingSection");
+        expect(missing?.severity).toBe("warn");
+        expect(issues.some((item) => item.severity === "error")).toBe(false);
+    });
+
+    it("缺声音段的字段名仍然是错误", () => {
+        const text = H3_T2V.replace(/^overall_soundscape:.*\n/m, "");
+        const missing = lint(text).find((item) => item.code === "missingSection");
+        expect(missing?.severity).toBe("error");
+    });
+
     // 回归：模型常把三个字段连着写在同一行，内容是对的，不能报「缺少字段」。
     it("三个字段连着写在同一行不算缺字段", () => {
         const oneLine = `integrated_multimodal_description: [Shot 1] 0.00-5.00 Wide shot, rule of thirds. A young girl in a flowing white summer dress walks barefoot slowly along a sandy beach at dusk. Slow tracking shot with medium amplitude. overall_soundscape: Gentle ocean waves breaking on the shore, distant seagulls. non_diegetic_music: Calm and soothing acoustic guitar melody.`;

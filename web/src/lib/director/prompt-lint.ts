@@ -124,6 +124,12 @@ function lintSections(text: string, sections: readonly string[]): DirectorLintIs
         const bare = [...text.matchAll(new RegExp(`^[ \\t]*${name}[ \\t]*$`, "gm"))];
         const found = inline.length ? inline : bare;
         if (!found.length) {
+            // 描述段的字段名最常被模型顺手省掉，但那段内容本身就是开头的主体描述、语义明确，
+            // 生成不受影响，所以只给友好提醒；声音两段缺字段名等于整段规范没写，仍然报错。
+            if (name === "integrated_multimodal_description") {
+                push("missingSection", "warn", "这一段没带 integrated_multimodal_description 字段名，内容在、生成不受影响；补上更贴合官方结构。");
+                continue;
+            }
             push("missingSection", "error", `缺少必需字段 ${name}（字段名要原样保留）。`);
             continue;
         }

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
     clampCollageTransform,
     collageAngleFromCenter,
+    collageHandlePoints,
     collageLayerCorners,
     collageSceneSize,
     collageToLocal,
@@ -22,6 +23,51 @@ import {
 
 const base = (patch: Partial<CollageTransform> = {}): CollageTransform => ({ x: 100, y: 100, rotation: 0, scale: 1, stretchX: 1, stretchY: 1, ...patch });
 const near = (value: number, expected: number) => expect(value).toBeCloseTo(expected, 4);
+
+describe("手柄几何", () => {
+    it("未旋转时四角在手柄顺序为左上、右上、右下、左下，旋转柄在顶边中点上方", () => {
+        const source = { width: 200, height: 100 };
+        const { corners, rotate } = collageHandlePoints(source, base({ x: 0, y: 0 }), 30);
+        expect(corners.map((corner) => [corner.x, corner.y])).toEqual([
+            [-100, -50],
+            [100, -50],
+            [100, 50],
+            [-100, 50],
+        ]);
+        expect(rotate.x).toBe(0);
+        near(rotate.y, -80);
+    });
+
+    it("旋转 90 度后旋转柄跟着转到图层右侧，四角顺序仍按图层自身", () => {
+        const source = { width: 200, height: 100 };
+        const { corners, rotate } = collageHandlePoints(source, base({ x: 0, y: 0, rotation: 90 }), 30);
+        // 画布顺时针转 90 度后，图层「上边」的法线指向 +x，所以旋转柄落在中心右侧。
+        near(rotate.x, 80);
+        near(rotate.y, 0);
+        // 左上角跟着转到 (50, -100)，说明四角始终按图层自身顺序返回。
+        near(corners[0].x, 50);
+        near(corners[0].y, -100);
+    });
+
+    it("图层顶到画布上边缘时旋转柄被夹回画布内，仍然点得到", () => {
+        // 800 高的画布里放一张 600x800 的图层并居中，图层顶边正好压在画布上边。
+        const source = { width: 600, height: 800 };
+        const bounds = { width: 800, height: 800 };
+        const transform = base({ x: 400, y: 400 });
+        const free = collageHandlePoints(source, transform, 40);
+        near(free.rotate.y, -40);
+        const clamped = collageHandlePoints(source, transform, 40, bounds);
+        near(clamped.rotate.y, 40);
+        near(clamped.rotate.x, 400);
+    });
+
+    it("手柄坐标随缩放与拉伸一起变化", () => {
+        const source = { width: 200, height: 100 };
+        const { corners } = collageHandlePoints(source, base({ x: 0, y: 0, scale: 2, stretchX: 3, stretchY: 1 }), 30);
+        near(corners[1].x, 600);
+        near(corners[1].y, -100);
+    });
+});
 
 describe("图层变换夹取", () => {
     it("把旋转收敛到 ±180、缩放收敛到 0.2–2、拉伸收敛到 0.05–20", () => {

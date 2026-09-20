@@ -1,16 +1,15 @@
 import { Modal } from "antd";
 import { ArrowDown, ArrowUp, ChevronsDown, ChevronsUp, Loader2, Redo2, RotateCcw, Undo2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
     COLLAGE_MAX_LAYERS,
+    COLLAGE_ROTATE_OFFSET,
     collageAngleFromCenter,
-    collageLayerCorners,
-    collageToLocal,
+    collageHandlePoints,
     createCollageLayout,
     fitCollagePreview,
-    hitTestCollageLayer,
     moveCollageLayer,
     reorderCollageLayers,
     rotateCollageLayer,
@@ -35,7 +34,6 @@ type DragState =
 /** 编辑器视口最大边长与手柄命中半径（都按场景坐标换算后的像素算）。 */
 const VIEW_MAX = 680;
 const HANDLE_HIT = 14;
-const ROTATE_OFFSET = 34;
 const HISTORY_LIMIT = 50;
 
 export function CanvasCollageEditor({
@@ -87,7 +85,7 @@ export function CanvasCollageEditor({
         if (!ctx) return;
         ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
         // 只有编辑器会传 selection，因此选中框只出现在这里，不会进保存的像素。
-        drawCollageScene(ctx, { order: current.order, layout: current.layout, images: scene_.images, sources: scene_.sourceSizes, scene: scene_.scene, scale, selection, selectionColor: "#2f80ff" });
+        drawCollageScene(ctx, { order: current.order, layout: current.layout, images: scene_.images, sources: scene_.sourceSizes, scene: scene_.scene, scale, selection, selectionColor: "#2f80ff", showHandles: true });
     }, [current, scene_, scale, width, height, selection, open]);
 
     const apply = useCallback((next: Snapshot, coalesce = false) => {
@@ -127,14 +125,23 @@ export function CanvasCollageEditor({
         return () => window.removeEventListener("keydown", onKeyDown);
     }, [open, selection, current, apply, undo, redo]);
 
+    // 一律用 canvas 元素自己的 rect 换算：舞台比画布大、画布还居中，用舞台坐标会整体偏移。
+    const canvasRect = useCallback(() => canvasRef.current?.getBoundingClientRect() ?? null, []);
+
     const toScenePoint = useCallback(
         (event: React.PointerEvent): Position => {
-            const rect = stageRef.current?.getBoundingClientRect();
-            if (!rect) return { x: 0, y: 0 };
-            return { x: (event.clientX - rect.left) / scale, y: (event.clientY - rect.top) / scale };
+            const rect = canvasRect();
+            if (!rect || !rect.width || !rect.height) return { x: 0, y: 0 };
+            return { x: ((event.clientX - rect.left) / rect.width) * scene_.scene.width, y: ((event.clientY - rect.top) / rect.height) * scene_.scene.height };
         },
-        [scale],
+        [canvasRect, scene_.scene],
     );
+
+    /** 屏幕上 14px 对应多少场景单位；画布被 CSS 缩放过时也照样准。 */
+    const hitRadius = useCallback(() => {
+        const rect = canvasRect();
+        return HANDLE_HIT / (rect && rect.width ? rect.width / scene_.scene.width : scale);
+    }, [canvasRect, scale, scene_.scene]);
 
     const onPointerDown = (event: React.PointerEvent) => {
         if (!selection) {
@@ -148,22 +155,23 @@ export function CanvasCollageEditor({
         const selectedTransform = selection ? current.layout[selection] : undefined;
         const selectedSource = selection ? sizes[selection] : undefined;
         if (selection && selectedTransform && selectedSource) {
-            const local = collageToLocal(point, selectedTransform);
-            const handleRadius = HANDLE_HIT / scale;
-            const half = { x: (selectedSource.width / 2) * selectedTransform.scale * selectedTransform.stretchX, y: (selectedSource.height / 2) * selectedTransform.scale * selectedTransform.stretchY };
-            for (const corner of [
+            // 手柄命中判定和绘制取同一份坐标，只在场景坐标系里比距离，避免旋转后再算错象限。
+            const handleRadius = hitRadius();
+            const { corners, rotate } = collageHandlePoints(selectedSource, selectedTransform, COLLAGE_ROTATE_OFFSET / scale, scene_.scene);
+            const cornerOrder: CollageCorner[] = [
                 { x: -1, y: -1 },
                 { x: 1, y: -1 },
                 { x: 1, y: 1 },
                 { x: -1, y: 1 },
-            ] as CollageCorner[]) {
-                if (Math.hypot(local.x - corner.x * half.x, local.y - corner.y * half.y) <= handleRadius) {
-                    dragRef.current = { kind: "corner", id: selection, corner, origin: selectedTransform };
+            ];
+            for (let index = 0; index < corners.length; index += 1) {
+                if (Math.hypot(point.x - corners[index].x, point.y - corners[index].y) <= handleRadius) {
+                    dragRef.current = { kind: "corner", id: selection, corner: cornerOrder[index], origin: selectedTransform };
                     (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
                     return;
                 }
             }
-            if (Math.hypot(local.x, local.y + half.y + ROTATE_OFFSET / scale) <= handleRadius) {
+            if (Math.hypot(point.x - rotate.x, point.y - rotate.y) <= handleRadius) {
                 dragRef.current = { kind: "rotate", id: selection, startAngle: collageAngleFromCenter(point, selectedTransform), origin: selectedTransform };
                 (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
                 return;
@@ -211,25 +219,7 @@ export function CanvasCollageEditor({
         apply(next);
         setSelection(next.order[next.order.length - 1] ?? null);
     };
-    const titleOf = (id: string) => sources.find((source) => source.id === id)?.url.split("/").pop()?.split("?")[0] || id;
-
-    // 选中图层的手柄位置：四角 + 上边中点外侧的旋转柄，全部按当前旋转角摆正。
-    const handles = useMemo(() => {
-        if (!selection) return null;
-        const transform = current.layout[selection];
-        const source = scene_.sourceSizes[selection];
-        if (!transform || !source) return null;
-        const corners = collageLayerCorners(source, transform);
-        const local = collageToLocal({ x: corners[0].x, y: corners[0].y }, transform);
-        const half = { x: Math.abs(local.x), y: Math.abs(local.y) };
-        const topMiddle = { x: 0, y: -half.y - ROTATE_OFFSET / scale };
-        const cos = Math.cos((transform.rotation * Math.PI) / 180);
-        const sin = Math.sin((transform.rotation * Math.PI) / 180);
-        const rotate = { x: transform.x + topMiddle.x * cos - topMiddle.y * sin, y: transform.y + topMiddle.x * sin + topMiddle.y * cos };
-        return { corners, rotate };
-    }, [selection, current, scene_, scale]);
-
-    const cornerStyle = "pointer-events-none absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-sm border shadow";
+    const titleOf = (id: string) => sources.find((source) => source.id === id)?.title || t("canvas.nodeTypes.image");
 
     return (
         <Modal
@@ -248,14 +238,6 @@ export function CanvasCollageEditor({
             <div className="flex min-h-0 gap-4">
                 <div ref={stageRef} className="relative flex flex-1 items-center justify-center overflow-hidden rounded-xl" style={{ background: theme.node.fill, minHeight: 480, touchAction: "none" }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}>
                     <canvas ref={canvasRef} style={{ width, height }} className="block max-h-full max-w-full" />
-                    {handles ? (
-                        <>
-                            {handles.corners.map((corner, index) => (
-                                <span key={index} className={cornerStyle} style={{ left: corner.x * scale, top: corner.y * scale, width: 12, height: 12, background: "#fff", borderColor: "#2f80ff" }} />
-                            ))}
-                            <span className={cornerStyle} style={{ left: handles.rotate.x * scale, top: handles.rotate.y * scale, width: 12, height: 12, borderRadius: 999, background: "#fff", borderColor: "#2f80ff" }} />
-                        </>
-                    ) : null}
                 </div>
 
                 <div className="flex w-72 shrink-0 flex-col gap-3">

@@ -35,6 +35,9 @@ export const COLLAGE_RESULT_PORT_ID = "collage";
 /** 节点缩略预览的最大边长。 */
 export const COLLAGE_PREVIEW_MAX = 252;
 export const COLLAGE_ROTATION_LIMIT = 180;
+/** 旋转手柄离图层顶边的距离（屏幕像素），命中测试与绘制共用同一个值。 */
+export const COLLAGE_ROTATE_OFFSET = 34;
+const clamp = (value: number, min: number, max: number, fallback: number) => (Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback);
 /** 等比缩放的上下限。 */
 export const COLLAGE_SCALE_MIN = 0.2;
 export const COLLAGE_SCALE_MAX = 2;
@@ -48,7 +51,6 @@ export function defaultCollageTransform(center: Position): CollageTransform {
 }
 
 export function clampCollageTransform(transform: CollageTransform): CollageTransform {
-    const clamp = (value: number, min: number, max: number, fallback: number) => (Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback);
     return {
         x: Number.isFinite(transform.x) ? transform.x : 0,
         y: Number.isFinite(transform.y) ? transform.y : 0,
@@ -145,8 +147,32 @@ export function collageLayerCorners(source: CollageSize, transform: CollageTrans
     ].map((point) => collageToScene(point, transform));
 }
 
-/** 旋转感知命中测试：把点反旋转回图层局部坐标再判矩形。 */
-export function hitTestCollageLayer(point: Position, source: CollageSize, transform: CollageTransform): boolean {
+/**
+ * 选中图层的手柄位置，全部在拼合画布坐标系里，随图层旋转一起转。
+ *
+ * 绘制和命中测试都只从这里取坐标，两者不可能对不上；
+ * 旋转柄的偏移由调用方按 `COLLAGE_ROTATE_OFFSET / scale` 传进来，保证屏幕上距离恒定。
+ */
+export function collageHandlePoints(source: CollageSize, transform: CollageTransform, rotateOffset: number, bounds?: CollageSize): { corners: Position[]; rotate: Position } {
+    const { halfWidth, halfHeight } = collageLayerExtent(source, transform);
+    const rotate = collageToScene({ x: 0, y: -halfHeight - rotateOffset }, transform);
+    // 图层顶到画布边缘时旋转柄会落到画布外被裁掉、根本点不到，所以夹回画布内。
+    if (bounds) {
+        rotate.x = clamp(rotate.x, rotateOffset, Math.max(rotateOffset, bounds.width - rotateOffset), rotate.x);
+        rotate.y = clamp(rotate.y, rotateOffset, Math.max(rotateOffset, bounds.height - rotateOffset), rotate.y);
+    }
+    return {
+        corners: [
+            { x: -halfWidth, y: -halfHeight },
+            { x: halfWidth, y: -halfHeight },
+            { x: halfWidth, y: halfHeight },
+            { x: -halfWidth, y: halfHeight },
+        ].map((point) => collageToScene(point, transform)),
+        rotate,
+    };
+}
+
+/** 旋转感知命中测试：把点反旋转回图层局部坐标再判矩形。 */export function hitTestCollageLayer(point: Position, source: CollageSize, transform: CollageTransform): boolean {
     const { halfWidth, halfHeight } = collageLayerExtent(source, transform);
     const local = collageToLocal(point, transform);
     return Math.abs(local.x) <= halfWidth && Math.abs(local.y) <= halfHeight;
@@ -257,6 +283,7 @@ export function collectCollageSources(nodeId: string, nodes: CanvasNodeData[], c
     }
     return picked.map((node) => ({
         id: node.id,
+        title: node.title || "",
         url: node.metadata!.content!,
         width: Math.max(1, node.metadata?.naturalWidth || node.width),
         height: Math.max(1, node.metadata?.naturalHeight || node.height),

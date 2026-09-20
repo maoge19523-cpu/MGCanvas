@@ -4,8 +4,8 @@ import { collageSceneSize, reconcileCollageLayout, type CollageLayout, type Coll
 import { loadCollageImages, type CollageImages } from "./collage-scene";
 import type { CanvasNodeData } from "@/types/canvas";
 
-/** 一个图层来源：节点 id、图片地址与它声明的像素尺寸。 */
-export type CollageSourceEntry = { id: string; url: string; width: number; height: number };
+/** 一个图层来源：节点 id、节点标题、图片地址与它声明的像素尺寸。 */
+export type CollageSourceEntry = { id: string; title: string; url: string; width: number; height: number };
 
 /**
  * 缩略预览和全屏编辑器共用的场景数据。

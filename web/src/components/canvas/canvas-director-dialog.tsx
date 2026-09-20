@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { App, Button, Checkbox, Image, Input, InputNumber, Mentions, Modal, Progress, Select, Tooltip } from "antd";
-import { Clapperboard, Eye, LoaderCircle, Music2, Plus, Sparkles, UploadCloud, X } from "lucide-react";
+import { App, Button, Checkbox, Image, Input, InputNumber, Mentions, Modal, Progress, Select, Tag, Tooltip } from "antd";
+import { CircleAlert, Clapperboard, Eye, LoaderCircle, Music2, Plus, Sparkles, UploadCloud, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { lintDirectorOutput, splitDirectorShots } from "@/lib/director/prompt-lint";
 import { DIRECTOR_MODES, DIRECTOR_TARGETS, type DirectorMode, type DirectorTarget } from "@/lib/director/specs";
 import { generateDirectorPrompt, type DirectorReference } from "@/services/api/ai-director";
 import { selectableModelsByCapability, useConfigStore } from "@/stores/use-config-store";
@@ -142,14 +143,8 @@ export function CanvasDirectorDialog({
         }
     };
 
-    /** 按「=== 镜头 N ===」分隔符切分；识别不了就整段作为一条。 */
-    const splitShots = (text: string): string[] => {
-        const blocks = text
-            .split(/\n\s*={2,}\s*镜头\s*\d+\s*={2,}\s*\n/)
-            .map((item) => item.replace(/^\s*={2,}\s*镜头\s*\d+\s*={2,}\s*$/gm, "").trim())
-            .filter(Boolean);
-        return blocks.length > 1 ? blocks : [text.trim()];
-    };
+    /** 规范自检：跟着结果一起算，用户手改文本后也会即时更新。 */
+    const lintReport = useMemo(() => (result.trim() ? lintDirectorOutput(result, { mode, target, duration }) : null), [result, mode, target, duration]);
 
     const mentionOptions = useMemo(() => [...imageRefs, ...audioRefs].map((item) => ({ value: item.label, label: item.label })), [imageRefs, audioRefs]);
 
@@ -388,6 +383,33 @@ export function CanvasDirectorDialog({
                     <section className="space-y-2">
                         <div className="font-medium">{t("canvas.director.result")}</div>
                         <Input.TextArea rows={12} value={result} onChange={(event) => setResult(event.target.value)} className="font-mono text-[11px]" />
+                        {/* 规范自检：把 specs 里注入的硬性要求逐条核对结果摊开给用户看。 */}
+                        {lintReport ? (
+                            <div className="rounded-xl border border-black/[0.08] px-3 py-2.5 dark:border-white/[0.08]">
+                                <div className="flex items-center gap-2">
+                                    {lintReport.ok ? (
+                                        <Tag color="success">{t("canvas.director.lintPass")}</Tag>
+                                    ) : (
+                                        <Tag color="error">
+                                            <CircleAlert className="mr-1 inline size-3 align-[-2px]" />
+                                            {t("canvas.director.lintErrors", { count: lintReport.errors })}
+                                        </Tag>
+                                    )}
+                                    {lintReport.warnings ? <Tag color="warning">{t("canvas.director.lintWarnings", { count: lintReport.warnings })}</Tag> : null}
+                                    <span className="text-[11px] opacity-55">{t("canvas.director.lintShots", { count: lintReport.shots })}</span>
+                                </div>
+                                {lintReport.issues.length ? (
+                                    <ul className="mt-2 space-y-1 text-[11px]">
+                                        {lintReport.issues.map((issue, index) => (
+                                            <li key={`${issue.shot}-${issue.code}-${index}`} className="flex gap-1.5">
+                                                <span className="shrink-0 opacity-55">{t("canvas.director.lintShot", { index: issue.shot })}</span>
+                                                <span className={issue.severity === "error" ? "text-[#d4380d] dark:text-[#ff7875]" : "text-[#ad6800] dark:text-[#ffc069]"}>{issue.message}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : null}
+                            </div>
+                        ) : null}
                         <Checkbox checked={withGeneration} onChange={(event) => setWithGeneration(event.target.checked)}>
                             {t("canvas.director.withGeneration")}
                         </Checkbox>
@@ -396,7 +418,7 @@ export function CanvasDirectorDialog({
                             <Button
                                 type="primary"
                                 onClick={() => {
-                                    onApply(splitShots(result), withGeneration);
+                                    onApply(splitDirectorShots(result), withGeneration);
                                     onClose();
                                 }}
                             >

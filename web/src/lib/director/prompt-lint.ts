@@ -106,10 +106,11 @@ function spokenLines(text: string): string[] {
 }
 
 /**
- * 字段检查：字段名必须独占一行（可跟 `: 内容`）、恰好出现一次、带冒号写法时不能为空。
+ * 字段检查：恰好出现一次，带冒号写法时不能为空。
  *
- * 全能参考的六段在官方规范里就是不带冒号的独立段名，所以冒号是可选的；
- * 但要求整行只出现字段名，避免正文里顺口提到字段名就被当成字段。
+ * H3 的三个字段允许连着写在同一行（`… amplitude. overall_soundscape: … non_diegetic_music: …`），
+ * 所以带冒号的字段名不要求独占一行；全能参考的六段是不带冒号的独立段名，那种才要求整行只有段名。
+ * 只要求带冒号，是为了不让正文里顺口提到字段名就被算成字段。
  */
 function lintSections(text: string, sections: readonly string[]): DirectorLintIssue[] {
     const issues: DirectorLintIssue[] = [];
@@ -117,15 +118,18 @@ function lintSections(text: string, sections: readonly string[]): DirectorLintIs
     const positions: number[] = [];
 
     for (const name of sections) {
-        const found = [...text.matchAll(new RegExp(`^[ \\t]*${name}[ \\t]*(?::[ \\t]*(.*))?$`, "gm"))];
+        const inline = [...text.matchAll(new RegExp(`${name}[ \\t]*:`, "g"))];
+        const bare = [...text.matchAll(new RegExp(`^[ \\t]*${name}[ \\t]*$`, "gm"))];
+        const found = inline.length ? inline : bare;
         if (!found.length) {
             push("missingSection", "error", `缺少必需字段 ${name}（字段名要原样保留）。`);
             continue;
         }
         if (found.length > 1) push("duplicateSection", "error", `字段 ${name} 出现了 ${found.length} 次，只应出现一次。`);
         positions.push(found[0].index ?? 0);
-        if (found[0][0].includes(":") && !(found[0][1] ?? "").trim()) {
-            push("emptySection", "error", `字段 ${name} 是空的。`);
+        if (inline.length) {
+            const rest = text.slice((inline[0].index ?? 0) + inline[0][0].length);
+            if (!rest.split(/\r?\n/)[0].trim()) push("emptySection", "error", `字段 ${name} 是空的。`);
         }
     }
 

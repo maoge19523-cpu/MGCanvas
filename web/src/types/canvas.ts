@@ -16,6 +16,7 @@ export enum CanvasNodeType {
     Video = "video",
     Audio = "audio",
     Composite = "composite",
+    Compare = "compare",
     Generic = "generic",
     Group = "group",
 }

@@ -41,6 +41,8 @@ import { CanvasNodeContextMenu } from "@/components/canvas/canvas-context-menu";
 import { CanvasNodeAngleDialog, type CanvasImageAngleParams } from "@/components/canvas/canvas-node-angle-dialog";
 import { CanvasNodeCropDialog, type CanvasImageCropRect } from "@/components/canvas/canvas-node-crop-dialog";
 import { CanvasNodeSplitDialog, type CanvasImageSplitParams } from "@/components/canvas/canvas-node-split-dialog";
+import { CanvasCompareNodeContent } from "@/components/canvas/canvas-compare-node";
+import { collectCompareSources as resolveCompareSources } from "@/lib/canvas/compare-sources";
 import { CanvasNodeUpscaleDialog, type CanvasImageUpscaleParams } from "@/components/canvas/canvas-node-upscale-dialog";
 import { useCanvasImageOperationPreview } from "@/components/canvas/use-canvas-image-operation-preview";
 import { buildNodeGenerationContext, buildNodeGenerationInputs, buildNodeResponseMessages, hydrateNodeGenerationContext, type NodeGenerationInput } from "@/components/canvas/canvas-node-generation";
@@ -2309,6 +2311,9 @@ function MGCanvasProjectPage() {
         return { segments, music };
     }, []);
 
+    // 对比节点：按连线顺序取前两张图片，连线顺序决定左右。
+    const collectCompareSources = useCallback((compareNodeId: string) => resolveCompareSources(compareNodeId, nodesRef.current, connectionsRef.current), []);
+
     const handleRunComposite = useCallback(
         async (node: CanvasNodeData) => {
             const current = nodesRef.current.find((item) => item.id === node.id);
@@ -4042,21 +4047,24 @@ function MGCanvasProjectPage() {
     );
 
     const renderNodeContentPanel = useCallback(
-        (contentNode: CanvasNodeData) => (
-            <CanvasConfigNodePanel
-                node={contentNode}
-                isRunning={runningNodeId === contentNode.id}
-                inputSummary={getInputSummary(configInputsById.get(contentNode.id) || [])}
-                onConfigChange={handleConfigNodeChange}
-                onComposerToggle={() => setDialogNodeId((current) => (current === contentNode.id ? null : contentNode.id))}
-                onStop={confirmStopGeneration}
-                onGenerate={(nodeId) => {
-                    const target = nodesRef.current.find((item) => item.id === nodeId);
-                    void handleGenerateNode(nodeId, target?.metadata?.generationMode || "image", target?.metadata?.composerContent ?? target?.metadata?.prompt ?? "");
-                }}
-            />
-        ),
-        [configInputsById, confirmStopGeneration, handleConfigNodeChange, handleGenerateNode, runningNodeId],
+        (contentNode: CanvasNodeData) =>
+            contentNode.type === CanvasNodeType.Compare ? (
+                <CanvasCompareNodeContent node={contentNode} sources={collectCompareSources(contentNode.id)} />
+            ) : (
+                <CanvasConfigNodePanel
+                    node={contentNode}
+                    isRunning={runningNodeId === contentNode.id}
+                    inputSummary={getInputSummary(configInputsById.get(contentNode.id) || [])}
+                    onConfigChange={handleConfigNodeChange}
+                    onComposerToggle={() => setDialogNodeId((current) => (current === contentNode.id ? null : contentNode.id))}
+                    onStop={confirmStopGeneration}
+                    onGenerate={(nodeId) => {
+                        const target = nodesRef.current.find((item) => item.id === nodeId);
+                        void handleGenerateNode(nodeId, target?.metadata?.generationMode || "image", target?.metadata?.composerContent ?? target?.metadata?.prompt ?? "");
+                    }}
+                />
+            ),
+        [collectCompareSources, configInputsById, confirmStopGeneration, handleConfigNodeChange, handleGenerateNode, runningNodeId],
     );
 
     if (!projectLoaded) return <CanvasRefreshShell />;
@@ -4287,6 +4295,7 @@ function MGCanvasProjectPage() {
                     onAddVideo={() => createNode(CanvasNodeType.Video)}
                     onAddAudio={() => createNode(CanvasNodeType.Audio)}
                     onAddComposite={() => createNode(CanvasNodeType.Composite)}
+                    onAddCompare={() => createNode(CanvasNodeType.Compare)}
                     onAddText={() => createNode(CanvasNodeType.Text)}
                     onAddMaterial={() => createUploadMaterialNode()}
                     onAddGroup={() => createNode(CanvasNodeType.Group)}

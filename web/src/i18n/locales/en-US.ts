@@ -408,11 +408,17 @@ export default {
         agentDisconnected: "Codex disconnected",
         connecting: "Connecting",
         openAgent: "Open local Codex panel",
-        nodeTypes: { image: "Image", text: "Text", config: "Generation config", video: "Video", audio: "Audio", composite: "Compose", generic: "Generic task", group: "Group" },
+        nodeTypes: { image: "Image", text: "Text", config: "Generation config", video: "Video", audio: "Audio", composite: "Compose", compare: "Compare", generic: "Generic task", group: "Group" },
         composite: {
             nodeHint: "Connect video nodes to the Segment input; optionally link one audio node as background music",
             nodeOpenHint: "Click the node to open the compose panel",
             nodeDone: "Last composite: {filename}",
+        },
+        compare: {
+            hint: "Connect two image nodes to the Image input",
+            hintMore: "Then drag the divider to compare, or double-click for full screen",
+            fullscreen: "Full-screen compare",
+            keyboardHint: "Use the left and right arrow keys to nudge the divider; hold Shift to move faster",
         },
         toolbar: {
             move: "Move/select",
@@ -421,6 +427,7 @@ export default {
             video: "Video",
             audio: "Audio",
             composite: "Compose",
+            compare: "Compare",
             config: "Generation config",
             generic: "Generic task",
             group: "Group",

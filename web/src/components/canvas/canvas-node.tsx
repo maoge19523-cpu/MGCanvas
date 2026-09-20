@@ -11,6 +11,7 @@ import { clampCanvasNodeResize } from "@/lib/canvas/canvas-node-size";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textarea";
 import { CanvasNodeAnchoredPopup } from "./canvas-node-popup";
+import { CompareNodeHint } from "./canvas-compare-node";
 import { CanvasNodeType, type CanvasImageHistoryEntry, type CanvasNodeData, type Position } from "@/types/canvas";
 import type { CanvasNodeContext, CanvasPluginHost } from "@/types/canvas-plugin";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -519,7 +520,8 @@ function nativeNodeTitleIcon(type: CanvasNodeData["type"]) {
 }
 
 function NodeContent(props: NodeContentRendererProps) {
-    if (props.node.type === CanvasNodeType.Config && props.renderNodeContent) return props.renderNodeContent(props.node);
+    // 配置节点与对比节点依赖页面级状态（运行态 / 连线来源），统一交给页面渲染。
+    if ((props.node.type === CanvasNodeType.Config || props.node.type === CanvasNodeType.Compare) && props.renderNodeContent) return props.renderNodeContent(props.node);
     if (shouldShowMediaGenerationGlass(props.node)) return <MediaGeneratingContent {...props} />;
     if (props.isBatchRoot) return <ImageNodeContent {...props} />;
     // ComfyUI 工作流节点本身不显示运行转圈：进度已经在结果节点上呈现，
@@ -550,6 +552,7 @@ const nodeContentRenderers: Partial<Record<CanvasNodeType, (props: NodeContentRe
     [CanvasNodeType.Video]: VideoNodeContent,
     [CanvasNodeType.Audio]: AudioNodeContent,
     [CanvasNodeType.Composite]: CompositeNodeContent,
+    [CanvasNodeType.Compare]: CompareNodeHint,
     [CanvasNodeType.Group]: GroupNodeContent,
 };
 

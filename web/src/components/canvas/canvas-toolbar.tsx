@@ -1,7 +1,7 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Segmented, Switch } from "antd";
-import { CircleDot, Clapperboard, FolderOpen, Grid2x2, Group, History, Image as ImageIcon, Info, Moon, Music2, Palette, Plus, Redo2, Scissors, Search, Sparkles, Square, Sun, Trash2, Type, Undo2, Unplug, Upload, UploadCloud, Video, Workflow, X } from "lucide-react";
+import { CircleDot, Clapperboard, Columns2, FolderOpen, Grid2x2, Group, History, Image as ImageIcon, Info, Moon, Music2, Palette, Plus, Redo2, Scissors, Search, Sparkles, Square, Sun, Trash2, Type, Undo2, Unplug, Upload, UploadCloud, Video, Workflow, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
@@ -22,6 +22,7 @@ export function CanvasToolbar({
     onAddVideo,
     onAddAudio,
     onAddComposite,
+    onAddCompare,
     onAddText,
     onAddMaterial,
     onAddGroup,
@@ -47,6 +48,7 @@ export function CanvasToolbar({
     onAddVideo: () => void;
     onAddAudio: () => void;
     onAddComposite: () => void;
+    onAddCompare: () => void;
     onAddText: () => void;
     onAddMaterial: () => void;
     onAddConfig?: () => void;
@@ -297,6 +299,7 @@ export function CanvasToolbar({
                         <CreateMenuItem icon={<Video />} label={t("canvas.toolbar.video")} theme={theme} onClick={() => runCreateAction(onAddVideo)} />
                         <CreateMenuItem icon={<Music2 />} label={t("canvas.toolbar.audio")} theme={theme} onClick={() => runCreateAction(onAddAudio)} />
                         <CreateMenuItem icon={<Clapperboard />} label={t("canvas.toolbar.composite")} theme={theme} onClick={() => runCreateAction(onAddComposite)} />
+                        <CreateMenuItem icon={<Columns2 />} label={t("canvas.toolbar.compare")} theme={theme} onClick={() => runCreateAction(onAddCompare)} />
                         {onOpenDirector ? <CreateMenuItem icon={<Sparkles />} label={t("canvas.director.title")} theme={theme} onClick={() => runCreateAction(onOpenDirector)} /> : null}
                         {primaryExtensionDefs.map((definition) => (
                             <CreateMenuItem key={definition.type} icon={definition.icon} label={definition.title} theme={theme} onClick={() => runCreateAction(() => onAddExtensionNode(definition.type))} />

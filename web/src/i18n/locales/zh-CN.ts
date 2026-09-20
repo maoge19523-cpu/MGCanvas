@@ -402,11 +402,17 @@ export default {
         agentDisconnected: "Codex 未连接",
         connecting: "连接中",
         openAgent: "打开本地 Codex 面板",
-        nodeTypes: { image: "图片", text: "文本", config: "生成配置", video: "视频", audio: "音频", composite: "合成", generic: "通用生成任务", group: "组" },
+        nodeTypes: { image: "图片", text: "文本", config: "生成配置", video: "视频", audio: "音频", composite: "合成", compare: "对比", generic: "通用生成任务", group: "组" },
         composite: {
             nodeHint: "把视频节点连到左侧「片段」端口，可再接入一路「音乐」作背景音乐",
             nodeOpenHint: "点击节点打开合成面板",
             nodeDone: "上次合成：{filename}",
+        },
+        compare: {
+            hint: "把两张图片节点连到左侧「图片」端口",
+            hintMore: "连接后拖动分割线左右滑动对比，双击可全屏查看",
+            fullscreen: "全屏对比",
+            keyboardHint: "左右方向键微调分割线，按住 Shift 加快",
         },
         toolbar: {
             move: "移动/选择",
@@ -415,6 +421,7 @@ export default {
             video: "视频",
             audio: "音频",
             composite: "合成",
+            compare: "对比",
             config: "生成配置",
             generic: "通用生成任务",
             group: "组",

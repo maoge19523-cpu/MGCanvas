@@ -74,7 +74,7 @@ describe("切分镜头", () => {
 
 describe("H3 基础模式", () => {
     it("完整合规的提示词没有问题", () => {
-        expect(lint(H3_T2V)).toEqual([]);
+        expect(codes(lint(H3_T2V))).toEqual([]);
     });
 
     it("缺字段报错，并指出缺哪一个", () => {
@@ -96,7 +96,7 @@ describe("H3 基础模式", () => {
 
     it("图生视频缺少对齐指令报错，补上就没问题", () => {
         expect(codes(lint(H3_T2V, "i2v"))).toContain("missingAlignment");
-        expect(lint(H3_I2V, "i2v")).toEqual([]);
+        expect(codes(lint(H3_I2V, "i2v"))).toEqual([]);
     });
 
     it("占位符没替换掉报错", () => {
@@ -127,7 +127,7 @@ describe("H3 基础模式", () => {
 
 describe("H3 全能参考模式", () => {
     it("六段齐全且标签都定义过就没问题", () => {
-        expect(lint(H3_REF, "ref")).toEqual([]);
+        expect(codes(lint(H3_REF, "ref"))).toEqual([]);
     });
 
     it("用了没定义的标签报错", () => {
@@ -146,7 +146,7 @@ describe("Seedance", () => {
     const seed = (text: string) => lint(text, "t2v", "seedance");
 
     it("分节齐全、镜头数自洽就没问题", () => {
-        expect(seed(SEEDANCE)).toEqual([]);
+        expect(codes(seed(SEEDANCE))).toEqual([]);
     });
 
     it("警示里的镜头数与实际不符报错", () => {
@@ -190,5 +190,121 @@ describe("整段校验", () => {
     it("代码块围栏与负面提示词写法都会被抓出来", () => {
         expect(codes(lint("```\n" + H3_T2V + "\n```"))).toContain("fence");
         expect(codes(lint(`${H3_T2V}\nnegative prompt: blurry`))).toContain("negative");
+    });
+});
+
+describe("字段与时间轴（移植自官方校验脚本）", () => {
+    it("字段重复出现报错", () => {
+        expect(codes(lint(`${H3_T2V}\noverall_soundscape: 又写了一遍`))).toContain("duplicateSection");
+    });
+
+    it("字段写了但没内容报错", () => {
+        expect(codes(lint(H3_T2V.replace(/^overall_soundscape:.*$/m, "overall_soundscape:")))).toContain("emptySection");
+    });
+
+    it("字段名只在正文里被提到时不算字段", () => {
+        expect(codes(lint(`${H3_T2V}\n这里顺口提到 overall_soundscape 这个词。`))).toEqual([]);
+    });
+
+    it("镜头编号跳号报错", () => {
+        const text = H3_T2V.replace("[Shot 1]", "[Shot 1]\n[Shot 3] 0.00-5.00 又一段");
+        expect(codes(lint(text))).toContain("shotNumbering");
+    });
+
+    it("第一段不是从 0.00 秒开始报错", () => {
+        expect(codes(lint(H3_T2V.replace("0.00-5.00", "1.00-5.00")))).toContain("timeStart");
+    });
+
+    it("镜头时间不首尾相接报错", () => {
+        const text = H3_T2V.replace("0.00-5.00", "0.00-2.00 第一段\n[Shot 2] 3.00-5.00 第二段");
+        expect(codes(lint(text))).toContain("timeGap");
+    });
+
+    it("结束时间不晚于开始时间报错", () => {
+        expect(codes(lint(H3_T2V.replace("0.00-5.00", "5.00-5.00")))).toContain("timeReverse");
+    });
+
+    it("竖线像是在贴表格", () => {
+        expect(codes(lint(`${H3_T2V}\n| 镜头 | 内容 |`))).toContain("tablePipe");
+    });
+});
+
+describe("配乐与引用闭环", () => {
+    it("配乐只写情绪标签报错", () => {
+        expect(codes(lint(H3_T2V.replace(/^non_diegetic_music:.*$/m, "non_diegetic_music: Tense.")))).toContain("vagueMusic");
+    });
+
+    it("写 N/A 或 无配乐 都算合规", () => {
+        expect(codes(lint(H3_T2V.replace(/^non_diegetic_music:.*$/m, "non_diegetic_music: N/A")))).toEqual([]);
+        expect(codes(lint(H3_T2V.replace(/^non_diegetic_music:.*$/m, "non_diegetic_music: 无配乐。")))).toEqual([]);
+    });
+
+    it("subject_definitions 一个标签都没定义报错", () => {
+        const broken = H3_REF.replace(/^<Subject 1>:.*$/m, "").replace(/^<Picture 1>:.*$/m, "");
+        expect(codes(lint(broken, "ref"))).toContain("noDefinedLabel");
+    });
+
+    it("定义过的标签在 retention_analysis 里必须恰好一条", () => {
+        const broken = H3_REF.replace("Visible Content: <Subject 1> identity", "Visible Content:");
+        expect(codes(lint(broken, "ref"))).toContain("retentionEntry");
+    });
+});
+
+describe("作者模板泄漏", () => {
+    it("认出「承接上一段 / 自行选择机位」这类写作说明", () => {
+        expect(codes(lint(`${H3_T2V}\n承接上一段的机位。`))).toContain("authoringLeak");
+        expect(codes(lint(`${H3_T2V}\nChoose a framing when the information lands.`))).toContain("authoringLeak");
+    });
+
+    it("正常的镜头内容不会被误判", () => {
+        expect(codes(lint(H3_T2V))).toEqual([]);
+    });
+});
+
+describe("密度规范", () => {
+    /** 造一条带中文台词的镜头：台词字数与时长可控。 */
+    const withDialogue = (characters: number, seconds: number) =>
+        `integrated_multimodal_description: [Shot 1] 0.00-${seconds.toFixed(2)} A medium shot of a woman by the window; she whispers: ${"字".repeat(characters)} The camera stays still.
+overall_soundscape: Rain against the glass, a clock ticking somewhere behind her.
+non_diegetic_music: A single sustained cello note, low and slow.`;
+
+    it("对白超过 4.5 字/秒报错，并给出实际字速", () => {
+        const issues = lint(withDialogue(40, 5), "t2v", "h3", 5);
+        expect(codes(issues)).toContain("speechTooFast");
+        expect(issues.find((item) => item.code === "speechTooFast")?.message).toContain("8.0 字/秒");
+    });
+
+    it("对白在 4.0–4.5 字/秒之间是合规的", () => {
+        expect(codes(lint(withDialogue(20, 5), "t2v", "h3", 5))).not.toContain("speechTooFast");
+    });
+
+    it("对白太慢只提醒是慢速节奏", () => {
+        expect(codes(lint(withDialogue(6, 5), "t2v", "h3", 5))).toContain("speechSlow");
+    });
+
+    it("对白几乎占满镜头时提醒没有收尾余量", () => {
+        // 5 秒镜头塞 22 字：字速刚好卡在上限内，但建立与收尾时间不够。
+        expect(codes(lint(withDialogue(22, 5), "t2v", "h3", 5))).toContain("speechNoHeadroom");
+    });
+
+    it("引号里的原语言台词也算念白", () => {
+        const text = `integrated_multimodal_description: [Shot 1] 0.00-5.00 A close shot; the sign reads 「今日休息」 and she turns away from the door.
+overall_soundscape: Rain against the glass, a clock ticking somewhere behind her.
+non_diegetic_music: A single sustained cello note, low and slow.`;
+        expect(codes(lint(text, "t2v", "h3", 5))).toContain("speechSlow");
+    });
+
+    it("没有对白时不做密度核算", () => {
+        expect(codes(lint(H3_T2V))).toEqual([]);
+    });
+
+    it("Seedance 一条里塞太多镜头会提醒", () => {
+        const blocks = Array.from({ length: 6 }, (_, index) => `【镜头${index + 1}】中景。`).join("\n");
+        const text = SEEDANCE.replace("【镜头1】中景，平视。林小满推门而入，固定机位。暖光。平静。\n【镜头2】特写，略俯。她抬头看向书架，缓慢上摇。暖光。期待。", blocks).replace("只有2个镜头", "只有6个镜头");
+        expect(codes(lint(text, "t2v", "seedance", 15))).toContain("tooManyShots");
+    });
+
+    it("Seedance 设定超过 15 秒会提醒是包络超限", () => {
+        expect(codes(lint(SEEDANCE, "t2v", "seedance", 20))).toContain("overEnvelope");
     });
 });

@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
 import { WorkspacePage } from "@/components/layout/workspace-page";
-import { comfyNativeClient, type ComfyEnvironmentDetection, type ComfyEnvironmentLogEntry, type ComfyEnvironmentProfile, type ComfyEnvironmentStatus, type ComfyWorkflowDefinition } from "@/integrations/comfyui-local";
+import { comfyNativeClient, inferComfyStartupStage, summarizeComfyDevice, summarizeComfyModelCounts, type ComfyDeviceSummary, type ComfyEnvironmentDetection, type ComfyEnvironmentLogEntry, type ComfyEnvironmentProfile, type ComfyEnvironmentStatus, type ComfyModelCount, type ComfyStartupStage, type ComfyWorkflowDefinition } from "@/integrations/comfyui-local";
 import { isCloudWorkflow } from "@/integrations/comfyui-local/demo-workflows";
 import { upgradeLegacyDemoWorkflows } from "@/integrations/comfyui-local/demo-sync";
 import { useComfyWorkflowImport } from "@/integrations/comfyui-local/use-workflow-import";
@@ -26,6 +26,16 @@ const CLOUD_ENVIRONMENT_ID = "cloud-remote";
 
 /** 依赖名可能很多，只列前几个再补总数，避免撑爆工作流列表。 */
 const MAX_LISTED_DEPENDENCIES = 5;
+
+/** 每个启动阶段允许到达的最大进度：阶段没变就不该让进度条自己先跑满。 */
+const STARTUP_STAGE_CEILING: Record<ComfyStartupStage, number> = {
+    checking: 18,
+    process: 42,
+    loading: 88,
+    endpoint: 96,
+    ready: 100,
+    failed: 100,
+};
 
 function summarizeDependencies(names: string[]) {
     return names.length > MAX_LISTED_DEPENDENCIES
@@ -567,15 +577,17 @@ type RuntimeProps = {
 function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRefresh, refreshing, onOpenConsole, onChangeEnvironment, onConnectCloud, onForget, workflows, onImport, onImportPack, onInstallDemo, importingPack, onAddToCanvas, onDeleteWorkflow }: RuntimeProps) {
     const { t } = useTranslation();
 
-    // 启动进度：ComfyUI 不提供进度信息，这里按时间平滑推进到 92%，
-    // 进入运行态时补满到 100% 并用成功样式短暂展示后隐藏。
+    // 启动进度：ComfyUI 不提供进度信息，这里先按日志推断阶段，再在阶段内按时间平滑推进，
+    // 避免自定义节点加载很慢时进度条先冲到 90% 让人误以为卡死。
     const [startProgress, setStartProgress] = useState(0);
+    const startupStage = useMemo(() => inferComfyStartupStage(logs, status), [logs, status]);
+    const stageCeiling = STARTUP_STAGE_CEILING[startupStage];
 
     useEffect(() => {
         if (status.phase === "starting") {
             setStartProgress((value) => (value > 0 ? value : 6));
             const timer = setInterval(() => {
-                setStartProgress((value) => (value >= 92 ? 92 : Math.min(92, value + Math.max(1, Math.round((95 - value) * 0.07)))));
+                setStartProgress((value) => (value >= stageCeiling ? stageCeiling : Math.min(stageCeiling, value + Math.max(1, Math.round((stageCeiling + 3 - value) * 0.07)))));
             }, 350);
             return () => clearInterval(timer);
         }
@@ -586,7 +598,32 @@ function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRe
         }
         setStartProgress(0);
         return undefined;
-    }, [status.phase]);
+    }, [status.phase, stageCeiling]);
+
+    // 本机显卡与模型清单只有连上 ComfyUI 才问得出来，未运行时保持空。
+    const [device, setDevice] = useState<ComfyDeviceSummary | null>(null);
+    const [modelCounts, setModelCounts] = useState<ComfyModelCount[]>([]);
+
+    useEffect(() => {
+        if (status.phase !== "running" || refreshing) return undefined;
+        let cancelled = false;
+        void Promise.all([comfyNativeClient.systemStats(), comfyNativeClient.objectInfo()])
+            .then(([stats, objectInfo]) => {
+                if (cancelled) return;
+                setDevice(summarizeComfyDevice(stats));
+                setModelCounts(summarizeComfyModelCounts(objectInfo));
+            })
+            .catch(() => undefined);
+        return () => {
+            cancelled = true;
+        };
+    }, [status.phase, status.port, refreshing]);
+
+    const modelSummary = modelCounts
+        .filter((item) => item.count > 0)
+        .map((item) => `${t(`comfyuiLocal.models.${item.key}`)} ${item.count}`)
+        .join(" · ");
+
     const active = status.phase === "running" || status.phase === "starting";
     return (
         <section className="py-7 sm:py-9">
@@ -620,7 +657,7 @@ function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRe
                     </Button>
                     {active ? (
                         <Button danger icon={<CircleStop className="size-3.5" />} onClick={onStop} loading={busy}>
-                            {t("comfyuiLocal.runtime.stop")}
+                            {status.remoteBaseUrl ? t("comfyuiLocal.runtime.disconnect") : t("comfyuiLocal.runtime.stop")}
                         </Button>
                     ) : (
                         <Button type="primary" icon={<Play className="size-3.5" />} onClick={onStart} loading={busy}>
@@ -631,12 +668,13 @@ function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRe
             </div>
 
             {startProgress > 0 ? (
-                <div className="border-b border-black/[0.08] py-4 dark:border-white/[0.08]">
+                <div className="space-y-2 border-b border-black/[0.08] py-4 dark:border-white/[0.08]">
                     <Progress
-                        percent={Math.round(startProgress)}
+                        percent={Math.min(Math.round(startProgress), stageCeiling)}
                         status={status.phase === "running" ? "success" : "active"}
                         strokeColor="#756bff"
                     />
+                    {status.phase === "starting" ? <p className="text-[12px] text-stone-500 dark:text-zinc-500">{t(`comfyuiLocal.stage.${startupStage}`)}</p> : null}
                 </div>
             ) : null}
             <dl className="grid border-b border-black/[0.08] dark:border-white/[0.08] sm:grid-cols-3">
@@ -644,6 +682,13 @@ function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRe
                 <RuntimeDetail label={t("comfyuiLocal.runtime.port")} value={status.port ? `127.0.0.1:${status.port}` : "—"} />
                 <RuntimeDetail label="PID" value={status.pid ? String(status.pid) : "—"} />
             </dl>
+
+            {status.phase === "running" ? (
+                <dl className="grid border-b border-black/[0.08] dark:border-white/[0.08] sm:grid-cols-2">
+                    <RuntimeDetail label={t("comfyuiLocal.runtime.device")} value={device ? `${device.name} · ${t("comfyuiLocal.runtime.vram", { free: device.vramFreeGb, total: device.vramTotalGb })}` : "—"} />
+                    <RuntimeDetail label={t("comfyuiLocal.runtime.models")} value={modelSummary || t("comfyuiLocal.models.empty")} />
+                </dl>
+            ) : null}
 
             <details className="group border-b border-black/[0.07] dark:border-white/[0.07]">
                 <summary className="flex h-14 cursor-pointer list-none items-center justify-between text-[13px] font-medium">

@@ -3,7 +3,7 @@ import { App, Button, Checkbox, Image, Input, InputNumber, Mentions, Modal, Prog
 import { CircleAlert, Clapperboard, Eye, LoaderCircle, Music2, Plus, Sparkles, UploadCloud, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { lintDirectorOutput, splitDirectorShots } from "@/lib/director/prompt-lint";
+import { lintDirectorOutput } from "@/lib/director/prompt-lint";
 import { DIRECTOR_MODES, DIRECTOR_TARGETS, type DirectorMode, type DirectorTarget } from "@/lib/director/specs";
 import { generateDirectorPrompt, type DirectorReference } from "@/services/api/ai-director";
 import { selectableModelsByCapability, useConfigStore } from "@/stores/use-config-store";
@@ -43,8 +43,8 @@ export function CanvasDirectorDialog({
     /** 直接从面板触发上传；上传完成后画布新增节点会作为新材料出现在候选里。 */
     onUploadMaterial?: () => void;
     /** 把生成结果落到画布：每个镜头一个文本节点，可选同时创建视频生成节点并连线。 */
-    onApply: (shots: string[], withGeneration: boolean) => void;
-    onShoot: (shots: string[]) => Promise<void>;
+    onApply: (prompt: string, withGeneration: boolean) => void;
+    onShoot: (prompt: string) => Promise<void>;
 }) {
     const { t } = useTranslation();
     const { message, modal } = App.useApp();
@@ -419,15 +419,14 @@ export function CanvasDirectorDialog({
                             <Button onClick={() => void navigator.clipboard.writeText(result).then(() => message.success(t("common.copied")))}>{t("common.copy")}</Button>
                             <Button
                                 onClick={() => {
-                                    const shots = splitDirectorShots(result);
                                     modal.confirm({
                                         title: t("canvas.director.shootTitle"),
-                                        content: t("canvas.director.shootDescription", { count: shots.length }),
+                                        content: t("canvas.director.shootDescription"),
                                         okText: t("canvas.director.shootConfirm"),
                                         cancelText: t("common.cancel"),
                                         onOk: async () => {
                                             onClose();
-                                            await onShoot(shots);
+                                            await onShoot(result);
                                         },
                                     });
                                 }}
@@ -437,7 +436,7 @@ export function CanvasDirectorDialog({
                             <Button
                                 type="primary"
                                 onClick={() => {
-                                    onApply(splitDirectorShots(result), withGeneration);
+                                    onApply(result, withGeneration);
                                     onClose();
                                 }}
                             >

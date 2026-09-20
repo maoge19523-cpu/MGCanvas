@@ -7,6 +7,8 @@ description: Implemented changes that still need manual verification
 
 The current release needs manual verification in these areas:
 
+- ComfyUI local workflow dependency diagnosis: the library header must read `N / M workflows available`, and every unavailable workflow must name both the missing node `class_type`s and the missing model files. Importing an API workflow must list missing models beside missing `class_type`s. A workflow whose checkpoint, LoRA, or VAE is absent from the running ComfyUI must count as unavailable in the library and on its canvas node, while an ordinary enum such as a sampler or scheduler must never be reported as a missing model.
+
 - Beta build channel: `npm run desktop:build:beta` must produce a `猫歌映画 测试版` NSIS installer that uses the separate `com.mgcanvas.app.beta` identifier and the separate `mgcanvas-beta.exe` binary name, so installing or upgrading the beta never closes a running release build. It must install beside the release build and start with an empty workspace so release projects and settings are untouched. The beta main window title must read `猫歌映画 测试版`; the release `npm run desktop:build` must keep its identifier, its `mgcanvas.exe` name, and its `猫歌映画` title unchanged.
 
 - Video composition node (desktop only): compose multiple connected video segments with optional background music via a user-provided local FFmpeg (auto-detect plus a manual path in Settings); verify per-segment in/out points, volumes, fades, resolution, mixed audio, and the generated video result node.

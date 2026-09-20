@@ -20,7 +20,7 @@ const definition: ComfyWorkflowDefinition = {
         { id: "12:result", nodeId: "12", label: "配音", resourceType: "audio", canvasPort: true, preview: true, resultField: "audio" },
         { id: "13:result", nodeId: "13", label: "描述", resourceType: "text", canvasPort: false, preview: true, resultField: "text" },
     ],
-    dependencySnapshot: { nodeCount: 4, classTypes: [], customNodeCount: 0, missingClassTypes: [], runnable: true, verifiedAt: "2026-08-30T00:00:00.000Z" },
+    dependencySnapshot: { nodeCount: 4, classTypes: [], customNodeCount: 0, missingClassTypes: [], missingFiles: [], runnable: true, verifiedAt: "2026-08-30T00:00:00.000Z" },
     createdAt: "2026-08-30T00:00:00.000Z",
     updatedAt: "2026-08-30T00:00:00.000Z",
 };

@@ -115,6 +115,8 @@ export type ComfyWorkflowInspection = {
   inputs: ComfyInspectedInput[];
   outputs: ComfyInspectedOutput[];
   missingClassTypes: string[];
+  /** 工作流引用、但当前 ComfyUI 里找不到的模型 / 权重文件名。 */
+  missingFiles: string[];
   runnable: boolean;
 };
 
@@ -217,6 +219,8 @@ export type ComfyDependencySnapshot = {
   classTypes: string[];
   customNodeCount: number;
   missingClassTypes: string[];
+  /** 工作流引用、但当前 ComfyUI 里找不到的模型 / 权重文件名。 */
+  missingFiles: string[];
   runnable: boolean;
   verifiedAt: string;
 };

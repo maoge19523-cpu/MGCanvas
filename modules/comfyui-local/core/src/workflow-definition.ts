@@ -164,6 +164,7 @@ function dependencySnapshot(
       Boolean(node.pythonModule && !node.pythonModule.startsWith("nodes")),
     ).length,
     missingClassTypes: [...inspection.missingClassTypes],
+    missingFiles: [...inspection.missingFiles],
     runnable: inspection.runnable,
     verifiedAt,
   };

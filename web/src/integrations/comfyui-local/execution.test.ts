@@ -36,7 +36,7 @@ const definition: ComfyWorkflowDefinition = {
     workflowHash: "hash",
     inputs: [],
     outputs: [{ id: "9:result", nodeId: "9", resultField: "images", label: "图片", resourceType: "image", canvasPort: false, preview: true }],
-    dependencySnapshot: { nodeCount: 1, classTypes: ["SaveImage"], customNodeCount: 0, missingClassTypes: [], runnable: true, verifiedAt: "2026-08-30T00:00:00.000Z" },
+    dependencySnapshot: { nodeCount: 1, classTypes: ["SaveImage"], customNodeCount: 0, missingClassTypes: [], missingFiles: [], runnable: true, verifiedAt: "2026-08-30T00:00:00.000Z" },
     createdAt: "2026-08-30T00:00:00.000Z",
     updatedAt: "2026-08-30T00:00:00.000Z",
 };

@@ -57,6 +57,7 @@ const definition: ComfyWorkflowDefinition = {
         classTypes: ["CLIPTextEncode", "SaveImage"],
         customNodeCount: 0,
         missingClassTypes: [],
+        missingFiles: [],
         runnable: true,
         verifiedAt: "2026-08-27T00:00:00.000Z",
     },

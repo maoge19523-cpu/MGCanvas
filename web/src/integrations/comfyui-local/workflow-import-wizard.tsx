@@ -217,20 +217,27 @@ function DependencyStep({ inspection }: { inspection: ComfyWorkflowInspection })
                 <Metric label={t("comfyuiLocal.import.nodeCount")} value={inspection.nodes.length} />
                 <Metric label={t("comfyuiLocal.import.classCount")} value={new Set(inspection.nodes.map((node) => node.classType)).size} />
                 <Metric label={t("comfyuiLocal.import.customCount")} value={customNodes} />
-                <Metric label={t("comfyuiLocal.import.missingCount")} value={inspection.missingClassTypes.length} />
+                <Metric label={t("comfyuiLocal.import.missingCount")} value={inspection.missingClassTypes.length + inspection.missingFiles.length} />
             </dl>
-            {inspection.missingClassTypes.length ? (
-                <div className="mt-6">
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("comfyuiLocal.import.missingClasses")}</div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                        {inspection.missingClassTypes.map((name) => (
-                            <span key={name} className="border border-amber-500/20 bg-amber-500/[0.05] px-2 py-1 text-[10px] text-amber-600 dark:text-amber-300">
-                                {name}
-                            </span>
-                        ))}
-                    </div>
-                </div>
-            ) : null}
+            <MissingList title={t("comfyuiLocal.import.missingClasses")} names={inspection.missingClassTypes} />
+            <MissingList title={t("comfyuiLocal.import.missingFiles")} names={inspection.missingFiles} />
+        </div>
+    );
+}
+
+/** 缺节点和缺模型都要列清楚，否则用户拿不到可执行的补装线索。 */
+function MissingList({ title, names }: { title: string; names: string[] }) {
+    if (!names.length) return null;
+    return (
+        <div className="mt-6">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{title}</div>
+            <div className="mt-3 flex flex-wrap gap-2">
+                {names.map((name) => (
+                    <span key={name} className="border border-amber-500/20 bg-amber-500/[0.05] px-2 py-1 text-[10px] text-amber-600 dark:text-amber-300">
+                        {name}
+                    </span>
+                ))}
+            </div>
         </div>
     );
 }

@@ -24,6 +24,15 @@ const EMPTY_STATUS: ComfyEnvironmentStatus = { phase: "idle" };
 /** 云端环境没有本地 profile，用固定标识绑定工作流。 */
 const CLOUD_ENVIRONMENT_ID = "cloud-remote";
 
+/** 依赖名可能很多，只列前几个再补总数，避免撑爆工作流列表。 */
+const MAX_LISTED_DEPENDENCIES = 5;
+
+function summarizeDependencies(names: string[]) {
+    return names.length > MAX_LISTED_DEPENDENCIES
+        ? `${names.slice(0, MAX_LISTED_DEPENDENCIES).join("、")} +${names.length - MAX_LISTED_DEPENDENCIES}`
+        : names.join("、");
+}
+
 export default function ComfyUiLocalPage() {
     const { message, modal } = App.useApp();
     const { t } = useTranslation();
@@ -663,6 +672,14 @@ function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRe
                 <div className="flex flex-wrap items-end justify-between gap-4">
                     <div>
                         <h3 className="text-[20px] font-semibold tracking-[-0.03em]">{t("comfyuiLocal.library.title")}</h3>
+                        {workflows.length ? (
+                            <p className="mt-1.5 text-[12px] text-stone-400 dark:text-zinc-600">
+                                {t("comfyuiLocal.library.availability", {
+                                    runnable: workflows.filter((workflow) => workflow.dependencySnapshot.runnable).length,
+                                    total: workflows.length,
+                                })}
+                            </p>
+                        ) : null}
                     </div>
 
                     <div className="flex flex-wrap gap-2">
@@ -691,6 +708,17 @@ function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRe
                                         <p className="mt-1 truncate text-[11px] text-stone-400 dark:text-zinc-600">
                                             {workflow.inputs.length} inputs · {workflow.outputs.length} outputs · {workflow.workflowHash.slice(0, 8)}
                                         </p>
+                                        {/* 不可用时必须说清缺什么，否则用户只看到一个黄点却无从下手。 */}
+                                        {workflow.dependencySnapshot.runnable ? null : (
+                                            <p className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-amber-600 dark:text-amber-500">
+                                                {workflow.dependencySnapshot.missingClassTypes?.length ? (
+                                                    <span>{t("comfyuiLocal.library.missingNodes", { names: summarizeDependencies(workflow.dependencySnapshot.missingClassTypes) })}</span>
+                                                ) : null}
+                                                {workflow.dependencySnapshot.missingFiles?.length ? (
+                                                    <span>{t("comfyuiLocal.library.missingFiles", { names: summarizeDependencies(workflow.dependencySnapshot.missingFiles) })}</span>
+                                                ) : null}
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="flex justify-end gap-1">

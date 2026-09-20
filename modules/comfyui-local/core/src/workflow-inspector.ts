@@ -97,14 +97,68 @@ export function inspectComfyWorkflow(
       nodes.filter((node) => node.missing).map((node) => node.classType),
     ),
   ].sort();
+  // 模型缺失和缺节点一样会让工作流跑不起来，必须一起报出来，否则用户只看到「不可用」却不知道缺什么。
+  const missingFiles = [
+    ...new Set(
+      nodes
+        .flatMap((node) => node.inputs)
+        .filter(isMissingModelFile)
+        .map((input) => String(input.currentValue)),
+    ),
+  ].sort();
   return {
     workflow,
     nodes,
     inputs: nodes.flatMap((node) => node.inputs).sort((left, right) => promptRank(left) - promptRank(right)),
     outputs: nodes.flatMap((node) => node.outputs),
     missingClassTypes,
-    runnable: missingClassTypes.length === 0,
+    missingFiles,
+    runnable: missingClassTypes.length === 0 && missingFiles.length === 0,
   };
+}
+
+/** 模型 / 权重常见后缀：用来把「可选文件清单」和普通枚举区分开。 */
+const MODEL_FILE_EXTENSIONS = [
+  ".safetensors",
+  ".sft",
+  ".ckpt",
+  ".pt",
+  ".pth",
+  ".bin",
+  ".gguf",
+  ".onnx",
+  ".pkl",
+  ".yaml",
+];
+
+/** 模型字段名：清单为空（本机一个模型都没装）时只能靠字段名判断。 */
+const MODEL_FILE_FIELD = /(^|_)(name|file|model)([0-9]*)$/i;
+
+/** 字段名是模型槽位：ckpt_name / lora_name / control_net_name / clip_name1 / ipadapter_file 等。 */
+function looksLikeModelField(field: string) {
+  return MODEL_FILE_FIELD.test(field) || /_(name|file)$/i.test(field);
+}
+
+/**
+ * 判断某个输入是不是「引用了本机不存在的模型文件」。
+ *
+ * 只认两种情况，避免把普通枚举（采样器、调度器）误判成缺模型：
+ * 1. 可选清单里出现了模型文件名，而当前取值不在清单里；
+ * 2. 清单是空的（本机没装任何模型），且字段名本身是模型槽位。
+ */
+function isMissingModelFile(input: ComfyInspectedInput) {
+  const value = input.currentValue;
+  if (typeof value !== "string" || !value.trim()) return false;
+  const declared = input.enumValues;
+  if (!Array.isArray(declared)) return false;
+  if (declared.includes(value)) return false;
+  if (declared.some(isModelFileName)) return true;
+  return declared.length === 0 && looksLikeModelField(input.field);
+}
+
+function isModelFileName(name: string) {
+  const value = name.toLowerCase();
+  return MODEL_FILE_EXTENSIONS.some((extension) => value.endsWith(extension));
 }
 
 export function isComfyApiLink(

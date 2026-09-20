@@ -484,6 +484,7 @@ export default {
             briefMentionEmpty: "先添加参考素材，就能用 @ 引用",
             model: "推理模型",
             modelPlaceholder: "请选择模型",
+            modelEmpty: "当前渠道没有可用的文本模型：到顶部「配置」里给模型勾上「文本」能力即可。",
             target: "目标模型",
             mode: "生成模式",
             duration: "总时长（秒）",

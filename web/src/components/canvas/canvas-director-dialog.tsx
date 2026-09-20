@@ -325,7 +325,7 @@ export function CanvasDirectorDialog({
                 <section className="grid gap-3 sm:grid-cols-2">
                     <label className="space-y-1.5">
                         <span className="block font-medium">{t("canvas.director.model")}</span>
-                        <Select className="w-full" value={model || undefined} onChange={setModel} options={modelOptions.map((value) => ({ label: value, value }))} placeholder={t("canvas.director.modelPlaceholder")} />
+                        <Select className="w-full" value={model || undefined} onChange={setModel} options={modelOptions.map((value) => ({ label: value, value }))} placeholder={t("canvas.director.modelPlaceholder")} notFoundContent={t("canvas.director.modelEmpty")} />
                     </label>
                     <label className="space-y-1.5">
                         <span className="block font-medium">{t("canvas.director.target")}</span>

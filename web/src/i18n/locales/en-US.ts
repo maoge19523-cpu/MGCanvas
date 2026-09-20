@@ -490,6 +490,7 @@ export default {
             briefMentionEmpty: "Add an asset above to reference it with @",
             model: "Reasoning model",
             modelPlaceholder: "Select a model",
+            modelEmpty: "No text model on the current channel. Give a model the Text capability under Configure at the top right.",
             target: "Target model",
             mode: "Generation mode",
             duration: "Duration (s)",

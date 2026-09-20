@@ -8,6 +8,7 @@ import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { getCanvasNodePorts, type ResolvedCanvasNodePort } from "@/lib/canvas/canvas-node-ports";
 import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
 import { clampCanvasNodeResize } from "@/lib/canvas/canvas-node-size";
+import { useThumbnailSource } from "@/hooks/use-thumbnail-source";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textarea";
 import { CanvasNodeAnchoredPopup } from "./canvas-node-popup";
@@ -990,13 +991,17 @@ function ImageContent({
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const { t } = useTranslation();
     const isBatchChild = Boolean(node.metadata?.batchRootId);
+    // 大图渲染成缩略图：节点在画布里被缩放，这里量的是屏幕上真实的像素宽度，放大超过上限会自动回退原图。
+    const frameRef = useRef<HTMLDivElement>(null);
+    const content = node.metadata!.content!;
+    const thumbnail = useThumbnailSource({ source: content, sourceWidth: node.metadata?.naturalWidth || node.width, element: frameRef });
 
     return (
         <BatchFrame batchCount={isBatchRoot ? batchCount : 0} batchExpanded={batchExpanded} batchOpening={batchOpening} batchRecovering={batchRecovering} onToggleBatch={onToggleBatch}>
-            <div className="h-full w-full overflow-hidden rounded-3xl">
+            <div ref={frameRef} className="h-full w-full overflow-hidden rounded-3xl">
                 <img
-                    key={node.metadata!.content!}
-                    src={node.metadata!.content!}
+                    key={content}
+                    src={thumbnail || content}
                     alt={node.title}
                     draggable={false}
                     onDragStart={(event) => event.preventDefault()}

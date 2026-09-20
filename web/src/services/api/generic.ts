@@ -691,7 +691,8 @@ async function requestGeneric(config: GenericRequestConfig, path: string, init: 
     if (authenticated && !apiKey) throw new Error("请先在设置中填写 API_KEY。");
     const headers = new Headers(init.headers);
     if (authenticated) headers.set("Authorization", `Bearer ${apiKey}`);
-    const response = await fetchImpl(`${resolveGenericApiBase(config.baseUrl)}${path}`, { ...init, headers });
+    const apiBase = resolveGenericApiBase(config.baseUrl);
+    const response = await fetchImpl(`${apiBase}${versionedPath(apiBase, path)}`, { ...init, headers });
     const text = await response.text();
     if (!response.ok) {
         const parsed = parseJson(text);
@@ -830,6 +831,17 @@ function registryDiff(group: "suno" | "midjourney", expectedValues: string[], ra
 
 function normalizeRootBaseUrl(value: string) {
     return value.trim().replace(/\/+$/, "").replace(/\/v1$/i, "");
+}
+
+/**
+ * base 自己已经带版本段时，契约里的 `/v1` 前缀要去掉。
+ *
+ * 智谱的 base 是 `https://open.bigmodel.cn/api/paas/v4`、方舟是 `.../api/v3`，
+ * 无条件拼 `/v1/chat/completions` 会拼成 `/v4/v1/chat/completions` 这种不存在的路径。
+ */
+function versionedPath(baseUrl: string, path: string) {
+    if (!/\/v\d+$/i.test(baseUrl)) return path;
+    return path.replace(/^\/v\d+(?=\/)/i, "");
 }
 
 function isMissing(value: unknown) {

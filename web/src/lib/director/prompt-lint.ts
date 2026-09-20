@@ -35,6 +35,8 @@ const SHORT_SHOT_CHARS = 120;
 const DURATION_TOLERANCE = 0.05;
 /** 配乐要么写 N/A，要么具体到能被听见；少于这个词数就只算情绪标签。 */
 const CONCRETE_MUSIC_MIN_WORDS = 4;
+/** 中文配乐没有空格，按汉字数另判：够一句描述就算具体。 */
+const CONCRETE_MUSIC_MIN_HAN = 8;
 
 /** 官方密度规范：普通对白 4.0–4.5 字/秒（默认 4.25），慢速画外音 2.5–3.0（默认 3.0）。 */
 const SPEECH_RATE_MAX = 4.5;
@@ -321,7 +323,9 @@ function lintMusic(text: string): DirectorLintIssue[] {
     if (!matched) return [];
     const value = matched[1].trim();
     if (!value || NO_MUSIC.test(value)) return [];
-    if (value.split(/\s+/).length < CONCRETE_MUSIC_MIN_WORDS) {
+    // 中文没有空格，整句会被 split 成一个词，所以汉字按字数另算，否则中文配乐永远判笼统。
+    const words = value.split(/\s+/).filter(Boolean).length;
+    if (words < CONCRETE_MUSIC_MIN_WORDS && countHan(value) < CONCRETE_MUSIC_MIN_HAN) {
         return [{ shot: 0, code: "vagueMusic", severity: "error", message: "non_diegetic_music 只写了情绪标签，要写清配器、质感、进出点，或者写 N/A。" }];
     }
     return [];

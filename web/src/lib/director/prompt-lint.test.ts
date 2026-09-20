@@ -245,6 +245,17 @@ describe("字段与时间轴（移植自官方校验脚本）", () => {
         expect(codes(lint(`${H3_T2V}\n这里顺口提到 overall_soundscape 这个词。`))).toEqual([]);
     });
 
+    // 回归：中文配乐没有空格，不能按空格数词判成「只写了情绪标签」。
+    it("中文配乐写清了配器与质感就不算笼统", () => {
+        const text = H3_T2V.replace(/^non_diegetic_music:.*$/m, "non_diegetic_music: 轻快活泼的旋律，带有欢快的节奏感");
+        expect(codes(lint(text))).not.toContain("vagueMusic");
+    });
+
+    it("中文只写情绪标签仍算笼统", () => {
+        const text = H3_T2V.replace(/^non_diegetic_music:.*$/m, "non_diegetic_music: 欢快的音乐");
+        expect(codes(lint(text))).toContain("vagueMusic");
+    });
+
     // 回归：模型常把三个字段连着写在同一行，内容是对的，不能报「缺少字段」。
     it("三个字段连着写在同一行不算缺字段", () => {
         const oneLine = `integrated_multimodal_description: [Shot 1] 0.00-5.00 Wide shot, rule of thirds. A young girl in a flowing white summer dress walks barefoot slowly along a sandy beach at dusk. Slow tracking shot with medium amplitude. overall_soundscape: Gentle ocean waves breaking on the shore, distant seagulls. non_diegetic_music: Calm and soothing acoustic guitar melody.`;

@@ -316,6 +316,7 @@ function MGCanvasProjectPage() {
     const viewportRef = useRef(viewport);
     const focusAnimRef = useRef<number | null>(null);
     const generateNodeRef = useRef<((nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => Promise<void>) | null>(null);
+    const compositeNodeRef = useRef<((node: CanvasNodeData) => Promise<void>) | null>(null);
     const connectingParamsRef = useRef(connectingParams);
     const selectionBoxRef = useRef(selectionBox);
     const pendingConnectionCreateRef = useRef(pendingConnectionCreate);
@@ -844,11 +845,12 @@ function MGCanvasProjectPage() {
 
     // 生成的每个镜头落成一个文本节点；勾选时再各配一个视频生成节点并连线。
     // 一个生成节点只能接一个提示词，所以是「一镜头一节点」，不要串到同一个生成节点上。
-    const applyDirectorShots = useCallback(
+    const buildDirectorNodes = useCallback(
         (shots: string[], withGeneration: boolean) => {
             const center = getCanvasCenter();
             const created: CanvasNodeData[] = [];
             const links: NonNullable<ReturnType<typeof normalizeConnectionHandles>>[] = [];
+            const configs: { id: string; prompt: string }[] = [];
 
             shots.forEach((shot, index) => {
                 const x = center.x + index * 460;
@@ -858,6 +860,7 @@ function MGCanvasProjectPage() {
 
                 const configNode = createCanvasNode(CanvasNodeType.Config, { x, y: center.y + 320 }, { mode: "video", count: 1 });
                 created.push(configNode);
+                configs.push({ id: configNode.id, prompt: shot });
                 const fromPort = getHandlePorts(textNode, "source")[0];
                 const toPort = getHandlePorts(configNode, "target")[0];
                 if (!fromPort || !toPort) return;
@@ -874,9 +877,75 @@ function MGCanvasProjectPage() {
             if (links.length) setConnections((prev) => [...prev, ...links.map((link) => ({ id: nanoid(), ...link }))]);
             setSelectedNodeIds(new Set(created.map((node) => node.id)));
             setSelectedConnectionId(null);
-            message.success(t("canvas.director.applied", { count: shots.length, links: links.length }));
+            return { configs, center };
         },
-        [createCanvasNode, getCanvasCenter, message, t],
+        [createCanvasNode, getCanvasCenter],
+    );
+
+    const applyDirectorShots = useCallback(
+        (shots: string[], withGeneration: boolean) => {
+            buildDirectorNodes(shots, withGeneration);
+            message.success(t("canvas.director.applied", { count: shots.length }));
+        },
+        [buildDirectorNodes, message, t],
+    );
+
+    /**
+     * 「一键生成整片」：铺好分镜流水线后按顺序逐条生成，再把结果接进一个合成节点拼成整片。
+     *
+     * 生成结果会作为新节点挂在生成节点下游，所以合成节点只能在生成完成后再建、再连线。
+     * 两个运行入口定义在本文件靠后处，通过 ref 调用，避免声明顺序问题。
+     */
+    const applyDirectorShoot = useCallback(
+        async (shots: string[]) => {
+            const { configs, center } = buildDirectorNodes(shots, true);
+            if (!configs.length) return;
+
+            // 串行执行：等上一条跑完再开下一条，避免并发触发限流。
+            for (const config of configs) {
+                await generateNodeRef.current?.(config.id, "video", config.prompt);
+            }
+            // 生成过程是异步落画的，等一帧让节点与连线沉淀进 ref 再收集结果。
+            await new Promise((resolve) => setTimeout(resolve, 800));
+
+            const resultIds: string[] = [];
+            for (const config of configs) {
+                for (const link of connectionsRef.current) {
+                    if (link.fromNodeId === config.id && !resultIds.includes(link.toNodeId)) resultIds.push(link.toNodeId);
+                }
+            }
+            if (!resultIds.length) {
+                message.warning(t("canvas.director.shootNoResult"));
+                return;
+            }
+
+            const composite = createCanvasNode(CanvasNodeType.Composite, { x: center.x + ((shots.length - 1) * 460) / 2, y: center.y + 760 }, {});
+            const links = resultIds.flatMap((resultId) => {
+                const source = nodesRef.current.find((node) => node.id === resultId);
+                if (!source) return [];
+                const fromPort = getHandlePorts(source, "source")[0];
+                const toPort = getHandlePorts(composite, "target")[0];
+                if (!fromPort || !toPort) return [];
+                const normalized = normalizeConnectionHandles(
+                    canvasPortHandle(source.id, "source", fromPort),
+                    canvasPortHandle(composite.id, "target", toPort),
+                    [...nodesRef.current, composite],
+                    connectionsRef.current,
+                );
+                return normalized ? [normalized] : [];
+            });
+
+            setNodes((prev) => [...prev, composite]);
+            if (links.length) setConnections((prev) => [...prev, ...links.map((link) => ({ id: nanoid(), ...link }))]);
+            setSelectedNodeIds(new Set([composite.id]));
+            setSelectedConnectionId(null);
+            message.success(t("canvas.director.shootReady", { count: links.length }));
+
+            // 同上，等连线提交后合成节点才读得到输入。
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            await compositeNodeRef.current?.(composite);
+        },
+        [buildDirectorNodes, createCanvasNode, message, t],
     );
 
     const createReferenceMaterialForNode = useCallback(
@@ -3627,7 +3696,8 @@ function MGCanvasProjectPage() {
     );
     useEffect(() => {
         generateNodeRef.current = handleGenerateNode;
-    }, [handleGenerateNode]);
+        compositeNodeRef.current = handleRunComposite;
+    }, [handleGenerateNode, handleRunComposite]);
 
     const handleRetryNode = useCallback(
         async (node: CanvasNodeData) => {
@@ -4308,6 +4378,7 @@ function MGCanvasProjectPage() {
                     audioCandidates={directorAudioCandidates}
                     onUploadMaterial={() => createUploadMaterialNode()}
                     onApply={applyDirectorShots}
+                    onShoot={applyDirectorShoot}
                 />
 
                 <CanvasNodeHoverToolbar

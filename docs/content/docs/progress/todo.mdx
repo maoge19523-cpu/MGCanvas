@@ -11,4 +11,4 @@ description: Planned follow-up work
 - Complete the remaining ComfyUI Local Mode phases described in the [product requirements](../../../../product/comfyui-local-mode-prd.md): isolated environment/process management, the workflow import wizard, macro-node execution, and Windows/macOS acceptance.
 - Extend video composition beyond the current MVP (sequential concatenation, per-segment trimming, single background music track, fades): timeline UI, transitions, subtitles and multi-track audio.
 - Extend channel-model support to audio and text nodes, add image-to-video support, and keep adding built-in call scripts for the providers users actually use.
-- AI 导演后续阶段：「一键生成整片」（自动建节点 + 串行生成 + 合成）。密度规范里可机械核对的那些（对白字速、建立/收尾余量、单条镜头数上限）已写进生成用的系统提示词并接入规范自检；剩余的「按 10 秒 2–3 镜 / 12 秒 3–4 镜 / 15 秒 3–5 镜 决定镜头数与切分」属于整片打包规则，等做「一键生成整片」时一并处理。
+- AI 导演后续阶段：把密度规范里属于「整片打包」的规则接进生成流程，即按 10 秒 2–3 镜 / 12 秒 3–4 镜 / 15 秒 3–5 镜 倒推镜头数与切分，而不是让用户自己决定分几条。对白字速、建立/收尾余量、单条镜头数上限这些可机械核对的规则已写进生成用的系统提示词并接入规范自检，「一键生成整片」也已实现。

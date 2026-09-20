@@ -34,6 +34,7 @@ export function CanvasDirectorDialog({
     audioCandidates,
     onUploadMaterial,
     onApply,
+    onShoot,
 }: {
     open: boolean;
     onClose: () => void;
@@ -43,9 +44,10 @@ export function CanvasDirectorDialog({
     onUploadMaterial?: () => void;
     /** 把生成结果落到画布：每个镜头一个文本节点，可选同时创建视频生成节点并连线。 */
     onApply: (shots: string[], withGeneration: boolean) => void;
+    onShoot: (shots: string[]) => Promise<void>;
 }) {
     const { t } = useTranslation();
-    const { message } = App.useApp();
+    const { message, modal } = App.useApp();
     const config = useConfigStore((state) => state.config);
     const modelOptions = useMemo(() => selectableModelsByCapability(config, "text"), [config]);
 
@@ -415,6 +417,23 @@ export function CanvasDirectorDialog({
                         </Checkbox>
                         <div className="flex justify-end gap-2">
                             <Button onClick={() => void navigator.clipboard.writeText(result).then(() => message.success(t("common.copied")))}>{t("common.copy")}</Button>
+                            <Button
+                                onClick={() => {
+                                    const shots = splitDirectorShots(result);
+                                    modal.confirm({
+                                        title: t("canvas.director.shootTitle"),
+                                        content: t("canvas.director.shootDescription", { count: shots.length }),
+                                        okText: t("canvas.director.shootConfirm"),
+                                        cancelText: t("common.cancel"),
+                                        onOk: async () => {
+                                            onClose();
+                                            await onShoot(shots);
+                                        },
+                                    });
+                                }}
+                            >
+                                {t("canvas.director.shoot")}
+                            </Button>
                             <Button
                                 type="primary"
                                 onClick={() => {

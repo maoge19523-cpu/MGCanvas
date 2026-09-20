@@ -7,7 +7,7 @@ description: Implemented changes that still need manual verification
 
 The current release needs manual verification in these areas:
 
-- Beta build channel: `npm run desktop:build:beta` must produce a `猫歌映画 测试版` NSIS installer that uses the separate `com.mgcanvas.app.beta` identifier, installs beside the release build, and starts with an empty workspace so release projects and settings are untouched. The beta main window title must read `猫歌映画 测试版`; the release `npm run desktop:build` must keep both its identifier and its `猫歌映画` title unchanged.
+- Beta build channel: `npm run desktop:build:beta` must produce a `猫歌映画 测试版` NSIS installer that uses the separate `com.mgcanvas.app.beta` identifier and the separate `mgcanvas-beta.exe` binary name, so installing or upgrading the beta never closes a running release build. It must install beside the release build and start with an empty workspace so release projects and settings are untouched. The beta main window title must read `猫歌映画 测试版`; the release `npm run desktop:build` must keep its identifier, its `mgcanvas.exe` name, and its `猫歌映画` title unchanged.
 
 - Video composition node (desktop only): compose multiple connected video segments with optional background music via a user-provided local FFmpeg (auto-detect plus a manual path in Settings); verify per-segment in/out points, volumes, fades, resolution, mixed audio, and the generated video result node.
 - ComfyUI 整合包引导：主 README 与模块 README 应展示ComfyUI 纯净整合包链接及「无模型、包含启动器」说明；使用整合包导入 API Format JSON、暴露输入输出并添加到画布的流程待实际环境验收。

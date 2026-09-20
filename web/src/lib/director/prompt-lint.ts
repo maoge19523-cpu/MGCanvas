@@ -135,19 +135,55 @@ function lintSections(text: string, sections: readonly string[]): DirectorLintIs
     return issues;
 }
 
-/** 镜头编号与时间轴：编号从 1 连续，时间从 0.00 起、首尾相接。 */
-function lintTimeline(text: string, duration?: number): DirectorLintIssue[] {
+/**
+ * 这一条镜头在整段输出里的位置。
+ *
+ * 「AI 导演」的产出是「一条镜头一条独立提示词」，所以每条里的 `[Shot N]` 是它在整片里的序号、
+ * 时间是它在整片里的全局时间段。按「每条都从 0.00 起、都写 [Shot 1]」判会条条误报。
+ */
+export type DirectorShotSlot = {
+    /** 第几条，从 1 开始。 */
+    index: number;
+    /** 这一条应当开始的时间：接在上一条结束处，第一条是 0。 */
+    start: number;
+};
+
+function shotTimes(text: string): number[] {
+    return (text.match(TIME_PATTERN) || []).map(Number);
+}
+
+/** 这一条自己覆盖的时长；取不到区间时返回 undefined。 */
+function shotSpan(text: string): number | undefined {
+    const times = shotTimes(text);
+    if (times.length < 2) return undefined;
+    const span = Math.max(...times) - Math.min(...times);
+    return span > 0 ? span : undefined;
+}
+
+/** 这一条覆盖到的结束时间，用来给下一条核对起点。 */
+function shotEnd(text: string): number | undefined {
+    const range = [...text.matchAll(RANGE_PATTERN)][0];
+    if (range) return Number(range[2]);
+    const times = shotTimes(text);
+    return times.length ? Math.max(...times) : undefined;
+}
+
+/** 镜头编号与时间轴：编号要对得上第几条，时间首尾相接并覆盖到总时长。 */
+function lintTimeline(text: string, options: { duration?: number; slot?: DirectorShotSlot }): DirectorLintIssue[] {
+    const { duration, slot } = options;
     const issues: DirectorLintIssue[] = [];
     const push = (code: string, severity: LintSeverity, message: string) => issues.push({ shot: 0, code, severity, message });
 
-    // 对齐指令里会合法地再提一次 [Shot 1]，所以按去重后的编号判断连续性。
+    // 对齐指令里会合法地再提一次镜头编号，所以按去重后的编号判断。
     const numbers = [...new Set([...text.matchAll(/\[Shot\s+(\d+)\]/g)].map((matched) => Number(matched[1])))].sort((left, right) => left - right);
-    if (numbers.length && numbers.some((value, index) => value !== index + 1)) {
+    if (numbers.length && slot && !numbers.includes(slot.index)) {
+        push("shotNumbering", "error", `这是第 ${slot.index} 条镜头，提示词里应写 [Shot ${slot.index}]，实际写的是 ${numbers.map((value) => `[Shot ${value}]`).join("、")}。`);
+    } else if (numbers.length && !slot && numbers.some((value, index) => value !== index + 1)) {
         push("shotNumbering", "error", `镜头编号不是从 1 连续递增：${numbers.join("、")}。`);
     }
 
     const ranges = [...text.matchAll(RANGE_PATTERN)].map((matched) => ({ start: Number(matched[1]), end: Number(matched[2]) }));
-    const times = (text.match(TIME_PATTERN) || []).map(Number);
+    const times = shotTimes(text);
     if (times.length < 2) {
         push("missingTime", "error", "没有给出起止时间，或时间不是两位小数（例如 0.00）。");
         return issues;
@@ -156,8 +192,17 @@ function lintTimeline(text: string, duration?: number): DirectorLintIssue[] {
         push("timeOverflow", "error", `镜头时间到了 ${Math.max(...times).toFixed(2)} 秒，超过了设定的 ${duration} 秒。`);
     }
 
+    const want = slot?.start ?? 0;
     if (ranges.length) {
-        if (ranges[0].start > DURATION_TOLERANCE) push("timeStart", "error", `第一个镜头必须从 0.00 秒开始，现在是 ${ranges[0].start.toFixed(2)} 秒。`);
+        if (Math.abs(ranges[0].start - want) > DURATION_TOLERANCE) {
+            push(
+                "timeStart",
+                "error",
+                slot
+                    ? `这是第 ${slot.index} 条镜头，应从 ${want.toFixed(2)} 秒开始（接在上一条之后），现在是 ${ranges[0].start.toFixed(2)} 秒。`
+                    : `第一个镜头必须从 0.00 秒开始，现在是 ${ranges[0].start.toFixed(2)} 秒。`,
+            );
+        }
         for (let index = 1; index < ranges.length; index += 1) {
             if (Math.abs(ranges[index].start - ranges[index - 1].end) > DURATION_TOLERANCE) {
                 push("timeGap", "error", `第 ${index + 1} 段从 ${ranges[index].start.toFixed(2)} 秒开始，但上一段结束在 ${ranges[index - 1].end.toFixed(2)} 秒，镜头时间必须首尾相接。`);
@@ -168,35 +213,35 @@ function lintTimeline(text: string, duration?: number): DirectorLintIssue[] {
     return issues;
 }
 
-/** 官方密度规范：对白要念得完，且留得出建立与收尾。 */
-function lintDensity(text: string, duration?: number): DirectorLintIssue[] {
+/** 官方密度规范：对白要念得完，且留得出建立与收尾。seconds 是这一条自己的时长。 */
+function lintDensity(text: string, seconds?: number): DirectorLintIssue[] {
     const issues: DirectorLintIssue[] = [];
     const push = (code: string, severity: LintSeverity, message: string) => issues.push({ shot: 0, code, severity, message });
-    if (!duration || duration <= 0) return issues;
+    if (!seconds || seconds <= 0) return issues;
 
     const lines = spokenLines(text);
     if (!lines.length) return issues;
     const characters = lines.reduce((sum, line) => sum + countHan(line), 0);
     if (!characters) return issues;
 
-    const rate = characters / duration;
+    const rate = characters / seconds;
     if (rate > SPEECH_RATE_MAX) {
-        push("speechTooFast", "error", `这段对白共 ${characters} 字、镜头 ${duration} 秒，约 ${rate.toFixed(1)} 字/秒，超过官方上限 ${SPEECH_RATE_MAX} 字/秒，念不完。`);
+        push("speechTooFast", "error", `这段对白共 ${characters} 字、镜头 ${seconds.toFixed(2)} 秒，约 ${rate.toFixed(1)} 字/秒，超过官方上限 ${SPEECH_RATE_MAX} 字/秒，念不完。`);
     } else if (rate <= SPEECH_RATE_SLOW_MAX && characters >= 4) {
         // 慢速只在画外音/内心独白时才成立，普通对白这么慢会显得拖。
         push("speechSlow", "warn", `约 ${rate.toFixed(1)} 字/秒，属于慢速画外音的节奏；如果是普通对白会显得拖沓。`);
     }
 
     const speechTime = characters / SPEECH_RATE_MAX;
-    if (duration - speechTime < MIN_NON_SPEECH_HEADROOM && rate <= SPEECH_RATE_MAX) {
-        push("speechNoHeadroom", "warn", `对白几乎占满 ${duration} 秒，没有留给建立镜头（0.3–0.5 秒）和念白后收尾（0.3–0.8 秒）的余量。`);
+    if (seconds - speechTime < MIN_NON_SPEECH_HEADROOM && rate <= SPEECH_RATE_MAX) {
+        push("speechNoHeadroom", "warn", `对白几乎占满 ${seconds.toFixed(2)} 秒，没有留给建立镜头（0.3–0.5 秒）和念白后收尾（0.3–0.8 秒）的余量。`);
     }
     return issues;
 }
 
-/** 校验单条镜头提示词。 */
-export function lintDirectorShot(shot: string, options: { mode: DirectorMode; target: DirectorTarget; duration?: number }): DirectorLintIssue[] {
-    const { mode, target, duration } = options;
+/** 校验单条镜头提示词。给了 slot 就按「整片里的第几条」判，不给就按单条自足序列判。 */
+export function lintDirectorShot(shot: string, options: { mode: DirectorMode; target: DirectorTarget; duration?: number; slot?: DirectorShotSlot }): DirectorLintIssue[] {
+    const { mode, target, duration, slot } = options;
     const issues: DirectorLintIssue[] = [];
     const push = (code: string, severity: LintSeverity, message: string) => issues.push({ shot: 0, code, severity, message });
     const text = shot.trim();
@@ -215,17 +260,19 @@ export function lintDirectorShot(shot: string, options: { mode: DirectorMode; ta
     }
     if (EN_AUTHORING_LEAK.test(text)) push("authoringLeak", "warn", "出现了「同上一条 / 自行选择机位」这类相对指令或模板语言。");
 
-    issues.push(...(target === "seedance" ? lintSeedance(text, duration) : lintH3(text, mode, duration)));
-    issues.push(...lintDensity(text, duration));
+    issues.push(...(target === "seedance" ? lintSeedance(text, duration) : lintH3(text, mode, { duration, slot })));
+    // 密度按这一条自己的时长算：整片总时长套到单条上会把正常对白判成超速。
+    issues.push(...lintDensity(text, shotSpan(text) ?? duration));
     return issues;
 }
 
-function lintH3(text: string, mode: DirectorMode, duration?: number): DirectorLintIssue[] {
+function lintH3(text: string, mode: DirectorMode, options: { duration?: number; slot?: DirectorShotSlot }): DirectorLintIssue[] {
+    const { duration, slot } = options;
     const issues: DirectorLintIssue[] = [];
     const push = (code: string, severity: LintSeverity, message: string) => issues.push({ shot: 0, code, severity, message });
 
     issues.push(...lintSections(text, mode === "ref" ? REF_SECTIONS : H3_SECTIONS));
-    issues.push(...lintTimeline(text, duration));
+    issues.push(...lintTimeline(text, options));
 
     // 对齐指令：除文生视频外都必须是第一行，且已经替换掉占位符。
     const firstLine = text.split(/\r?\n/).find((line) => line.trim())?.trim() ?? "";
@@ -236,7 +283,8 @@ function lintH3(text: string, mode: DirectorMode, duration?: number): DirectorLi
         push("missingAlignment", "error", `当前模式（${DIRECTOR_MODES.find((item) => item.value === mode)?.h3 ?? mode}）要求第一行是对齐指令。`);
     }
 
-    if (mode !== "ref" && !/\[Shot\s*1\]/.test(text)) push("missingShot", "error", "没有找到 [Shot 1] 镜头编号。");
+    const wantShot = slot?.index ?? 1;
+    if (mode !== "ref" && !new RegExp(`\\[Shot\\s*${wantShot}\\]`).test(text)) push("missingShot", "error", `没有找到 [Shot ${wantShot}] 镜头编号。`);
     issues.push(...lintMusic(text));
 
     if (mode === "ref") {
@@ -305,12 +353,16 @@ function lintSeedance(text: string, duration?: number): DirectorLintIssue[] {
     return issues;
 }
 
-/** 校验整段输出：先切镜头，再逐条检查，最后按镜头号回填。 */
+/** 校验整段输出：先切镜头，再按「它是整片里的第几条」逐条检查，最后按镜头号回填。 */
 export function lintDirectorOutput(text: string, options: { mode: DirectorMode; target: DirectorTarget; duration?: number }): DirectorLintReport {
     const shots = splitDirectorShots(text);
     const issues: DirectorLintIssue[] = [];
+    // 每条是整片里连续的一段：编号要递增，起点要接在上一条的结束处。
+    let cursor = 0;
     shots.forEach((shot, index) => {
-        for (const issue of lintDirectorShot(shot, options)) issues.push({ ...issue, shot: index + 1 });
+        const slot: DirectorShotSlot = { index: index + 1, start: cursor };
+        for (const issue of lintDirectorShot(shot, { ...options, slot })) issues.push({ ...issue, shot: index + 1 });
+        cursor = shotEnd(shot) ?? cursor;
     });
 
     const errors = issues.filter((item) => item.severity === "error").length;

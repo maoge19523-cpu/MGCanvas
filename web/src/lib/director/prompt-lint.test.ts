@@ -5,6 +5,19 @@ import type { DirectorMode, DirectorTarget } from "./specs";
 
 const codes = (issues: DirectorLintIssue[]) => issues.map((item) => item.code);
 
+/**
+ * 造「整片里的第 index 条」镜头：编号是它在整片里的序号，时间段是它的全局时间段。
+ *
+ * AI 导演是一条镜头一条提示词，所以第 2 条写的是 [Shot 2] 5.00-10.00，而不是从 0.00 重来。
+ */
+const shotAt = (index: number, seconds = 5) => {
+    const start = ((index - 1) * seconds).toFixed(2);
+    const end = (index * seconds).toFixed(2);
+    return `integrated_multimodal_description: [Shot ${index}] ${start}-${end} A wide static shot of a rain-soaked rooftop at dusk; a lone figure in a grey coat stands at the ledge and slowly turns toward the camera. slow push-in with small amplitude. Rain hiss and distant traffic.
+overall_soundscape: Steady rain on concrete, faint wind, a distant traffic hum.
+non_diegetic_music: A single sustained cello note, low and slow.`;
+};
+
 const H3_T2V = `integrated_multimodal_description: [Shot 1] 0.00-5.00 A wide static shot of a rain-soaked rooftop at dusk; a lone figure in a grey coat stands at the ledge and slowly turns toward the camera. slow push-in with small amplitude. Rain hiss and distant traffic.
 overall_soundscape: Steady rain on concrete, faint wind, a distant traffic hum.
 non_diegetic_music: A single sustained cello note, low and slow.`;
@@ -178,9 +191,35 @@ describe("整段校验", () => {
     });
 
     it("全部合规时 ok 为真", () => {
-        const text = `=== 镜头 1 ===\n${H3_T2V}\n=== 镜头 2 ===\n${H3_T2V}`;
-        const report = lintDirectorOutput(text, { mode: "t2v", target: "h3", duration: 5 });
+        const text = `=== 镜头 1 ===\n${shotAt(1)}\n=== 镜头 2 ===\n${shotAt(2)}`;
+        const report = lintDirectorOutput(text, { mode: "t2v", target: "h3", duration: 10 });
         expect(report).toMatchObject({ shots: 2, errors: 0, warnings: 0, ok: true });
+    });
+
+    // 回归：每条镜头写自己的编号与全局时间段，不能按「每条都从 0.00 起」误报。
+    it("多条各写自己的 [Shot N] 与全局时间段时不误报", () => {
+        const text = `=== 镜头 1 ===\n${shotAt(1)}\n=== 镜头 2 ===\n${shotAt(2)}\n=== 镜头 3 ===\n${shotAt(3)}`;
+        expect(codes(lintDirectorOutput(text, { mode: "t2v", target: "h3", duration: 15 }).issues)).toEqual([]);
+    });
+
+    it("编号对不上整片位置时报错，且只报在那一条上", () => {
+        const text = `=== 镜头 1 ===\n${shotAt(1)}\n=== 镜头 2 ===\n${shotAt(2).replace("[Shot 2]", "[Shot 1]")}`;
+        const report = lintDirectorOutput(text, { mode: "t2v", target: "h3", duration: 10 });
+        expect(codes(report.issues)).toContain("shotNumbering");
+        expect(report.issues.every((item) => item.shot === 2)).toBe(true);
+    });
+
+    it("起点接不上上一条时报错", () => {
+        const text = `=== 镜头 1 ===\n${shotAt(1)}\n=== 镜头 2 ===\n${shotAt(2).replace("5.00-10.00", "7.00-12.00")}`;
+        expect(codes(lintDirectorOutput(text, { mode: "t2v", target: "h3", duration: 15 }).issues)).toContain("timeStart");
+    });
+
+    it("字速按这一条自己的时长算，而不是按整片总时长", () => {
+        // 5 秒的镜头里放 20 字正好 4 字/秒；若错用整片 15 秒会算成 1.3 字/秒而误报「太慢」。
+        const line = "她低声说：" + "字".repeat(20);
+        const text = `=== 镜头 1 ===\n${shotAt(1)}\n${line}\n=== 镜头 2 ===\n${shotAt(2)}\n${line}`;
+        expect(codes(lintDirectorOutput(text, { mode: "t2v", target: "h3", duration: 10 }).issues)).not.toContain("speechSlow");
+        expect(codes(lintDirectorOutput(text, { mode: "t2v", target: "h3", duration: 10 }).issues)).not.toContain("speechTooFast");
     });
 
     it("空内容报错", () => {

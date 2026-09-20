@@ -61,6 +61,13 @@ export const NODE_DEFAULT_SIZE = {
             return i18n.t("canvas.nodeTypes.compare");
         },
     },
+    [CanvasNodeType.Collage]: {
+        width: 420,
+        height: 400,
+        get title() {
+            return i18n.t("canvas.nodeTypes.collage");
+        },
+    },
     [CanvasNodeType.Generic]: {
         width: 380,
         height: 220,
@@ -131,6 +138,14 @@ export const NODE_SPECS = {
         height: 380,
         get title() {
             return NODE_DEFAULT_SIZE[CanvasNodeType.Compare].title;
+        },
+        metadata: { status: "idle" },
+    },
+    [CanvasNodeType.Collage]: {
+        width: 420,
+        height: 400,
+        get title() {
+            return NODE_DEFAULT_SIZE[CanvasNodeType.Collage].title;
         },
         metadata: { status: "idle" },
     },

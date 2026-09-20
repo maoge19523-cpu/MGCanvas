@@ -520,8 +520,8 @@ function nativeNodeTitleIcon(type: CanvasNodeData["type"]) {
 }
 
 function NodeContent(props: NodeContentRendererProps) {
-    // 配置节点与对比节点依赖页面级状态（运行态 / 连线来源），统一交给页面渲染。
-    if ((props.node.type === CanvasNodeType.Config || props.node.type === CanvasNodeType.Compare) && props.renderNodeContent) return props.renderNodeContent(props.node);
+    // 配置节点、对比节点与拼合节点都依赖页面级状态（运行态 / 连线来源），统一交给页面渲染。
+    if ((props.node.type === CanvasNodeType.Config || props.node.type === CanvasNodeType.Compare || props.node.type === CanvasNodeType.Collage) && props.renderNodeContent) return props.renderNodeContent(props.node);
     if (shouldShowMediaGenerationGlass(props.node)) return <MediaGeneratingContent {...props} />;
     if (props.isBatchRoot) return <ImageNodeContent {...props} />;
     // ComfyUI 工作流节点本身不显示运行转圈：进度已经在结果节点上呈现，

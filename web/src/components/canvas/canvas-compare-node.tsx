@@ -88,8 +88,7 @@ function compareSourcesOf(sources: CanvasNodeData[]): [CompareSource | null, Com
  */
 export function CanvasCompareNodeContent({ node, sources }: { node: CanvasNodeData; sources: CanvasNodeData[] }) {
     const { t } = useTranslation();
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
-    const [position, setPosition] = useState(50);
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];    const [position, setPosition] = useState(50);
     const [fullscreen, setFullscreen] = useState(false);
     const [left, right] = compareSourcesOf(sources);
 
@@ -121,7 +120,7 @@ export function CanvasCompareNodeContent({ node, sources }: { node: CanvasNodeDa
                 <div className="h-[70vh] w-full overflow-hidden rounded-xl bg-[#0b0d10]">
                     <CompareSplitView left={left} right={right} position={position} onPositionChange={setPosition} large />
                 </div>
-                <p className="mt-3 text-center text-xs text-stone-500 dark:text-zinc-500">{t("canvas.compare.keyboardHint")}</p>
+                <p className="mt-3 text-center text-xs" style={{ color: theme.node.placeholder }}>{t("canvas.compare.keyboardHint")}</p>
             </Modal>
         </div>
     );

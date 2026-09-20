@@ -42,7 +42,10 @@ import { CanvasNodeAngleDialog, type CanvasImageAngleParams } from "@/components
 import { CanvasNodeCropDialog, type CanvasImageCropRect } from "@/components/canvas/canvas-node-crop-dialog";
 import { CanvasNodeSplitDialog, type CanvasImageSplitParams } from "@/components/canvas/canvas-node-split-dialog";
 import { CanvasCompareNodeContent } from "@/components/canvas/canvas-compare-node";
+import { CanvasCollageNodeContent } from "@/components/canvas/canvas-collage-node";
+import { CanvasCollageEditor } from "@/components/canvas/canvas-collage-editor";
 import { collectCompareSources as resolveCompareSources } from "@/lib/canvas/compare-sources";
+import { COLLAGE_RESULT_PORT_ID, collectCollageSources as resolveCollageSources, type CollageLayout } from "@/lib/canvas/collage-layout";
 import { CanvasNodeUpscaleDialog, type CanvasImageUpscaleParams } from "@/components/canvas/canvas-node-upscale-dialog";
 import { useCanvasImageOperationPreview } from "@/components/canvas/use-canvas-image-operation-preview";
 import { buildNodeGenerationContext, buildNodeGenerationInputs, buildNodeResponseMessages, hydrateNodeGenerationContext, type NodeGenerationInput } from "@/components/canvas/canvas-node-generation";
@@ -293,6 +296,8 @@ function MGCanvasProjectPage() {
     const [infoNodeId, setInfoNodeId] = useState<string | null>(null);
     const [cropNodeId, setCropNodeId] = useState<string | null>(null);
     const [splitNodeId, setSplitNodeId] = useState<string | null>(null);
+    const [collageNodeId, setCollageNodeId] = useState<string | null>(null);
+    const [collageSaving, setCollageSaving] = useState(false);
     const [upscaleNodeId, setUpscaleNodeId] = useState<string | null>(null);
     const [angleNodeId, setAngleNodeId] = useState<string | null>(null);
     const [previewNodeId, setPreviewNodeId] = useState<string | null>(null);
@@ -650,6 +655,7 @@ function MGCanvasProjectPage() {
     const infoNode = infoNodeId ? nodeById.get(infoNodeId) || null : null;
     const cropNode = cropNodeId ? nodeById.get(cropNodeId) || null : null;
     const splitNode = splitNodeId ? nodeById.get(splitNodeId) || null : null;
+    const collageNode = collageNodeId ? nodeById.get(collageNodeId) || null : null;
     const upscaleNode = upscaleNodeId ? nodeById.get(upscaleNodeId) || null : null;
     const angleNode = angleNodeId ? nodeById.get(angleNodeId) || null : null;
     const previewNode = previewNodeId ? nodeById.get(previewNodeId) || null : null;
@@ -2313,6 +2319,9 @@ function MGCanvasProjectPage() {
 
     // 对比节点：按连线顺序取前两张图片，连线顺序决定左右。
     const collectCompareSources = useCallback((compareNodeId: string) => resolveCompareSources(compareNodeId, nodesRef.current, connectionsRef.current), []);
+
+    // 拼合节点：按连线顺序取最多 10 张图片当图层，图层尺寸取图片原始像素。
+    const collectCollageSources = useCallback((collageNodeId: string) => resolveCollageSources(collageNodeId, nodesRef.current, connectionsRef.current), []);
 
     const handleRunComposite = useCallback(
         async (node: CanvasNodeData) => {
@@ -4050,6 +4059,8 @@ function MGCanvasProjectPage() {
         (contentNode: CanvasNodeData) =>
             contentNode.type === CanvasNodeType.Compare ? (
                 <CanvasCompareNodeContent node={contentNode} sources={collectCompareSources(contentNode.id)} />
+            ) : contentNode.type === CanvasNodeType.Collage ? (
+                <CanvasCollageNodeContent node={contentNode} sources={collectCollageSources(contentNode.id)} onOpen={() => setCollageNodeId(contentNode.id)} />
             ) : (
                 <CanvasConfigNodePanel
                     node={contentNode}
@@ -4064,7 +4075,50 @@ function MGCanvasProjectPage() {
                     }}
                 />
             ),
-        [collectCompareSources, configInputsById, confirmStopGeneration, handleConfigNodeChange, handleGenerateNode, runningNodeId],
+        [collectCollageSources, collectCompareSources, configInputsById, confirmStopGeneration, handleConfigNodeChange, handleGenerateNode, runningNodeId],
+    );
+
+    // 编辑器关掉或保存时把图层布局写回节点，这样再次双击能带着原布局继续编辑。
+    const commitCollageLayout = useCallback(
+        (layout: CollageLayout, order: string[]) => {
+            if (!collageNodeId) return;
+            setNodes((prev) => prev.map((item) => (item.id === collageNodeId ? { ...item, metadata: { ...item.metadata, collageLayout: layout, collageOrder: order } } : item)));
+        },
+        [collageNodeId],
+    );
+
+    const saveCollage = useCallback(
+        async (dataUrl: string, layout: CollageLayout, order: string[]) => {
+            const target = nodesRef.current.find((item) => item.id === collageNodeId);
+            if (!target) return;
+            setCollageSaving(true);
+            try {
+                const stored = await uploadImage(dataUrl);
+                const meta = stored.width === 1 && stored.height === 1 ? await readImageMeta(stored.url) : stored;
+                const config = fitNodeSize(meta.width, meta.height);
+                const node: CanvasNodeData = {
+                    id: `image-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                    type: CanvasNodeType.Image,
+                    title: t("canvas.collage.resultTitle"),
+                    position: { x: target.position.x + target.width + 96, y: target.position.y + Math.max(0, (target.height - config.height) / 2) },
+                    width: config.width,
+                    height: config.height,
+                    metadata: imageMetadata({ ...stored, width: meta.width, height: meta.height }),
+                };
+                const connection = { id: nanoid(), fromNodeId: target.id, fromPortId: COLLAGE_RESULT_PORT_ID, toNodeId: node.id };
+                setNodes((prev) => [...prev.map((item) => (item.id === target.id ? { ...item, metadata: { ...item.metadata, collageLayout: layout, collageOrder: order } } : item)), node]);
+                setConnections((prev) => [...prev, connection]);
+                setSelectedNodeIds(new Set([node.id]));
+                setSelectedConnectionId(null);
+                setCollageNodeId(null);
+                message.success(t("canvas.collage.saved"));
+            } catch {
+                message.error(t("canvas.collage.saveFailed"));
+            } finally {
+                setCollageSaving(false);
+            }
+        },
+        [collageNodeId, message, t],
     );
 
     if (!projectLoaded) return <CanvasRefreshShell />;
@@ -4296,6 +4350,7 @@ function MGCanvasProjectPage() {
                     onAddAudio={() => createNode(CanvasNodeType.Audio)}
                     onAddComposite={() => createNode(CanvasNodeType.Composite)}
                     onAddCompare={() => createNode(CanvasNodeType.Compare)}
+                    onAddCollage={() => createNode(CanvasNodeType.Collage)}
                     onAddText={() => createNode(CanvasNodeType.Text)}
                     onAddMaterial={() => createUploadMaterialNode()}
                     onAddGroup={() => createNode(CanvasNodeType.Group)}
@@ -4370,6 +4425,18 @@ function MGCanvasProjectPage() {
 
                 {splitNode?.metadata?.content ? (
                     <CanvasNodeSplitDialog dataUrl={imageEditorPreview.url || splitNode.metadata.content} open={Boolean(splitNode)} onClose={() => setSplitNodeId(null)} onConfirm={(params) => void splitImageNode(splitNode!, params)} />
+                ) : null}
+
+                {collageNode ? (
+                    <CanvasCollageEditor
+                        open={Boolean(collageNode)}
+                        node={collageNode}
+                        sources={collectCollageSources(collageNode.id)}
+                        saving={collageSaving}
+                        onClose={() => setCollageNodeId(null)}
+                        onCommit={commitCollageLayout}
+                        onSave={(dataUrl, layout, order) => void saveCollage(dataUrl, layout, order)}
+                    />
                 ) : null}
 
                 {upscaleNode?.metadata?.content ? (

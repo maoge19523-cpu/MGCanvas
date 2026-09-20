@@ -1,3 +1,5 @@
+import type { CollageTransform } from "@/lib/canvas/collage-layout";
+
 export type Position = {
     x: number;
     y: number;
@@ -17,6 +19,7 @@ export enum CanvasNodeType {
     Audio = "audio",
     Composite = "composite",
     Compare = "compare",
+    Collage = "collage",
     Generic = "generic",
     Group = "group",
 }
@@ -201,6 +204,10 @@ export type CanvasNodeMetadata = {
     activeImageHistoryId?: string;
     compositeSettings?: CanvasCompositeSettings;
     compositeResult?: CanvasCompositeResult;
+    /** 拼合节点：每个来源图片节点的图层变换，按来源节点 id 索引。 */
+    collageLayout?: Record<string, CollageTransform>;
+    /** 拼合节点：图层绘制顺序，数组末尾在最上层。 */
+    collageOrder?: string[];
     canvasSetEnabled?: boolean;
     objectReferences?: CanvasObjectReference[];
     interactive?: boolean; // Plugin node interaction/move state; see CanvasNodeDefinition.interactionToggle.

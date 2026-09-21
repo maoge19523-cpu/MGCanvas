@@ -7,12 +7,13 @@ import { CanvasPromptChipInput } from "@/components/canvas/canvas-prompt-chip-in
 import { CanvasConnectedReferences } from "@/components/canvas/canvas-connected-references";
 import { CanvasResizableArea } from "@/components/canvas/canvas-resizable-area";
 import { CanvasObjectReferencePicker } from "@/components/canvas/canvas-object-reference-picker";
+import { CanvasAudioSettingsPopover, audioConfigPatch } from "./canvas-audio-settings-popover";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { getGenericOperation } from "@/services/api/generic-contract";
 import { getGenericModelProfile } from "@/services/api/generic-models";
 import { formatGenericPriceQuote, getCachedGenericPricingCatalog, loadGenericPricingCatalog, quoteGenericPrice, type GenericPriceQuote, type GenericPricingCatalog } from "@/services/api/generic-pricing";
-import { modelOptionLabel, resolveModelRequestConfig, selectableModelsByCapability, useConfigStore, type ModelCapability } from "@/stores/use-config-store";
+import { modelOptionLabel, resolveModelRequestConfig, selectableModelsByCapability, useConfigStore, defaultConfig, type ModelCapability } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { CanvasNodeData, CanvasNodeMetadata } from "@/types/canvas";
 import { GENERIC_SEEDREAM_VIRTUAL_RATIO_PATH, GENERIC_SEEDREAM_VIRTUAL_RESOLUTION_PATH, inferGenericSeedreamGeometry, isGenericSeedreamVirtualPath } from "./generic-aspect-dimensions";
@@ -93,6 +94,17 @@ export function GenericNativeGenerationPanel({
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const config = useConfigStore((state) => state.config);
+    // 音频节点的音色、格式、语速都存在节点元数据上，缺省时回落到全局与默认配置。
+    const audioConfig = useMemo(
+        () => ({
+            ...config,
+            audioVoice: node.metadata?.audioVoice || config.audioVoice || defaultConfig.audioVoice,
+            audioFormat: node.metadata?.audioFormat || config.audioFormat || defaultConfig.audioFormat,
+            audioSpeed: node.metadata?.audioSpeed || config.audioSpeed || defaultConfig.audioSpeed,
+            audioInstructions: node.metadata?.audioInstructions || config.audioInstructions || defaultConfig.audioInstructions,
+        }),
+        [config, node.metadata?.audioVoice, node.metadata?.audioFormat, node.metadata?.audioSpeed, node.metadata?.audioInstructions],
+    );
     const pricingBaseUrl = useMemo(() => resolveModelRequestConfig(config, config.model).baseUrl, [config]);
     const inferredKind = genericNativeNodeKind(node.type);
     const kind = kindOverride || inferredKind || "image";
@@ -459,16 +471,27 @@ export function GenericNativeGenerationPanel({
                         <span className="mx-1 font-medium" style={{ color: theme.node.text }}>{kind}</span>
                     </span>
                 )}
-                <Popover
-                    getPopupContainer={getCanvasNodePopupContainer}
-                    placement="topRight"
-                    trigger={settingsParameters.length ? "click" : []}
-                    content={<NativeParameterPanel definitions={settingsParameters} payload={effectivePayload} theme={theme} onChange={updateParameter} />}
-                >
-                    <Button disabled={hasUnresolvedTask || !settingsParameters.length} className="!h-8 !min-w-[110px] !max-w-[190px] !flex-1 !rounded-full !px-2.5" icon={<SlidersHorizontal className="size-3.5" />}>
-                        <span className="truncate text-xs">{summarizeVisibleParameters(settingsParameters, effectivePayload)}</span>
-                    </Button>
-                </Popover>
+                {kind === "audio" ? (
+                    // 音频没有可调的通用参数，那个「默认参数」按钮对它永远是禁用的，
+                    // 位置改成音色/格式/语速入口：智谱这类服务商对音色与格式有硬性枚举要求。
+                    <CanvasAudioSettingsPopover
+                        config={audioConfig}
+                        placement="topRight"
+                        buttonClassName="!h-8 !min-w-[110px] !max-w-[190px] !flex-1 !justify-start !rounded-full !px-2.5"
+                        onConfigChange={(key, value) => onChange(node.id, audioConfigPatch(key, value))}
+                    />
+                ) : (
+                    <Popover
+                        getPopupContainer={getCanvasNodePopupContainer}
+                        placement="topRight"
+                        trigger={settingsParameters.length ? "click" : []}
+                        content={<NativeParameterPanel definitions={settingsParameters} payload={effectivePayload} theme={theme} onChange={updateParameter} />}
+                    >
+                        <Button disabled={hasUnresolvedTask || !settingsParameters.length} className="!h-8 !min-w-[110px] !max-w-[190px] !flex-1 !rounded-full !px-2.5" icon={<SlidersHorizontal className="size-3.5" />}>
+                            <span className="truncate text-xs">{summarizeVisibleParameters(settingsParameters, effectivePayload)}</span>
+                        </Button>
+                    </Popover>
+                )}
                 {countParameter ? (
                     <Popover getPopupContainer={getCanvasNodePopupContainer} placement="topRight" trigger="click" content={<OutputCountPanel definition={countParameter} payload={effectivePayload} theme={theme} onChange={updateParameter} />}>
                         <Button disabled={hasUnresolvedTask} className="!h-8 !rounded-full !px-3" aria-label={`生成数量 ${String(readGenericNativeParameter(effectivePayload, countParameter.path) || 1)}`}>

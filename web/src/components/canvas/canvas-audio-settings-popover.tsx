@@ -11,6 +11,14 @@ import { CanvasNodeAnchoredPopup } from "./canvas-node-popup";
 
 export type CanvasAudioSettingKey = "audioVoice" | "audioFormat" | "audioSpeed" | "audioInstructions";
 
+/** 把面板里选中的音频设置翻译成节点元数据补丁，画布里几处音频入口共用。 */
+export function audioConfigPatch(key: CanvasAudioSettingKey, value: string) {
+    if (key === "audioVoice") return { audioVoice: value };
+    if (key === "audioFormat") return { audioFormat: value };
+    if (key === "audioSpeed") return { audioSpeed: value };
+    return { audioInstructions: value };
+}
+
 type CanvasAudioSettingsPopoverProps = {
     config: AiConfig;
     onConfigChange: (key: CanvasAudioSettingKey, value: string) => void;

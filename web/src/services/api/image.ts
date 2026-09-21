@@ -58,18 +58,14 @@ type ResponseApiToolDefinition = {
     parameters: Record<string, unknown>;
     strict?: boolean;
 };
-type ResponseApiOutputItem =
-    | { type?: "message"; content?: Array<{ type?: string; text?: string }> }
-    | { type?: "function_call"; id?: string; call_id?: string; name?: string; arguments?: string };
-type ResponseApiPayload = {
-    id?: string;
-    output?: ResponseApiOutputItem[];
-    output_text?: string;
+/** chat/completions 的响应载荷：主流服务商与 OpenAI 共同提供的形状。 */
+type ChatCompletionPayload = {
+    choices?: Array<{ message?: { content?: unknown }; delta?: { content?: unknown }; finish_reason?: string }>;
     error?: { message?: string };
     code?: number;
     msg?: string;
 };
-type ResponseStreamState = { buffer: string; text: string; payload?: ResponseApiPayload; error?: string };
+type ChatStreamState = { buffer: string; text: string; error?: string };
 
 type ImageApiResponse = {
     data?: Array<Record<string, unknown>>;
@@ -372,17 +368,20 @@ function withSystemMessage<T extends ResponseInputMessage>(config: AiConfig, mes
     return systemPrompt ? [{ role: "system" as const, content: systemPrompt }, ...messages] : messages;
 }
 
-function toResponseInput(messages: ResponseInputMessage[]): ResponseInputItem[] {
-    return messages.flatMap((message): ResponseInputItem[] => {
-        if ("type" in message) return [message];
-        if (message.role === "tool") return [{ type: "function_call_output", call_id: message.tool_call_id, output: message.content }];
-        return [{ role: message.role, content: toResponseContent(message.content || "") }];
-    });
-}
+/** chat/completions 的 messages 形状：与内部消息的文本/图片内容形状一致，可直接透传。 */
+type ChatMessage =
+    | { role: "system" | "user" | "assistant"; content: AiTextMessage["content"] }
+    | { role: "assistant"; content: string; tool_calls: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }> }
+    | { role: "tool"; tool_call_id: string; content: string };
 
-function toResponseContent(content: ResponseMessageContent): string | ResponseInputContent[] {
-    if (!Array.isArray(content)) return String(content || "");
-    return content.map((item) => (item.type === "text" ? { type: "input_text" as const, text: item.text } : { type: "input_image" as const, image_url: item.image_url.url }));
+function toChatMessages(messages: ResponseInputMessage[]): ChatMessage[] {
+    return messages.flatMap((message): ChatMessage[] => {
+        if ("type" in message) {
+            return [{ role: "assistant", content: "", tool_calls: [{ id: message.call_id, type: "function", function: { name: message.name, arguments: message.arguments } }] }];
+        }
+        if (message.role === "tool") return [{ role: "tool", tool_call_id: message.tool_call_id, content: message.content }];
+        return [{ role: message.role, content: Array.isArray(message.content) ? message.content : String(message.content || "") }];
+    });
 }
 
 function toResponseTool(tool: ResponseFunctionTool): ResponseApiToolDefinition {
@@ -393,25 +392,6 @@ function toResponseTool(tool: ResponseFunctionTool): ResponseApiToolDefinition {
         parameters: tool.function.parameters,
         strict: tool.function.strict,
     };
-}
-
-function parseToolResponse(payload: ResponseApiPayload): ToolResponseResult {
-    const output = payload.output || [];
-    const content =
-        payload.output_text ||
-        output
-            .flatMap((item) => (item.type === "message" ? item.content || [] : []))
-            .map((item) => item.text || "")
-            .join("");
-    const toolCalls = output
-        .filter((item): item is Extract<ResponseApiOutputItem, { type?: "function_call" }> => item.type === "function_call")
-        .map((item) => ({
-            id: item.call_id || item.id || "",
-            type: "function" as const,
-            function: { name: item.name || "", arguments: item.arguments || "{}" },
-        }))
-        .filter((item) => item.id && item.function.name);
-    return { content, toolCalls };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -430,11 +410,6 @@ function stringValue(value: unknown) {
     return typeof value === "string" ? value : "";
 }
 
-function validateResponsePayload(payload: ResponseApiPayload) {
-    if (typeof payload.code === "number" && payload.code !== 0) throw new Error(payload.msg || apiText("requestFailed"));
-    if (payload.error?.message) throw new Error(payload.error.message);
-}
-
 function validateGeminiPayload(payload: GeminiPayload) {
     if (payload.error?.message) throw new Error(payload.error.message);
     if (payload.promptFeedback?.blockReason) throw new Error(apiText("geminiRejected", { reason: payload.promptFeedback.blockReason }));
@@ -450,7 +425,7 @@ async function readFetchError(response: Response, fallback: string) {
     }
 }
 
-function consumeResponseStreamBlock(block: string, state: ResponseStreamState, onDelta?: (text: string) => void) {
+function consumeChatStreamBlock(block: string, state: ChatStreamState, onDelta?: (text: string) => void) {
     const data = block
         .split(/\r?\n/)
         .filter((line) => line.startsWith("data:"))
@@ -458,69 +433,89 @@ function consumeResponseStreamBlock(block: string, state: ResponseStreamState, o
         .join("\n")
         .trim();
     if (!data || data === "[DONE]") return;
-    const event = JSON.parse(data) as Record<string, unknown>;
-    const type = stringValue(event.type);
+    let event: Record<string, unknown>;
+    try {
+        event = JSON.parse(data) as Record<string, unknown>;
+    } catch {
+        return;
+    }
     const errorMessage = responseErrorMessage(event);
     if (errorMessage) state.error = errorMessage;
-    if (type === "response.output_text.delta" && typeof event.delta === "string") {
-        state.text += event.delta;
-        onDelta?.(state.text);
-    }
-    if (type === "response.output_text.done" && !state.text && typeof event.text === "string") {
-        state.text = event.text;
-        onDelta?.(state.text);
-    }
-    if (type === "response.completed" && isRecord(event.response)) {
-        state.payload = event.response as ResponseApiPayload;
-    } else if (Array.isArray(event.output)) {
-        state.payload = event as ResponseApiPayload;
-    }
+    const choice = Array.isArray(event.choices) ? event.choices[0] : undefined;
+    const delta = isRecord(choice) && isRecord(choice.delta) ? choice.delta : undefined;
+    // 只取答案正文，思考过程（reasoning_content 之类）不进正文。
+    const chunk = delta && typeof delta.content === "string" ? delta.content : "";
+    if (!chunk) return;
+    state.text += chunk;
+    onDelta?.(state.text);
 }
 
-function consumeResponseStreamText(state: ResponseStreamState, text: string, onDelta?: (text: string) => void, flush = false) {
+function consumeChatStreamText(state: ChatStreamState, text: string, onDelta?: (text: string) => void, flush = false) {
     state.buffer += text;
     for (;;) {
         const match = state.buffer.match(/\r?\n\r?\n/);
         if (!match) break;
         const index = match.index ?? 0;
-        consumeResponseStreamBlock(state.buffer.slice(0, index), state, onDelta);
+        consumeChatStreamBlock(state.buffer.slice(0, index), state, onDelta);
         state.buffer = state.buffer.slice(index + match[0].length);
     }
     if (flush && state.buffer.trim()) {
-        consumeResponseStreamBlock(state.buffer, state, onDelta);
+        consumeChatStreamBlock(state.buffer, state, onDelta);
         state.buffer = "";
     }
 }
 
-async function requestStreamingResponse(config: AiConfig, body: Record<string, unknown>, onDelta?: (text: string) => void, options?: RequestOptions): Promise<ToolResponseResult> {
-    const response = await fetch(aiApiUrl(config, "/responses"), {
+/**
+ * 文本请求统一走 chat/completions。
+ *
+ * 此前这里打的是 Responses API 的 /responses：智谱、DeepSeek、火山方舟与阿里百炼都没有这个路径，
+ * 于是提示词面板、配置节点的文本生成和节点重试在渠道模型上会直接 404。
+ * chat/completions 是这些服务商与 OpenAI 共同提供的形状，因此作为唯一的文本端点。
+ */
+async function requestStreamingChat(config: AiConfig, messages: ResponseInputMessage[], onDelta?: (text: string) => void, options?: RequestOptions): Promise<ToolResponseResult> {
+    const response = await fetch(aiApiUrl(config, "/chat/completions"), {
         method: "POST",
         headers: { ...aiHeaders(config, "application/json"), Accept: "text/event-stream" },
-        body: JSON.stringify({ ...body, stream: true }),
+        body: JSON.stringify({
+            model: config.model,
+            messages: toChatMessages(messages),
+            stream: true,
+            ...(config.reasoningEffort === "auto" ? {} : { reasoning_effort: config.reasoningEffort }),
+        }),
         signal: options?.signal,
     });
     if (!response.ok) throw new Error(await readFetchError(response, apiText("requestFailed")));
-    if (!response.body) {
-        const payload = (await response.json()) as ResponseApiPayload;
-        validateResponsePayload(payload);
-        return parseToolResponse(payload);
+
+    // 有的服务商会忽略 stream 直接整段返回 JSON，按内容类型分流。
+    const contentType = response.headers.get("Content-Type") || "";
+    if (!response.body || (!contentType.includes("text/event-stream") && contentType.includes("application/json"))) {
+        const payload = (await response.json()) as ChatCompletionPayload;
+        const errorMessage = responseErrorMessage(payload);
+        if (errorMessage) throw new Error(errorMessage);
+        const content = chatCompletionContent(payload);
+        if (content) onDelta?.(content);
+        return { content, toolCalls: [] };
     }
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    const state: ResponseStreamState = { buffer: "", text: "" };
+    const state: ChatStreamState = { buffer: "", text: "" };
     for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        consumeResponseStreamText(state, decoder.decode(value, { stream: true }), onDelta);
+        consumeChatStreamText(state, decoder.decode(value, { stream: true }), onDelta);
         if (state.error) throw new Error(state.error);
     }
-    consumeResponseStreamText(state, decoder.decode(), onDelta, true);
+    consumeChatStreamText(state, decoder.decode(), onDelta, true);
     if (state.error) throw new Error(state.error);
-    if (!state.payload) return { content: state.text, toolCalls: [] };
-    validateResponsePayload(state.payload);
-    const result = parseToolResponse(state.payload);
-    return { ...result, content: state.text || result.content };
+    return { content: state.text, toolCalls: [] };
+}
+
+function chatCompletionContent(payload: ChatCompletionPayload) {
+    const content = payload.choices?.[0]?.message?.content;
+    if (typeof content === "string") return content;
+    if (!Array.isArray(content)) return "";
+    return content.map((part) => (isRecord(part) ? stringValue(part.text) : "")).join("");
 }
 
 function toGeminiBody(config: AiConfig, messages: ResponseInputMessage[], extra?: Record<string, unknown>) {
@@ -894,11 +889,7 @@ export async function requestImageQuestion(config: AiConfig, messages: AiTextMes
             if (answer === apiText("noContent")) onDelta(answer);
             return answer;
         }
-        const answer = (await requestStreamingResponse(requestConfig, {
-            model: requestConfig.model,
-            input: toResponseInput(withSystemMessage(requestConfig, messages)),
-            ...(requestConfig.reasoningEffort === "auto" ? {} : { reasoning: { effort: requestConfig.reasoningEffort } }),
-        }, onDelta, options)).content || apiText("noContent");
+        const answer = (await requestStreamingChat(requestConfig, withSystemMessage(requestConfig, messages), onDelta, options)).content || apiText("noContent");
         if (answer === apiText("noContent")) onDelta(answer);
         return answer;
     } catch (error) {

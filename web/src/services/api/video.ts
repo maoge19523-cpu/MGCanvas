@@ -140,9 +140,10 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     body.append("model", modelOptionName(model));
     body.append("prompt", prompt);
     body.append("seconds", normalizeVideoSeconds(config.videoSeconds));
+    // 只发 OpenAI videos 形状的字段。此前还额外发过 resolution_name 与 preset，
+    // 那两个是中转站私有参数，正式的 OpenAI 兼容服务商不认，只会回 400/404；
+    // 分辨率本来就已经由面板参数以标准 size 发出去了。
     if (normalizeVideoSize(config.size)) body.append("size", normalizeVideoSize(config.size)!);
-    body.append("resolution_name", normalizeVideoResolution(config.vquality));
-    body.append("preset", "normal");
     const files = await Promise.all(references.slice(0, 7).map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
     files.forEach((file) => body.append("input_reference[]", file));
     try {

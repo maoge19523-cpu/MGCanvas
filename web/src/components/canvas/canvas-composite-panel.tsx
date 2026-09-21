@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Button, Input, InputNumber, Select, Tooltip } from "antd";
 import { ChevronDown, ChevronUp, Clapperboard, LoaderCircle, Mic, Music2, Video, X } from "lucide-react";
 
@@ -67,6 +67,69 @@ export function CanvasCompositePanel({ node, segments, music, voice, isRunning, 
     }, 0);
 
     const segmentLabel = (index: number) => `片段 ${index + 1}`;
+
+    // 时间轴上的直接操作：拖片段本体换顺序，拖两端裁剪入点/出点。
+    // 不锁定指针，也不做坐标换算——按指针每挪过一小段就与相邻片段交换一次，避免画布缩放带来的坐标麻烦。
+    const dragRef = useRef<{ index: number; x: number } | null>(null);
+    const trimRef = useRef<{ index: number; edge: "start" | "end"; x: number; perPixel: number } | null>(null);
+    const draggedRef = useRef(false);
+
+    const startDrag = (event: ReactPointerEvent<HTMLDivElement>, index: number) => {
+        event.stopPropagation();
+        draggedRef.current = false;
+        dragRef.current = { index, x: event.clientX };
+    };
+
+    const startTrim = (event: ReactPointerEvent<HTMLSpanElement>, index: number, edge: "start" | "end") => {
+        event.stopPropagation();
+        const box = (event.currentTarget.parentElement as HTMLElement | null)?.getBoundingClientRect();
+        const segment = segments[index];
+        if (!segment) return;
+        const source = (segment.node.metadata?.durationMs || 0) / 1000;
+        const item = settings.segments?.[segment.node.id] || {};
+        const length = Math.max(0.1, (item.end && source ? Math.min(item.end, source) : source) - (item.start || 0));
+        draggedRef.current = true;
+        trimRef.current = { index, edge, x: event.clientX, perPixel: box && box.width > 0 ? length / box.width : 0.05 };
+    };
+
+    const handleTimelineMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+        const trim = trimRef.current;
+        if (trim) {
+            event.stopPropagation();
+            const segment = segments[trim.index];
+            if (!segment) return;
+            const item = settings.segments?.[segment.node.id] || {};
+            const source = (segment.node.metadata?.durationMs || 0) / 1000;
+            const delta = (event.clientX - trim.x) * trim.perPixel;
+            if (trim.edge === "start") {
+                const from = item.start || 0;
+                const until = (item.end && source ? Math.min(item.end, source) : source) - 0.1;
+                updateSegment(segment.node.id, { start: Number(Math.min(Math.max(0, from + delta), Math.max(0, until)).toFixed(2)) });
+            } else {
+                const from = item.start || 0;
+                const until = item.end && source ? Math.min(item.end, source) : source;
+                const next = Math.max(from + 0.1, until + delta);
+                updateSegment(segment.node.id, { end: Number((source ? Math.min(next, source) : next).toFixed(2)) });
+            }
+            trim.x = event.clientX;
+            return;
+        }
+        const drag = dragRef.current;
+        if (!drag) return;
+        event.stopPropagation();
+        const dx = event.clientX - drag.x;
+        if (Math.abs(dx) < 24) return;
+        const target = drag.index + (dx > 0 ? 1 : -1);
+        if (target < 0 || target >= segments.length) return;
+        onReorderConnections(segments[drag.index]!.connectionId, segments[target]!.connectionId);
+        draggedRef.current = true;
+        dragRef.current = { index: target, x: event.clientX };
+    };
+
+    const endTimelineDrag = () => {
+        dragRef.current = null;
+        trimRef.current = null;
+    };
 
     return (
         <div
@@ -296,31 +359,42 @@ export function CanvasCompositePanel({ node, segments, music, voice, isRunning, 
             </div>
 
             {segments.length ? (
-                <div className="mx-3 mt-2 flex items-stretch gap-1 pb-2">
-                    {segments.map((segment, index) => {
-                        const item = settings.segments?.[segment.node.id] || {};
-                        const source = (segment.node.metadata?.durationMs || 0) / 1000;
-                        const length = Math.max(0, (item.end && source ? Math.min(item.end, source) : source) - (item.start || 0));
-                        const share = totalSeconds > 0 ? length / totalSeconds : 1 / segments.length;
-                        return (
-                            <div key={segment.node.id} className="flex min-w-0 flex-[1_1_0%] items-center gap-1" style={{ flexGrow: Math.max(0.35, share * 10) }}>
-                                <button
-                                    type="button"
-                                    className="h-8 min-w-0 flex-1 truncate rounded-md border px-1.5 text-[10px] transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-                                    style={{ borderColor: theme.toolbar.border, color: theme.node.muted }}
-                                    title={`${segmentLabel(index)} · ${length.toFixed(1)} 秒（点一下在画布上定位）`}
-                                    onClick={() => onFocusReference(segment.node.id)}
-                                >
-                                    {segmentLabel(index)} · {length.toFixed(1)}s
-                                </button>
-                                {index < segments.length - 1 ? (
-                                    <span className="shrink-0 text-[10px]" style={{ color: item.transition ? theme.node.text : theme.node.faint }} title={item.transition ? "已设转场" : "硬切"}>
-                                        {item.transition ? "◆" : "│"}
-                                    </span>
-                                ) : null}
-                            </div>
-                        );
-                    })}
+                <div className="mx-3 mt-2 pb-2">
+                    <div className="flex items-stretch gap-1" onPointerMove={handleTimelineMove} onPointerUp={endTimelineDrag} onPointerCancel={endTimelineDrag} onPointerLeave={endTimelineDrag}>
+                        {segments.map((segment, index) => {
+                            const item = settings.segments?.[segment.node.id] || {};
+                            const source = (segment.node.metadata?.durationMs || 0) / 1000;
+                            const length = Math.max(0, (item.end && source ? Math.min(item.end, source) : source) - (item.start || 0));
+                            const share = totalSeconds > 0 ? length / totalSeconds : 1 / segments.length;
+                            return (
+                                <div key={segment.node.id} className="flex min-w-0 flex-[1_1_0%] items-center gap-1" style={{ flexGrow: Math.max(0.35, share * 10) }}>
+                                    <div
+                                        className="relative h-8 min-w-0 flex-1 cursor-grab select-none rounded-md border transition-colors hover:bg-black/5 active:cursor-grabbing dark:hover:bg-white/10"
+                                        style={{ borderColor: theme.toolbar.border }}
+                                        title={`${segmentLabel(index)} · ${length.toFixed(1)} 秒（拖动换序，拖两端裁剪）`}
+                                        onPointerDown={(event) => startDrag(event, index)}
+                                        onClick={() => {
+                                            if (!draggedRef.current) onFocusReference(segment.node.id);
+                                        }}
+                                    >
+                                        <span className="pointer-events-none absolute inset-0 flex items-center justify-center truncate px-2 text-[10px]" style={{ color: theme.node.muted }}>
+                                            {segmentLabel(index)} · {length.toFixed(1)}s
+                                        </span>
+                                        <span className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize rounded-l-md hover:bg-black/10 dark:hover:bg-white/15" title="拖动裁剪入点" onPointerDown={(event) => startTrim(event, index, "start")} />
+                                        <span className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize rounded-r-md hover:bg-black/10 dark:hover:bg-white/15" title="拖动裁剪出点" onPointerDown={(event) => startTrim(event, index, "end")} />
+                                    </div>
+                                    {index < segments.length - 1 ? (
+                                        <span className="shrink-0 text-[10px]" style={{ color: item.transition ? theme.node.text : theme.node.faint }} title={item.transition ? "已设转场" : "硬切"}>
+                                            {item.transition ? "◆" : "│"}
+                                        </span>
+                                    ) : null}
+                                </div>
+                            );
+                        })}
+                    </div>
+                    <div className="mt-1 text-[10px]" style={{ color: theme.node.faint }}>
+                        拖动片段换顺序，拖两端裁剪入点/出点，点一下定位到画布
+                    </div>
                 </div>
             ) : null}
 

@@ -13,13 +13,14 @@ export const audioVoiceOptions = [
     { value: "marin", label: "Marin" },
     { value: "cedar", label: "Cedar" },
     // 智谱 GLM-TTS 的系统音色。不列进来就选不到，而音色名必须原样发给服务商。
+    // 标签保持短：动画圈系列官方名很长，放进三列胶囊里会换行出框，这里只留音色名与来源。
     { value: "tongtong", label: "彤彤（智谱）" },
     { value: "chuichui", label: "锤锤（智谱）" },
     { value: "xiaochen", label: "小陈（智谱）" },
-    { value: "jam", label: "动动动物圈 Jam（智谱）" },
-    { value: "kazi", label: "动动动物圈 Kazi（智谱）" },
-    { value: "douji", label: "动动动物圈 Douji（智谱）" },
-    { value: "luodo", label: "动动动物圈 Luodo（智谱）" },
+    { value: "jam", label: "Jam（智谱）" },
+    { value: "kazi", label: "Kazi（智谱）" },
+    { value: "douji", label: "Douji（智谱）" },
+    { value: "luodo", label: "Luodo（智谱）" },
 ];
 
 export const audioFormatOptions = [

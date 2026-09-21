@@ -82,10 +82,17 @@ export function AudioSettingsPanel({ config, onConfigChange, theme, showTitle = 
     );
 }
 
+/** 固定高度的胶囊：文字一律单行截断，标签再长也不会换行顶出框外。 */
 function OptionPill({ selected, theme, onClick, children }: { selected: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {
     return (
-        <button type="button" className="h-9 cursor-pointer rounded-full border px-2 text-sm transition hover:opacity-80" style={{ background: "transparent", borderColor: selected ? theme.node.text : theme.node.stroke, color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()} onClick={onClick}>
-            {children}
+        <button
+            type="button"
+            className="flex h-9 min-w-0 cursor-pointer items-center justify-center rounded-full border px-2 text-sm transition hover:opacity-80"
+            style={{ background: "transparent", borderColor: selected ? theme.node.text : theme.node.stroke, color: theme.node.text }}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={onClick}
+        >
+            <span className="min-w-0 truncate">{children}</span>
         </button>
     );
 }

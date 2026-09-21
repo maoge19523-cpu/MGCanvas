@@ -10,6 +10,8 @@ The current release needs manual verification in these areas:
 
 
 
+- Audio settings pill overflow: no voice, format, or speed label may wrap onto a second line or push text outside its pill, including Zhipu's animal-series voices; a label too long for its column must show an ellipsis instead, and the panel must stay readable at the panel's normal width.
+
 - Popups above the node hover toolbar: with a node selected and any node-anchored popup open (the audio settings panel, the parameter panel), the popup must draw completely above the 信息 / 删除 / 编辑 / 上传音频 toolbar instead of being covered by it, while the toolbar keeps floating above neighbouring nodes as before, and closing the popup must restore the node's original stacking.
 
 - Audio node settings entry: an Audio node must show the audio settings panel (voice, format, speed, instructions) in the same row where image and video nodes show 默认参数, because that button is always disabled for audio. Picking a voice or a format there must persist on the node, survive reselecting the node, fall back to the global setting when unset, and be the value actually sent to the provider.

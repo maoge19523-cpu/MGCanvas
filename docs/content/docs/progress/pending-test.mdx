@@ -10,6 +10,8 @@ The current release needs manual verification in these areas:
 
 
 
+- Built-in speech scripts: with a 百炼 channel (model `qwen-tts`) or a 智谱 channel (model `cogtts`) an audio generation must work without writing any script, because the built-in one is matched by the interface address. 百炼 returns a temporary audio URL and must still play; 智谱 returns raw audio bytes and must not be mangled by text decoding. The 音色 field must reach the request, and generating audio for 方舟 must fail with a clear message rather than silence.
+
 - Segment fades and track loop: a segment's own fade in/out must darken and silence that segment's start and end, its own audio included, while a transition on the same seam still plays. Turning 循环 on for the music track must make a track shorter than the film repeat until the film ends, and its fade-out must still be measured from the film's end.
 
 - Composite timeline: the strip under the composite panel must size each clip by its real duration, mark a segment with a transition as a diamond and a hard cut as a bar, and jump back to the source clip on the canvas when clicked. Dragging a clip body sideways must reorder the segments and the composed film must follow that new order; dragging either edge must trim that clip's in or out point in proportion to the clip's width, without crossing the opposite bound; the existing 上移/下移 buttons and 入/出 fields must keep editing the same settings.

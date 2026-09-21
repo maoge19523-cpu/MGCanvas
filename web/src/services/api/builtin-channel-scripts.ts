@@ -328,6 +328,37 @@ const ZHIPU_VIDEO_SCRIPT = [
     ');',
     'return { url: done };',
 ].join("\n");
+/**
+ * 阿里云百炼（DashScope）语音合成。
+ *
+ * 百炼的兼容模式没有语音合成接口（`/compatible-mode/v1/audio/speech` 实测 404），
+ * 原生接口是 multimodal-generation 同步接口，用 qwen-tts 模型、文本放在 input.text、
+ * 音色放在 parameters.voice，返回体里给的是带签名的临时音频地址（output.audio.url）。
+ * 实测：model=qwen-tts、parameters.voice=Cherry 返回 HTTP 200 且带 url。
+ */
+const DASHSCOPE_AUDIO_SCRIPT = [
+    'const voice = params.voice ? String(params.voice) : "Cherry";',
+    'const format = params.format ? String(params.format) : "wav";',
+    '',
+    'let data;',
+    'try {',
+    '  data = await request({',
+    '    method: "post",',
+    '    url: "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",',
+    '    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },',
+    '    data: { model, input: { text: prompt }, parameters: { voice, format } },',
+    '  });',
+    '} catch (error) {',
+    '  const status = error?.response?.status;',
+    '  const body = error?.response?.data;',
+    '  throw new Error(`百炼语音合成调用失败${status ? `（HTTP ${status}）` : ""}：` + (body ? JSON.stringify(body).slice(0, 500) : error?.message || String(error)));',
+    '}',
+    '',
+    'const url = data?.output?.audio?.url || "";',
+    'if (!url) throw new Error("百炼语音合成没有返回音频地址：" + JSON.stringify(data || {}).slice(0, 300));',
+    'return { url };',
+].join("\n");
+
 export const BUILTIN_CHANNEL_SCRIPTS: readonly BuiltinChannelScript[] = [
     {
         id: "dashscope-image",
@@ -370,6 +401,13 @@ export const BUILTIN_CHANNEL_SCRIPTS: readonly BuiltinChannelScript[] = [
         match: /dashscope(-intl|-us)?\.aliyuncs\.com|bailian/i,
         capability: "video",
         script: DASHSCOPE_VIDEO_SCRIPT,
+    },
+    {
+        id: "dashscope-audio",
+        label: "阿里云百炼 DashScope 语音合成（qwen-tts）",
+        match: /dashscope(-intl|-us)?\.aliyuncs\.com|bailian/i,
+        capability: "audio",
+        script: DASHSCOPE_AUDIO_SCRIPT,
     },
 ];
 

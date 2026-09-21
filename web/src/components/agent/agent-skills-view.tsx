@@ -5,7 +5,7 @@ import { Check, ChevronDown, CircleAlert, FilePenLine, LoaderCircle, LockKeyhole
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
-import { createCodexSkill, createCodexSkillDraft, deleteCodexSkill, fetchCodexSkill, installCodexSkill, postState, setCodexSkillEnabled, updateCodexSkill, type AgentSkillDetail, type AgentSkillDraft, type AgentSkillInterface, type AgentSkillScope, type AgentSkillSummary } from "@/services/api/canvas-agent";
+import { createCodexSkill, createCodexSkillDraft, deleteCodexSkill, fetchCodexSkill, installCodexSkill, installCodexSkillFromSearch, searchCodexSkills, postState, setCodexSkillEnabled, updateCodexSkill, type AgentSkillDetail, type AgentSkillDraft, type AgentSkillInterface, type AgentSkillScope, type AgentSkillSearchHit, type AgentSkillSummary } from "@/services/api/canvas-agent";
 import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
 import { useAgentStore, type AgentChatItem } from "@/stores/use-agent-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -51,6 +51,9 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
     const [busySkill, setBusySkill] = useState("");
     const [installUrl, setInstallUrl] = useState("");
     const [installing, setInstalling] = useState(false);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [searching, setSearching] = useState(false);
+    const [searchHits, setSearchHits] = useState<AgentSkillSearchHit[]>([]);
     const [errorsOpen, setErrorsOpen] = useState(false);
     const confirmRef = useRef<{ destroy: () => void } | null>(null);
     const [form] = Form.useForm<SkillFormValues>();
@@ -270,6 +273,38 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
         },
     };
 
+    // 生态搜索：结果只是候选，点安装才真正下载落盘（走与链接安装同一条链路）。
+    const runSearch = async () => {
+        const keyword = searchQuery.trim();
+        if (!keyword || searching) return;
+        const connectionRevision = useAgentSkillStore.getState().connectionRevision;
+        setSearching(true);
+        try {
+            const response = await searchCodexSkills(endpoint, token, keyword);
+            if (connectionIsCurrent(connectionRevision)) setSearchHits(response.data || []);
+        } catch (error) {
+            if (connectionIsCurrent(connectionRevision)) message.error(error instanceof Error ? error.message : t("agent.skillManager.searchFailed"));
+        } finally {
+            if (connectionIsCurrent(connectionRevision)) setSearching(false);
+        }
+    };
+
+    const installHit = async (hit: AgentSkillSearchHit) => {
+        if (installing) return;
+        const connectionRevision = useAgentSkillStore.getState().connectionRevision;
+        setInstalling(true);
+        try {
+            const response = await installCodexSkillFromSearch(endpoint, token, hit);
+            if (!response.data) throw new Error(t("agent.skillManager.installFailed"));
+            message.success(t("agent.skillManager.installed", { name: response.data.interface?.displayName || response.data.name }));
+            await refresh();
+        } catch (error) {
+            if (connectionIsCurrent(connectionRevision)) message.error(error instanceof Error ? error.message : t("agent.skillManager.installFailed"));
+        } finally {
+            if (connectionIsCurrent(connectionRevision)) setInstalling(false);
+        }
+    };
+
     // 从网上的 SKILL.md 链接安装：下载与校验都在本地 Agent 侧完成，这里只负责发起与刷新列表。
     const installFromUrl = async () => {
         const url = installUrl.trim();
@@ -336,11 +371,51 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
                         {t("agent.skillManager.install")}
                     </Button>
                 </div>
+                <div className="mt-2 flex gap-2">
+                    <Input
+                        aria-label={t("agent.skillManager.searchOnline")}
+                        className="min-w-0 flex-1"
+                        allowClear
+                        disabled={!connected || searching}
+                        value={searchQuery}
+                        onChange={(event) => setSearchQuery(event.target.value)}
+                        onPressEnter={() => void runSearch()}
+                        placeholder={t("agent.skillManager.searchOnlinePlaceholder")}
+                    />
+                    <Button size="small" className="!h-8 shrink-0" disabled={!connected || searching || !searchQuery.trim()} loading={searching} onClick={() => void runSearch()}>
+                        {t("agent.skillManager.searchOnline")}
+                    </Button>
+                    {searchHits.length ? (
+                        <Button size="small" type="text" className="!h-8 shrink-0" onClick={() => setSearchHits([])}>
+                            {t("agent.skillManager.clearResults")}
+                        </Button>
+                    ) : null}
+                </div>
                 {errors.length ? (
                     <Button danger type="text" size="small" className="!mt-1 !h-7 !px-1 text-xs" icon={<CircleAlert className="size-3.5" />} onClick={() => setErrorsOpen(true)}>{t("agent.skillManager.loadErrors", { count: errors.length })}</Button>
                 ) : null}
             </div>
             <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto px-4">
+                {searchHits.length ? (
+                    <div className="divide-y border-b" style={{ borderColor: theme.node.stroke }}>
+                        {searchHits.map((hit) => {
+                            const installed = skills.some((skill) => skill.name === hit.name);
+                            return (
+                                <div key={hit.id} className="flex items-center gap-3 py-2">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="truncate text-sm">{hit.name}</div>
+                                        <div className="mt-0.5 truncate text-xs" style={{ color: theme.node.muted }}>
+                                            {hit.source} · {t("agent.skillManager.installs", { count: hit.installs })}
+                                        </div>
+                                    </div>
+                                    <Button size="small" className="!h-7 shrink-0" disabled={installed || installing} loading={installing} onClick={() => void installHit(hit)}>
+                                        {installed ? t("agent.skillManager.installedTag") : t("agent.skillManager.install")}
+                                    </Button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                ) : null}
                 {loading && !loaded ? (
                     <div className="flex h-40 items-center justify-center gap-2 text-sm" style={{ color: theme.node.muted }}><LoaderCircle className="size-4 animate-spin" />{t("agent.skills.loading")}</div>
                 ) : filteredSkills.length ? (

@@ -13,6 +13,7 @@ import {DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWor
 import { logger } from "../utils/logger.js";
 import { checkVersions } from "../version-check.js";
 import { fetchSkillDocument, skillSourceUrl } from "../skills/install.js";
+import { resolveSkillDocumentUrl, searchSkills } from "../skills/search.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
 
 /** 启动仅监听本机的 MGCanvas Agent HTTP 服务。 */
@@ -219,10 +220,16 @@ export function startHttpServer() {
     }));
     app.post("/agent/codex/skills/install", codexMutation(async (req, res) => {
         // 必须注册在 /skills/:name 之前，否则会被当成名为 install 的技能。
-        const document = await fetchSkillDocument(skillSourceUrl(req.body?.url));
+        // 两种入口：直接给 SKILL.md 链接，或给搜索结果里的来源与技能名（先在仓库里解析出文件地址）。
+        const source = String(req.body?.source || "").trim();
+        const url = source ? await resolveSkillDocumentUrl(source, String(req.body?.name || "")) : String(req.body?.url || "").trim();
+        const document = await fetchSkillDocument(skillSourceUrl(url));
         const data = await skillStore.create(document);
         session.emitAll("skills_changed", { forceReload: true });
         res.status(201).json({ ok: true, data });
+    }));
+    app.post("/agent/codex/skills/search", route(async (req, res) => {
+        res.json({ ok: true, data: await searchSkills(String(req.body?.query || "")) });
     }));
     app.get("/agent/codex/skills/:name", route(async (req, res) => {
         res.json({ ok: true, data: await skillStore.get(routeParam(req.params.name)) });

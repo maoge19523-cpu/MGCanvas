@@ -14,6 +14,14 @@ type CanvasNodeAnchoredPopupProps = {
     gap?: number;
     flipVertical?: boolean;
     anchorRect?: DOMRect | null;
+    /**
+     * 渲染到 body 并用固定定位。
+     *
+     * 默认把弹出层挂在节点内部，好处是自动跟随画布缩放，代价是它会被节点的层叠上下文关住，
+     * 节点上方那条悬浮工具条总能压住它。画布层级的先后顺序改起来牵一发动全身，需要绝对
+     * 压在上层的面板（音频设置这类）改用固定定位，直接跳到 body 层，用屏幕坐标定位。
+     */
+    fixed?: boolean;
     className?: string;
     style?: CSSProperties;
     popupProps?: HTMLAttributes<HTMLDivElement>;
@@ -22,12 +30,16 @@ type CanvasNodeAnchoredPopupProps = {
 
 type PopupPosition = {
     container: HTMLElement;
+    fixed: boolean;
     left: number;
     top: number;
     width: number;
     maxHeight: number;
     translateY?: string;
 };
+
+/** 固定定位时的“容器矩形”，即整个视口左上角，配合屏幕坐标直接得到 left/top。 */
+const FIXED_VIEWPORT_RECT = { left: 0, top: 0 } as DOMRect;
 
 export function getCanvasNodePopupContainer(triggerNode: HTMLElement) {
     return triggerNode.closest<HTMLElement>("[data-node-id]") || document.body;
@@ -44,6 +56,7 @@ export function CanvasNodeAnchoredPopup({
     gap = 8,
     flipVertical = false,
     anchorRect,
+    fixed = false,
     className,
     style,
     popupProps,
@@ -58,11 +71,12 @@ export function CanvasNodeAnchoredPopup({
         }
 
         const anchor = anchorRef.current;
-        const container = getCanvasNodePopupContainer(anchor);
+        const container = fixed ? document.body : getCanvasNodePopupContainer(anchor);
         const sync = () => {
             const measuredAnchorRect = anchorRect || anchor.getBoundingClientRect();
-            const containerRect = container.getBoundingClientRect();
-            const scaleX = container.offsetWidth ? containerRect.width / container.offsetWidth : 1;
+            // 固定定位直接用屏幕坐标：不参与画布缩放，也不受任何层叠上下文限制。
+            const containerRect = fixed ? FIXED_VIEWPORT_RECT : container.getBoundingClientRect();
+            const scaleX = fixed ? 1 : container.offsetWidth ? containerRect.width / container.offsetWidth : 1;
             const scaleY = container.offsetHeight ? containerRect.height / container.offsetHeight : scaleX;
             const safeScaleX = Number.isFinite(scaleX) && scaleX > 0 ? scaleX : 1;
             const safeScaleY = Number.isFinite(scaleY) && scaleY > 0 ? scaleY : safeScaleX;
@@ -86,6 +100,7 @@ export function CanvasNodeAnchoredPopup({
             const maxHeight = Math.max(64, Math.min(requestedMaxHeight, availableHeight / safeScaleY));
             const next = {
                 container,
+                fixed,
                 left,
                 top: topPlacement ? localTop - gap : localBottom + gap,
                 width: popupWidth,
@@ -106,7 +121,7 @@ export function CanvasNodeAnchoredPopup({
             window.removeEventListener("resize", sync);
             window.removeEventListener("scroll", sync, true);
         };
-    }, [anchorRect, anchorRef, flipVertical, gap, open, placement, requestedMaxHeight, width]);
+    }, [anchorRect, anchorRef, fixed, flipVertical, gap, open, placement, requestedMaxHeight, width]);
 
     /**
      * 打开期间把节点容器抬到画布层所有浮层之上，但仍低于 antd 弹窗（1000）。
@@ -115,9 +130,10 @@ export function CanvasNodeAnchoredPopup({
      * 关在同一个层叠上下文里，于是作为节点兄弟的悬浮工具条（z-70）永远压在上面，把音频设置
      * 这类面板挡住。只改容器本身的层级，关闭即还原，不影响节点原本的叠放顺序。
      * 取值 999：压过工具条、创建菜单、配置浮层，又不会盖住对话框。
+     * 固定定位的面板挂在 body 上，本来就压得住画布，不需要这一手。
      */
     useEffect(() => {
-        if (!open || !position) return undefined;
+        if (!open || !position || position.fixed) return undefined;
         const container = position.container;
         const previous = container.style.zIndex;
         container.style.zIndex = "999";
@@ -134,7 +150,7 @@ export function CanvasNodeAnchoredPopup({
             data-canvas-node-popup
             className={className}
             style={{
-                position: "absolute",
+                position: position.fixed ? "fixed" : "absolute",
                 zIndex: 1200,
                 left: position.left,
                 top: position.top,
@@ -163,6 +179,7 @@ function samePosition(current: PopupPosition | null, next: PopupPosition) {
     return Boolean(
         current &&
         current.container === next.container &&
+        current.fixed === next.fixed &&
         Math.abs(current.left - next.left) < 0.1 &&
         Math.abs(current.top - next.top) < 0.1 &&
         Math.abs(current.width - next.width) < 0.1 &&

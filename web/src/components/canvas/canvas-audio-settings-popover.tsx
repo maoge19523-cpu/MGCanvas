@@ -93,6 +93,8 @@ function AudioSettingsPortal({
             anchorRef={buttonRef}
             panelRef={panelRef}
             placement={placement}
+            // 音频面板内容高、会被节点上方的悬浮工具条压住，直接挂到 body 层用固定定位。
+            fixed
             className="canvas-image-settings-popover"
             style={{
                 background: theme.toolbar.panel,

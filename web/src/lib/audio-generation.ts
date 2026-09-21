@@ -46,9 +46,16 @@ export function normalizeAudioFormatValue(value: string) {
     return audioFormatOptions.some((item) => item.value === value) ? value : "mp3";
 }
 
+/**
+ * 空值与非法值一律回落到 1。
+ *
+ * 此前 `Number("")` 得 0，再被下限夹成 0.25，于是**没设过语速时默认发出去的就是 0.25x**：
+ * 面板输入框显示的是 1，状态栏显示 0.25x，两边不一致；而智谱这类服务商的语速下限是 0.5，
+ * 默认值直接落进非法区间，请求必被拒。
+ */
 export function normalizeAudioSpeedValue(value: string) {
     const speed = Number(value);
-    if (!Number.isFinite(speed)) return "1";
+    if (!String(value ?? "").trim() || !Number.isFinite(speed) || speed <= 0) return "1";
     return String(Math.max(0.25, Math.min(4, Number(speed.toFixed(2)))));
 }
 

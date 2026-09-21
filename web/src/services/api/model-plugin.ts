@@ -79,9 +79,11 @@ async function desktopScriptRequest(input: {
         const desktop = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
         throw new Error(`请求 ${target.origin} 失败（${reason}）。桌面原生模式：${desktop ? "是" : "否（浏览器直连，可能被跨域策略拦截）"}`);
     }
-    const text = await response.text();
+    // 语音合成这类接口直接返回音频二进制：成功时按 Blob 取回，失败时仍读文本，方便报出服务商原文。
+    const wantsBinary = input.responseType === "blob" || input.responseType === "arraybuffer";
+    const text = wantsBinary && response.ok ? "" : await response.text();
     let parsed: unknown = text;
-    if (input.responseType !== "text" && text) {
+    if (!wantsBinary && input.responseType !== "text" && text) {
         try {
             parsed = JSON.parse(text);
         } catch {
@@ -96,6 +98,7 @@ async function desktopScriptRequest(input: {
             response: { status: response.status, statusText: response.statusText, data: parsed },
         });
     }
+    if (wantsBinary) return input.responseType === "arraybuffer" ? response.arrayBuffer() : response.blob();
     return parsed;
 }
 

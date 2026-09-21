@@ -359,6 +359,36 @@ const DASHSCOPE_AUDIO_SCRIPT = [
     'return { url };',
 ].join("\n");
 
+/**
+ * 智谱 BigModel 语音合成（CogTTS）。
+ *
+ * 实测：POST /api/paas/v4/audio/speech、model=cogtts、voice=tongtong 返回 HTTP 200，
+ * 响应体是完整的 RIFF WAVE 二进制（约 200KB），不是 JSON。因此脚本请求时声明
+ * responseType: "blob"，并直接把 Blob 交给音频流程（audioPluginBlob 接受 Blob）。
+ */
+const ZHIPU_AUDIO_SCRIPT = [
+    'const voice = params.voice ? String(params.voice) : "tongtong";',
+    'const format = params.format ? String(params.format) : "wav";',
+    '',
+    'let audio;',
+    'try {',
+    '  audio = await request({',
+    '    method: "post",',
+    '    url: "https://open.bigmodel.cn/api/paas/v4/audio/speech",',
+    '    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },',
+    '    data: { model, input: prompt, voice, response_format: format },',
+    '    responseType: "blob",',
+    '  });',
+    '} catch (error) {',
+    '  const status = error?.response?.status;',
+    '  const body = error?.response?.data;',
+    '  throw new Error(`智谱语音合成调用失败${status ? `（HTTP ${status}）` : ""}：` + (body ? JSON.stringify(body).slice(0, 500) : error?.message || String(error)));',
+    '}',
+    '',
+    'if (!(typeof Blob !== "undefined" && audio instanceof Blob)) throw new Error("智谱语音合成没有返回音频数据");',
+    'return audio;',
+].join("\n");
+
 export const BUILTIN_CHANNEL_SCRIPTS: readonly BuiltinChannelScript[] = [
     {
         id: "dashscope-image",
@@ -408,6 +438,13 @@ export const BUILTIN_CHANNEL_SCRIPTS: readonly BuiltinChannelScript[] = [
         match: /dashscope(-intl|-us)?\.aliyuncs\.com|bailian/i,
         capability: "audio",
         script: DASHSCOPE_AUDIO_SCRIPT,
+    },
+    {
+        id: "zhipu-audio",
+        label: "智谱 BigModel 语音合成（CogTTS）",
+        match: /bigmodel\.cn|zhipu|z\.ai/i,
+        capability: "audio",
+        script: ZHIPU_AUDIO_SCRIPT,
     },
 ];
 

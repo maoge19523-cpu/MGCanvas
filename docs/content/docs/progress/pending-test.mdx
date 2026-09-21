@@ -10,6 +10,8 @@ The current release needs manual verification in these areas:
 
 
 
+- Node audio settings reach the request: the voice, format, and speed shown on an Audio node must be exactly what is sent to the provider — with Zhipu's `tongtong` plus WAV the request must succeed, and the node's own values must win over the global defaults rather than being silently replaced by `alloy` and mp3 while the panel and status line keep showing the node's values.
+
 - Audio failure visibility: when the provider answers with a non-audio body (JSON error, HTML page, or an empty response) the node must show an error carrying the provider's own wording instead of silently storing it as an unplayable 0:00 player; a real audio response must still pass through untouched.
 
 - Default audio speed: with no speed ever chosen, the value sent to the provider must be 1, not `0.25x`, and the panel input, the pill row, and the status line must all agree. Zhipu GLM-TTS rejects anything outside 0.5–2, so a wrong default fails every request.

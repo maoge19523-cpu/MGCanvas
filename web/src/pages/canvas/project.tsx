@@ -2302,7 +2302,17 @@ function MGCanvasProjectPage() {
                 } else if (nativeKind === "audio") {
                     // 语音走 OpenAI 形状的 /audio/speech，与「通用生成流程」里的 /audio/generations 不同：
                     // 后者是为音乐类接口写的，普通渠道模型打过去只会 404。
-                    const audio = await storeGeneratedAudio(await requestAudioGeneration(requestConfig, prompt, { signal: controller.signal }), requestConfig.audioFormat);
+                    // 音色、格式、语速、指令都存在节点上，必须并进请求配置：
+                    // 只用全局配置的话，面板里选了 WAV 与智谱音色，发出去的仍是全局的 mp3 与 alloy，
+                    // 服务商只会回一句「不支持当前 response_format 值」，看着像对方的问题。
+                    const audioConfig = {
+                        ...requestConfig,
+                        audioVoice: node.metadata?.audioVoice || requestConfig.audioVoice,
+                        audioFormat: node.metadata?.audioFormat || requestConfig.audioFormat,
+                        audioSpeed: node.metadata?.audioSpeed || requestConfig.audioSpeed,
+                        audioInstructions: node.metadata?.audioInstructions || requestConfig.audioInstructions,
+                    };
+                    const audio = await storeGeneratedAudio(await requestAudioGeneration(audioConfig, prompt, { signal: controller.signal }), audioConfig.audioFormat);
                     setNodes((prev) =>
                         prev.map((item) =>
                             item.id === node.id

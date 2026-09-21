@@ -36,6 +36,7 @@ description: Major features available in the current project
 - Image and video nodes can use configured channel models directly: the model list is filtered by node capability, and generation is routed by model source (channel protocol or built-in catalogue).
 - Built-in call scripts are matched automatically by channel base URL (initially covering Alibaba Cloud Bailian image and video generation, including async task polling), so no script authoring is required.
 - Channel models accept canvas parameters: image size and count, video resolution and duration.
+- Channel models can drive audio nodes through the OpenAI speech shape (`{base}/audio/speech`), so text-to-speech providers such as Zhipu GLM-TTS (`glm-tts`) work directly. Voice, audio format, speed, and instructions are configured on the audio node itself — with a settings entry in the same row where image and video nodes show their parameters — and the node's values are what actually reaches the provider. A provider refusal is reported with the provider's own wording instead of being stored as an unplayable clip.
 
 ## AI director
 

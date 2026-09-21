@@ -10,22 +10,6 @@ The current release needs manual verification in these areas:
 
 
 
-- Node audio settings reach the request: the voice, format, and speed shown on an Audio node must be exactly what is sent to the provider — with Zhipu's `tongtong` plus WAV the request must succeed, and the node's own values must win over the global defaults rather than being silently replaced by `alloy` and mp3 while the panel and status line keep showing the node's values.
-
-- Audio failure visibility: when the provider answers with a non-audio body (JSON error, HTML page, or an empty response) the node must show an error carrying the provider's own wording instead of silently storing it as an unplayable 0:00 player; a real audio response must still pass through untouched.
-
-- Default audio speed: with no speed ever chosen, the value sent to the provider must be 1, not `0.25x`, and the panel input, the pill row, and the status line must all agree. Zhipu GLM-TTS rejects anything outside 0.5–2, so a wrong default fails every request.
-
-- Audio settings pill overflow: no voice, format, or speed label may wrap onto a second line or push text outside its pill, including Zhipu's animal-series voices; a label too long for its column must show an ellipsis instead, and the panel must stay readable at the panel's normal width.
-
-- Popups above the node hover toolbar: with a node selected and any node-anchored popup open (the audio settings panel, the parameter panel), the popup must draw completely above the 信息 / 删除 / 编辑 / 上传音频 toolbar instead of being covered by it, while the toolbar keeps floating above neighbouring nodes as before, and closing the popup must restore the node's original stacking.
-
-- Audio node settings entry: an Audio node must show the audio settings panel (voice, format, speed, instructions) in the same row where image and video nodes show 默认参数, because that button is always disabled for audio. Picking a voice or a format there must persist on the node, survive reselecting the node, fall back to the global setting when unset, and be the value actually sent to the provider.
-
-- Channel audio voices: a voice the panel did not list used to be rewritten to `alloy`, so Zhipu's `tongtong` reached the provider as `alloy` and failed its enum check; the picked voice must now arrive unchanged. Zhipu GLM-TTS can be verified end to end with model `glm-tts` on base `https://open.bigmodel.cn/api/paas/v4`, voice `tongtong` (or `chuichui` / `xiaochen` / `jam` / `kazi` / `douji` / `luodo`), and format WAV — Zhipu accepts only `wav` and `pcm`, and its default is `pcm`.
-
-- Channel-model audio: an Audio node driven by a channel model must post to `{base}/audio/speech` (the OpenAI speech shape, e.g. Zhipu `…/api/paas/v4/audio/speech`) instead of `{base}/audio/generations`, which was written for music-style endpoints and 404s on ordinary channels. The returned audio must land in the node with a playable waveform, the node must show the running and then succeeded state, and the model shown on the node must be the channel model that was picked. An Audio node whose text lives in an upstream Text node and whose own box is empty must speak that text rather than the literal placeholder `@Text 1`.
-
 - AI director whole-film hand-off: finishing 「一键生成整片」 must leave a composition node already wired underneath the generated film, so music and whole-film trimming need no manual node and connection, and must then show a review prompt repeating the requested duration and aspect plus how many spec-check problems the generation had.
 
 - AI director whole-film packing density: the system prompt sent to the reasoning model must carry the concrete shot count for the requested duration — 10 seconds 2–3 shots, 12 seconds 3–4, 15 seconds 3–5 — together with the duration and aspect ratio, and must tell the model not to ask the user how many shots to use. The same figures must be used by the spec self-check, so a 15-second reply cut into only two shots must raise a density warning while a three-shot reply must not, and the warning must never fire for Seedance, whose shot blocks are counted inside its own single prompt.

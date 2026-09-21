@@ -889,17 +889,47 @@ function MGCanvasProjectPage() {
     );
 
     /**
+     * 成片落回画布后，自动在它下面接一个合成节点。
+     *
+     * 整片返修（裁剪、淡入淡出）与加背景音乐都在合成面板里做，省得用户自己再拉一个节点连线。
+     */
+    const attachCompositeNode = useCallback(
+        (film: CanvasNodeData) => {
+            const composite = createCanvasNode(CanvasNodeType.Composite, { x: film.position.x, y: film.position.y + film.height + 96 }, {});
+            const fromPort = getHandlePorts(film, "source")[0];
+            const toPort = getHandlePorts(composite, "target").find((port) => port.id === COMPOSITE_SEGMENTS_PORT_ID);
+            let link: NonNullable<ReturnType<typeof normalizeConnectionHandles>> | undefined;
+            if (fromPort && toPort) {
+                const normalized = normalizeConnectionHandles(
+                    canvasPortHandle(film.id, "source", fromPort),
+                    canvasPortHandle(composite.id, "target", toPort),
+                    [...nodesRef.current, composite],
+                    connectionsRef.current,
+                );
+                if (normalized) link = normalized;
+            }
+            setNodes((prev) => [...prev, composite]);
+            if (link) setConnections((prev) => [...prev, { id: nanoid(), ...link }]);
+        },
+        [createCanvasNode],
+    );
+
+    /**
      * 「一键生成整片」：落成一条分镜提示词加一个视频生成节点，然后直接开始生成。
      *
      * 提示词里的 [Shot 1]/[Shot 2]… 由那一次生成一次出片，不需要再逐镜生成和合成。
+     * 成片回到画布后自动接一个合成节点，方便加配乐与整片返修。
      */
     const applyDirectorShoot = useCallback(
         async (prompt: string) => {
             const { configId } = buildDirectorNodes(prompt, true);
             if (!configId) return;
+            const before = new Set(nodesRef.current.map((node) => node.id));
             await generateNodeRef.current?.(configId, "video", prompt);
+            const film = nodesRef.current.find((node) => !before.has(node.id) && node.type === CanvasNodeType.Video);
+            if (film) attachCompositeNode(film);
         },
-        [buildDirectorNodes],
+        [attachCompositeNode, buildDirectorNodes],
     );
 
     const createReferenceMaterialForNode = useCallback(

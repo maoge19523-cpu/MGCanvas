@@ -152,6 +152,32 @@ export function CanvasDirectorDialog({
 
     const mentionOptions = useMemo(() => [...imageRefs, ...audioRefs].map((item) => ({ value: item.label, label: item.label })), [imageRefs, audioRefs]);
 
+    /**
+     * 成片后的审片提示：拿本次设定与刚才的自检结果当对照表，用户不用回头翻面板。
+     *
+     * 只提示、不拦人：成片已经落到画布并接好合成节点，这里只是把该核对的点摊开。
+     */
+    const showReview = () => {
+        const problems = lintReport?.issues.filter((item) => item.severity === "error") ?? [];
+        modal.info({
+            title: t("canvas.director.reviewTitle"),
+            width: 560,
+            okText: t("common.confirm"),
+            content: (
+                <div className="space-y-2 text-[12px]">
+                    <p>{t("canvas.director.reviewSettings", { duration, aspect })}</p>
+                    <p>{problems.length ? t("canvas.director.reviewIssues", { count: problems.length }) : t("canvas.director.reviewClean")}</p>
+                    <ul className="ml-4 list-disc space-y-1">
+                        <li>{t("canvas.director.reviewCheckLength")}</li>
+                        <li>{t("canvas.director.reviewCheckShots")}</li>
+                        <li>{t("canvas.director.reviewCheckAudio")}</li>
+                        <li>{t("canvas.director.reviewCheckComposite")}</li>
+                    </ul>
+                </div>
+            ),
+        });
+    };
+
     return (
         <Modal
             open={open}
@@ -432,6 +458,7 @@ export function CanvasDirectorDialog({
                                         onOk: async () => {
                                             onClose();
                                             await onShoot(promptOnly);
+                                            showReview();
                                         },
                                     });
                                 }}

@@ -37,6 +37,16 @@ description: Major features available in the current project
 - Built-in call scripts are matched automatically by channel base URL (initially covering Alibaba Cloud Bailian image and video generation, including async task polling), so no script authoring is required.
 - Channel models accept canvas parameters: image size and count, video resolution and duration.
 
+## AI director
+
+- Turn a creative brief into production-ready shot prompts for MiniMax H3 or Seedance 2.0; the target model, generation mode, total duration, and aspect ratio are chosen in the panel.
+- Reference images and audio are picked from the canvas (with candidates you enable explicitly) or uploaded, then mapped into the prompt as ordered labels or handles.
+- MiniMax H3 covers text-to-video, image-to-video, first-frame/last-frame, and full-reference modes, and applies the matching alignment instruction on the first line.
+- Seedance 2.0 output is a single structured Chinese prompt: the handle section only when reference images are supplied, the three ⚠️ warnings, 【镜头N】 blocks numbered from 1 without gaps, a style block, an ambience block, and a closing duration and aspect line.
+- A spec self-check runs on the generated prompts and shows a verdict plus a per-shot list of issues covering H3 field names and order, unreplaced placeholders, timeline continuity and numbering across shots, speech rate against the official density rules, music concreteness, reference labels, and authoring-template leakage.
+- Apply to canvas drops the whole storyboard into one text node and, when asked, wires it to a single video generation node.
+- Generate the whole film creates that text node plus one video generation node and starts the generation, so the `[Shot 1]`/`[Shot 2]` … sequence inside the prompt produces the whole film in one call, after an explicit confirmation that it really spends quota.
+
 ## Video composition
 
 - A composite node accepts multiple video nodes as segments and one audio node as background music.

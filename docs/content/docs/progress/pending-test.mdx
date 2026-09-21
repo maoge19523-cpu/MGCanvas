@@ -10,6 +10,8 @@ The current release needs manual verification in these areas:
 
 
 
+- Segment fades and track loop: a segment's own fade in/out must darken and silence that segment's start and end, its own audio included, while a transition on the same seam still plays. Turning 循环 on for the music track must make a track shorter than the film repeat until the film ends, and its fade-out must still be measured from the film's end.
+
 - Composite timeline: the strip under the composite panel must size each clip by its real duration, mark a segment with a transition as a diamond and a hard cut as a bar, and jump back to the source clip on the canvas when clicked. Dragging a clip body sideways must reorder the segments and the composed film must follow that new order; dragging either edge must trim that clip's in or out point in proportion to the clip's width, without crossing the opposite bound; the existing 上移/下移 buttons and 入/出 fields must keep editing the same settings.
 
 - Bailian image-to-video: giving the video node a first-frame image must produce a clip that follows that frame, while a plain text run keeps the verified text-to-video shape. Both request shapes are already verified against the live API (the image-to-video task reached SUCCEEDED and returned a `video_url`), so what is left to confirm is the in-app path from a canvas image into the video node.

@@ -66,6 +66,8 @@ pub struct ComposeVideoRequest {
     title: Option<String>,
     // 字幕排版：bottom（底部白字黑描边，默认）或 center（居中大字）。
     subtitle_style: Option<String>,
+    // 字幕字号档位：small / medium（默认）/ large。
+    subtitle_size: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -313,8 +315,12 @@ fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<Co
             }
             let kind = match segment.transition.as_deref() {
                 Some("fade") => "fade",
+                Some("dissolve") => "dissolve",
                 Some("wipeleft") => "wipeleft",
+                Some("wiperight") => "wiperight",
+                Some("slideleft") => "slideleft",
                 Some("slideup") => "slideup",
+                Some("circleopen") => "circleopen",
                 _ => return (String::new(), 0.0),
             };
             // 转场不能吃掉整段素材：最多取相邻两段中较短者的八成，再限制在 0.1–1.5 秒。
@@ -457,8 +463,13 @@ fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<Co
         std::fs::write(&srt_path, srt).map_err(|error| format!("写入字幕文件失败：{error}"))?;
         // 滤镜里的路径必须写成 C\:/dir/file.srt：反斜杠换成正斜杠，盘符的冒号要转义。
         let escaped = srt_path.to_string_lossy().replace('\\', "/").replace(':', "\\:");
-        // 中文字体必须点名，否则 libass 找不到字形会整句渲染成方块。
-        let font_size = (out_height as f64 / 22.0).round().max(16.0) as i64;
+        // 中文字体必须点名，否则 libass 找不到字形会整句渲染成方块。字号按输出高度换算，三档供选。
+        let font_divisor = match request.subtitle_size.as_deref() {
+            Some("small") => 28.0,
+            Some("large") => 17.0,
+            _ => 22.0,
+        };
+        let font_size = (out_height as f64 / font_divisor).round().max(16.0) as i64;
         let margin = (out_height as f64 / 16.0).round().max(8.0) as i64;
         let centered = request.subtitle_style.as_deref() == Some("center");
         filters.push(format!(

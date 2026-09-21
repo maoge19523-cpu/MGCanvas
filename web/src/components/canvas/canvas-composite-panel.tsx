@@ -245,8 +245,12 @@ export function CanvasCompositePanel({ node, segments, music, voice, isRunning, 
                                             options={[
                                                 { value: "none", label: "硬切" },
                                                 { value: "fade", label: "交叉溶解" },
+                                                { value: "dissolve", label: "柔和溶解" },
                                                 { value: "wipeleft", label: "左滑" },
-                                                { value: "slideup", label: "上滑" },
+                                                { value: "wiperight", label: "右滑" },
+                                                { value: "slideleft", label: "左推" },
+                                                { value: "slideup", label: "上推" },
+                                                { value: "circleopen", label: "圆形展开" },
                                             ]}
                                             onChange={(value) => updateSegment(segment.node.id, { transition: value === "none" ? undefined : value })}
                                         />
@@ -371,6 +375,18 @@ export function CanvasCompositePanel({ node, segments, music, voice, isRunning, 
                         { value: "center", label: "字幕居中" },
                     ]}
                     onChange={(value) => update({ subtitleStyle: value })}
+                />
+                <Select
+                    size="small"
+                    className="w-[92px]"
+                    value={settings.subtitleSize ?? "medium"}
+                    getPopupContainer={getCanvasNodePopupContainer}
+                    options={[
+                        { value: "small", label: "字号小" },
+                        { value: "medium", label: "字号中" },
+                        { value: "large", label: "字号大" },
+                    ]}
+                    onChange={(value) => update({ subtitleSize: value })}
                 />
             </div>
 

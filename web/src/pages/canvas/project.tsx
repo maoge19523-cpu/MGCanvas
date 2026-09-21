@@ -2445,6 +2445,7 @@ function MGCanvasProjectPage() {
                     fadeOut: settings.fadeOut,
                     title: current.title,
                     subtitleStyle: settings.subtitleStyle,
+                    subtitleSize: settings.subtitleSize,
                 });
                 const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Video];
                 const videoSize = fitNodeSize(result.width || spec.width, result.height || spec.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);

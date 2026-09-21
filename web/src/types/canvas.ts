@@ -150,6 +150,8 @@ export type CanvasCompositeSettings = {
     fadeOut?: number;
     // 字幕排版：bottom（底部白字黑描边）或 center（居中大字）。
     subtitleStyle?: string;
+    // 字幕字号档位：small / medium / large。
+    subtitleSize?: string;
 };
 
 export type CanvasCompositeResult = {

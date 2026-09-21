@@ -32,6 +32,7 @@ export type ComposeVideoRequest = {
     fadeOut?: number;
     title?: string;
     subtitleStyle?: string;
+    subtitleSize?: string;
 };
 export type ComposeVideoResult = { absolutePath: string; filename: string; mimeType: string; bytes: number; width: number; height: number; durationMs: number };
 

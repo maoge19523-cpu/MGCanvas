@@ -341,7 +341,10 @@ function lintSeedance(text: string, duration?: number): DirectorLintIssue[] {
     const issues: DirectorLintIssue[] = [];
     const push = (code: string, severity: LintSeverity, message: string) => issues.push({ shot: 0, code, severity, message });
 
-    if (!/@image\d+/.test(text)) push("missingHandle", "error", "缺少句柄声明（形如 @image1 (名称) — 外观描述）。");
+    // 文生视频没有参考图、本来就不该有句柄，所以只检查「写了句柄的地方格式对不对」。
+    if (/@image\d+/.test(text) && !/@image\d+\s*[（(]/.test(text)) {
+        push("malformedHandle", "warn", "句柄最好写成「@image1 (名称) — 外观描述」，只有编号不好认。");
+    }
     for (const warning of ["空间布局", "对白规则"]) {
         if (!text.includes(warning)) push("missingWarning", "error", `缺少「⚠️${warning}」这条通用警示。`);
     }
@@ -352,7 +355,7 @@ function lintSeedance(text: string, duration?: number): DirectorLintIssue[] {
     const shots = text.match(/【镜头\s*\d+】/g) || [];
     if (!shots.length) push("missingShotBlock", "error", "没有找到【镜头1】这样的镜头块。");
     if (declared && shots.length && Number(declared[1]) !== shots.length) {
-        push("countMismatch", "error", `警示里写的是 ${declared[1]} 个镜头，实际写了 ${shots.length} 个。`);
+        push("countMismatch", "error", `⚠️警示里写的是 ${declared[1]} 个镜头，下面只写了 ${shots.length} 个【镜头N】块，两处要一致。`);
     }
     if (shots.length > SEEDANCE_MAX_SHOTS) {
         push("tooManyShots", "warn", `一条 Seedance 提示词里塞了 ${shots.length} 个镜头，官方 15 秒包络建议 2–3 个，超过 5 个会明显过密。`);
@@ -360,7 +363,7 @@ function lintSeedance(text: string, duration?: number): DirectorLintIssue[] {
 
     if (!text.includes("风格：")) push("missingStyle", "error", "缺少以「风格：」开头的风格块。");
     if (!text.includes("环境活动：")) push("missingAmbience", "error", "缺少以「环境活动：」开头的环境活动。");
-    if (!/\d+\s*秒。\s*\d+\s*:\s*\d+。/.test(text)) push("missingTail", "error", "缺少形如「15秒。21:9。」的收尾行。");
+    if (!/\d+\s*秒。\s*\d+\s*:\s*\d+。/.test(text)) push("missingTail", "error", "缺少形如「15秒。16:9。」的收尾行。");
     if (H3_SECTIONS.some((name) => text.includes(name))) push("mixedSyntax", "error", "混用了 H3 的字段语法，Seedance 提示词里不应出现。");
     if (duration && duration > 15) push("overEnvelope", "warn", `Seedance 是 15 秒包络，当前设了 ${duration} 秒，建议拆分而不是拉长单条。`);
 

@@ -169,7 +169,8 @@ describe("Seedance", () => {
     });
 
     it("缺句柄、缺警示、缺风格块、缺收尾行都能查出来", () => {
-        expect(codes(seed(SEEDANCE.replace(/^@image\d+.*$/gm, "")))).toContain("missingHandle");
+        // 文生视频没有参考图，句柄本就不该出现，所以缺句柄不算问题。
+        expect(codes(seed(SEEDANCE.replace(/^@image\d+.*$/gm, "")))).not.toContain("missingHandle");
         expect(codes(seed(SEEDANCE.replace("⚠️对白规则：同一镜头内只允许一人说话。", "")))).toContain("missingWarning");
         expect(codes(seed(SEEDANCE.replace("风格：写实电影感，暖色调。", "")))).toContain("missingStyle");
         expect(codes(seed(SEEDANCE.replace("环境活动：门外细雨，行人偶尔走过。", "")))).toContain("missingAmbience");

@@ -10,6 +10,8 @@ The current release needs manual verification in these areas:
 
 
 
+- 302.AI channel: it is reachable only through the machine's system proxy (direct connections to its overseas node time out), so adding a channel from the new `https://api.302.ai/v1` preset and pressing 「获取模型」 must come back with either the model list or the provider's own wording — a network timeout instead would mean the desktop HTTP layer does not follow the Windows proxy setting and needs its own handling. Chat and image generation through that channel must work without any call script, and video or audio must be checked against the provider's real shapes before any script is written for them.
+
 - Bailian video sizes: the video call script must send one of the sizes the service accepts (1080*1920, 1920*1080, 1440*1440, 1632*1248, 1248*1632, 480*832, 832*480, 624*624) — the earlier values made every task fail with `InvalidParameter`, verified live, while `1920*1080` polled to SUCCEEDED with a `video_url`. Generating a video through a Bailian channel must therefore return a playable clip for each canvas ratio.
 
 - Zhipu image sizes per model: the image call script must pick canvas sizes by model, because `glm-image` only accepts side lengths divisible by 32 — the CogView size for 16:9 (`1440x720`) is rejected with 1214 (verified live), while `1728x960` succeeds. Selecting `glm-image` as the channel image model must therefore still produce an image for every canvas ratio offered in the panel.

@@ -19,6 +19,7 @@ const COMMON_BASE_URLS: readonly { value: string; label: string }[] = [
     { value: "https://api.deepseek.com/v1", label: "DeepSeek" },
     { value: "https://api.moonshot.cn/v1", label: "Kimi（月之暗面）" },
     { value: "https://ark.cn-beijing.volces.com/api/v3", label: "火山方舟（豆包 / Seedance）" },
+    { value: "https://api.302.ai/v1", label: "302.AI（聚合网关，海外节点）" },
     { value: "https://api.openai.com/v1", label: "OpenAI" },
     { value: "https://generativelanguage.googleapis.com/v1beta", label: "Google Gemini" },
     { value: "https://api.anthropic.com/v1", label: "Anthropic Claude" },

@@ -10,4 +10,4 @@ description: Planned follow-up work
 - Configure production Windows code signing and Apple Developer signing/notarization after the required certificates and secrets are available.
 - Complete the remaining ComfyUI Local Mode phases described in the [product requirements](../../../../product/comfyui-local-mode-prd.md): isolated environment/process management, the workflow import wizard, macro-node execution, and Windows/macOS acceptance.
 - Extend video composition beyond the current MVP (sequential concatenation, per-segment trimming, single background music track, fades): timeline UI, transitions, subtitles and multi-track audio.
-- Extend channel-model support to audio and text nodes, add image-to-video support, and keep adding built-in call scripts for the providers users actually use.
+- Extend channel-model support to text nodes: the Config-node text path and the Text-node retry still post to `/v1/responses`, which chat-completions-only relays reject, so text generation through a channel model should use the OpenAI chat protocol. Keep adding built-in call scripts for the providers users actually use.

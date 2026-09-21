@@ -10,6 +10,8 @@ The current release needs manual verification in these areas:
 
 
 
+- Channel-model audio: an Audio node driven by a channel model must post to `{base}/audio/speech` (the OpenAI speech shape, e.g. Zhipu `…/api/paas/v4/audio/speech`) instead of `{base}/audio/generations`, which was written for music-style endpoints and 404s on ordinary channels. The returned audio must land in the node with a playable waveform, the node must show the running and then succeeded state, and the model shown on the node must be the channel model that was picked. An Audio node whose text lives in an upstream Text node and whose own box is empty must speak that text rather than the literal placeholder `@Text 1`.
+
 - AI director whole-film hand-off: finishing 「一键生成整片」 must leave a composition node already wired underneath the generated film, so music and whole-film trimming need no manual node and connection, and must then show a review prompt repeating the requested duration and aspect plus how many spec-check problems the generation had.
 
 - AI director whole-film packing density: the system prompt sent to the reasoning model must carry the concrete shot count for the requested duration — 10 seconds 2–3 shots, 12 seconds 3–4, 15 seconds 3–5 — together with the duration and aspect ratio, and must tell the model not to ask the user how many shots to use. The same figures must be used by the spec self-check, so a 15-second reply cut into only two shots must raise a density warning while a three-shot reply must not, and the warning must never fire for Seedance, whose shot blocks are counted inside its own single prompt.

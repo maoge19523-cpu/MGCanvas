@@ -2243,7 +2243,7 @@ function MGCanvasProjectPage() {
         async (node: CanvasNodeData, modelValue: string, payload: Record<string, unknown>) => {
             const nativeKind = genericNativeNodeKind(node.type);
             // 文本与音频在上层已改走通用生成流程，这里只作为兜底。
-            if (nativeKind !== "image" && nativeKind !== "video") return;
+            if (nativeKind !== "image" && nativeKind !== "video" && nativeKind !== "audio") return;
             const requestConfig = resolveModelRequestConfig(effectiveConfig, modelValue);
             if (!isAiConfigReady(requestConfig, requestConfig.model)) {
                 openConfigDialog(true);
@@ -2251,7 +2251,10 @@ function MGCanvasProjectPage() {
             }
             genericRequestLocksRef.current.add(node.id);
             const controller = startGenerationRequest(node.id, node.id, node.id);
-            const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
+            const typedPrompt = typeof payload.prompt === "string" ? payload.prompt : "";
+            // 音频节点常把文案放在上游文本节点里、自己的输入框留空，而占位符替换只在通用流程里做，
+            // 所以这里要用画布上下文把上游文本解析出来，否则会把 "@Text 1" 原样当成台词念出去。
+            const prompt = nativeKind === "audio" ? buildNodeGenerationContext(node.id, nodesRef.current, connectionsRef.current, typedPrompt).prompt.trim() || typedPrompt : typedPrompt;
             const metadata = payload.metadata && typeof payload.metadata === "object" ? (payload.metadata as Record<string, unknown>) : {};
             const size = typeof metadata.size === "string" ? metadata.size : "";
             const requested = Number(payload.n);
@@ -2261,8 +2264,8 @@ function MGCanvasProjectPage() {
             // 否则进度环取不到计时起点，会永远停在 8%。
             const channelTaskBase: NonNullable<CanvasNodeMetadata["providerTask"]> = {
                 provider: "generic",
-                action: nativeKind === "video" ? "video.generate" : "image.generate",
-                family: nativeKind === "video" ? "video" : "image",
+                action: nativeKind === "video" ? "video.generate" : nativeKind === "audio" ? "audio.generate" : "image.generate",
+                family: nativeKind === "video" ? "video" : nativeKind === "audio" ? "audio" : "image",
                 submittedAt: new Date().toISOString(),
             };
             const channelRunningTask: NonNullable<CanvasNodeMetadata["providerTask"]> = { ...channelTaskBase, phase: "running", status: "running", progress: 0 };
@@ -2295,6 +2298,17 @@ function MGCanvasProjectPage() {
                             // 画面框按成片实际宽高比自适应，避免被默认横屏框裁切。
                             return { ...item, ...fitMediaNodeGeometry(item, videoPatch.naturalWidth, videoPatch.naturalHeight, videoSpec.width, videoSpec.height), metadata: { ...item.metadata, ...videoPatch } };
                         }),
+                    );
+                } else if (nativeKind === "audio") {
+                    // 语音走 OpenAI 形状的 /audio/speech，与「通用生成流程」里的 /audio/generations 不同：
+                    // 后者是为音乐类接口写的，普通渠道模型打过去只会 404。
+                    const audio = await storeGeneratedAudio(await requestAudioGeneration(requestConfig, prompt, { signal: controller.signal }), requestConfig.audioFormat);
+                    setNodes((prev) =>
+                        prev.map((item) =>
+                            item.id === node.id
+                                ? { ...item, metadata: { ...item.metadata, ...audioMetadata(audio), prompt, model: modelValue, status: NODE_STATUS_SUCCESS, errorDetails: undefined, providerTask: channelDoneTask() } }
+                                : item,
+                        ),
                     );
                 } else {
                     const items = references.length
@@ -2487,11 +2501,11 @@ function MGCanvasProjectPage() {
                 return;
             }
             const channelModel = typeof payload.model === "string" ? payload.model : "";
-            // 渠道模型目前只为图片与视频实现了专门的渠道协议分支；
-            // 文本与音频改走下面的通用生成流程（本地协议已支持对话与语音），
-            // 否则这两类节点会被拦在这里而完全无法运行。
+            // 渠道模型为图片、视频与音频实现了专门的渠道协议分支（音频走 /audio/speech，
+            // 和通用流程里给音乐接口准备的 /audio/generations 不是一回事）；
+            // 文本仍走下面的通用生成流程。
             const channelKind = genericNativeNodeKind(node.type);
-            if (isChannelModelValue(channelModel) && (channelKind === "image" || channelKind === "video")) {
+            if (isChannelModelValue(channelModel) && (channelKind === "image" || channelKind === "video" || channelKind === "audio")) {
                 await handleChannelModelRun(node, channelModel, payload);
                 return;
             }

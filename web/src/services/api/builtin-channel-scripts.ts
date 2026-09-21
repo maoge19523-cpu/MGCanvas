@@ -337,7 +337,11 @@ const ZHIPU_VIDEO_SCRIPT = [
  * 实测：model=qwen-tts、parameters.voice=Cherry 返回 HTTP 200 且带 url。
  */
 const DASHSCOPE_AUDIO_SCRIPT = [
-    'const voice = params.voice ? String(params.voice) : "Cherry";',
+    // 面板上的音色是固定的 OpenAI 名称（alloy / echo …），百炼并不认识它们：
+    // 命中这些名字时改用百炼自己的默认音色，用户手填的服务商音色则原样透传。
+    'const OPENAI_VOICES = ["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse", "marin", "cedar"];',
+    'const rawVoice = params.voice ? String(params.voice).trim() : "";',
+    'const voice = rawVoice && !OPENAI_VOICES.includes(rawVoice.toLowerCase()) ? rawVoice : "Cherry";',
     'const format = params.format ? String(params.format) : "wav";',
     '',
     'let data;',
@@ -367,7 +371,10 @@ const DASHSCOPE_AUDIO_SCRIPT = [
  * responseType: "blob"，并直接把 Blob 交给音频流程（audioPluginBlob 接受 Blob）。
  */
 const ZHIPU_AUDIO_SCRIPT = [
-    'const voice = params.voice ? String(params.voice) : "tongtong";',
+    // 同百炼：面板的 OpenAI 音色名智谱不认识，命中时回落到智谱默认音色，手填的服务商音色原样透传。
+    'const OPENAI_VOICES = ["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse", "marin", "cedar"];',
+    'const rawVoice = params.voice ? String(params.voice).trim() : "";',
+    'const voice = rawVoice && !OPENAI_VOICES.includes(rawVoice.toLowerCase()) ? rawVoice : "tongtong";',
     'const format = params.format ? String(params.format) : "wav";',
     '',
     'let audio;',

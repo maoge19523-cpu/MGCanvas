@@ -83,6 +83,11 @@ export function fetchCodexSkills(endpoint: string, token: string, forceReload = 
     return fetchAgentJson<AgentSkillsResponse>(endpoint, token, `/agent/codex/skills${forceReload ? "?forceReload=1" : ""}`);
 }
 
+/** 从网上的 SKILL.md 链接安装 Skill；服务端负责下载、校验与落盘。 */
+export function installCodexSkill(endpoint: string, token: string, url: string) {
+    return fetchAgentJson<AgentSkillResponse>(endpoint, token, "/agent/codex/skills/install", jsonPost({ url }));
+}
+
 export function fetchCodexSkill(endpoint: string, token: string, name: string) {
     return fetchAgentJson<AgentSkillResponse>(endpoint, token, `/agent/codex/skills/${encodeURIComponent(name)}`);
 }

@@ -12,6 +12,7 @@ import { AGENT_PROTOCOL_VERSION, CanvasSession } from "../canvas/session.js";
 import {DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWorkspace, type MGCanvasAgentConfig, readApiBackendSettings, saveApiBackendSettings } from "../config.js";
 import { logger } from "../utils/logger.js";
 import { checkVersions } from "../version-check.js";
+import { fetchSkillDocument, skillSourceUrl } from "../skills/install.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
 
 /** 启动仅监听本机的 MGCanvas Agent HTTP 服务。 */
@@ -215,6 +216,13 @@ export function startHttpServer() {
             skillDraftRunning = false;
             session.setCodexState(previousCodexState, { preserveReplay: true });
         }
+    }));
+    app.post("/agent/codex/skills/install", codexMutation(async (req, res) => {
+        // 必须注册在 /skills/:name 之前，否则会被当成名为 install 的技能。
+        const document = await fetchSkillDocument(skillSourceUrl(req.body?.url));
+        const data = await skillStore.create(document);
+        session.emitAll("skills_changed", { forceReload: true });
+        res.status(201).json({ ok: true, data });
     }));
     app.get("/agent/codex/skills/:name", route(async (req, res) => {
         res.json({ ok: true, data: await skillStore.get(routeParam(req.params.name)) });

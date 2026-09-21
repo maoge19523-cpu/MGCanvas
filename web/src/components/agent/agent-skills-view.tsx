@@ -5,7 +5,7 @@ import { Check, ChevronDown, CircleAlert, FilePenLine, LoaderCircle, LockKeyhole
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
-import { createCodexSkill, createCodexSkillDraft, deleteCodexSkill, fetchCodexSkill, postState, setCodexSkillEnabled, updateCodexSkill, type AgentSkillDetail, type AgentSkillDraft, type AgentSkillInterface, type AgentSkillScope, type AgentSkillSummary } from "@/services/api/canvas-agent";
+import { createCodexSkill, createCodexSkillDraft, deleteCodexSkill, fetchCodexSkill, installCodexSkill, postState, setCodexSkillEnabled, updateCodexSkill, type AgentSkillDetail, type AgentSkillDraft, type AgentSkillInterface, type AgentSkillScope, type AgentSkillSummary } from "@/services/api/canvas-agent";
 import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
 import { useAgentStore, type AgentChatItem } from "@/stores/use-agent-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -49,6 +49,8 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
     const [advancedOpen, setAdvancedOpen] = useState(false);
     const [createMenuOpen, setCreateMenuOpen] = useState(false);
     const [busySkill, setBusySkill] = useState("");
+    const [installUrl, setInstallUrl] = useState("");
+    const [installing, setInstalling] = useState(false);
     const [errorsOpen, setErrorsOpen] = useState(false);
     const confirmRef = useRef<{ destroy: () => void } | null>(null);
     const [form] = Form.useForm<SkillFormValues>();
@@ -268,6 +270,25 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
         },
     };
 
+    // 从网上的 SKILL.md 链接安装：下载与校验都在本地 Agent 侧完成，这里只负责发起与刷新列表。
+    const installFromUrl = async () => {
+        const url = installUrl.trim();
+        if (!url || installing) return;
+        const connectionRevision = useAgentSkillStore.getState().connectionRevision;
+        setInstalling(true);
+        try {
+            const response = await installCodexSkill(endpoint, token, url);
+            if (!response.data) throw new Error(t("agent.skillManager.installFailed"));
+            message.success(t("agent.skillManager.installed", { name: response.data.interface?.displayName || response.data.name }));
+            setInstallUrl("");
+            await refresh();
+        } catch (error) {
+            if (connectionIsCurrent(connectionRevision)) message.error(error instanceof Error ? error.message : t("agent.skillManager.installFailed"));
+        } finally {
+            if (connectionIsCurrent(connectionRevision)) setInstalling(false);
+        }
+    };
+
     return (
         <div className="flex min-h-0 flex-1 flex-col">
             <div className="shrink-0 border-b px-4 py-3" style={{ borderColor: theme.node.stroke }}>
@@ -299,6 +320,21 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
                         onChange={setScope}
                         options={[{ value: "all", label: t("agent.skillManager.scopes.all") }, ...(["repo", "user", "system", "admin"] as AgentSkillScope[]).map((value) => ({ value, label: t(`agent.skillManager.scopes.${value}`) }))]}
                     />
+                </div>
+                <div className="mt-2 flex gap-2">
+                    <Input
+                        aria-label={t("agent.skillManager.installUrl")}
+                        className="min-w-0 flex-1"
+                        allowClear
+                        disabled={!connected || installing}
+                        value={installUrl}
+                        onChange={(event) => setInstallUrl(event.target.value)}
+                        onPressEnter={() => void installFromUrl()}
+                        placeholder={t("agent.skillManager.installUrlPlaceholder")}
+                    />
+                    <Button size="small" className="!h-8 shrink-0" disabled={!connected || installing || !installUrl.trim()} loading={installing} onClick={() => void installFromUrl()}>
+                        {t("agent.skillManager.install")}
+                    </Button>
                 </div>
                 {errors.length ? (
                     <Button danger type="text" size="small" className="!mt-1 !h-7 !px-1 text-xs" icon={<CircleAlert className="size-3.5" />} onClick={() => setErrorsOpen(true)}>{t("agent.skillManager.loadErrors", { count: errors.length })}</Button>

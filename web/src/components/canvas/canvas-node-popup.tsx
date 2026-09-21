@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { useLayoutEffect, useState, type CSSProperties, type HTMLAttributes, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useState, type CSSProperties, type HTMLAttributes, type ReactNode, type RefObject } from "react";
 
 export type CanvasNodePopupPlacement = "topLeft" | "top" | "topRight" | "bottomLeft" | "bottom" | "bottomRight";
 
@@ -107,6 +107,23 @@ export function CanvasNodeAnchoredPopup({
             window.removeEventListener("scroll", sync, true);
         };
     }, [anchorRect, anchorRef, flipVertical, gap, open, placement, requestedMaxHeight, width]);
+
+    /**
+     * 打开期间把节点容器抬到悬浮工具条（z-70）之上。
+     *
+     * 弹出层虽然写了 z-index 1200，但它渲染在节点内部，会被节点自身的 z-index（选中时 z-50）
+     * 关在同一个层叠上下文里，于是作为节点兄弟的工具条永远压在上面，把音频设置这类面板挡住。
+     * 只改容器本身的层级，关闭即还原，不影响节点原本的叠放顺序。
+     */
+    useEffect(() => {
+        if (!open || !position) return undefined;
+        const container = position.container;
+        const previous = container.style.zIndex;
+        container.style.zIndex = "80";
+        return () => {
+            container.style.zIndex = previous;
+        };
+    }, [open, position]);
 
     if (!open || !position) return null;
     return createPortal(

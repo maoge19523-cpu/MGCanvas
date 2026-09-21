@@ -147,11 +147,14 @@ export async function generateDirectorPrompt(request: DirectorRequest): Promise<
         lines.push("创意需求里形如 @名称 的写法，指的就是上面同名的参考素材，请把它们当成对应素材来引用，不要当成普通文字。");
     }
     lines.push(
-        "镜头数量由你按官方规范自行决定：结合总时长与叙事节奏合理切分，不要固定数量，也不要在输出里解释你的取舍。",
-        "请为每个镜头输出一条独立、完整、可单独投产的提示词。",
-        "每条都必须自带官方格式要求的全部字段或段落，不要依赖其它条的内容；",
-        "条与条之间用一行「=== 镜头 N ===」分隔（N 从 1 开始），分隔行之外不要写任何解释。",
+        request.target === "seedance"
+            ? "整段输出就是一条完整提示词，直接按规范写完六节；不要输出「=== 镜头 N ===」这类分隔行，镜头只用【镜头N】表达。"
+            : "请为每个镜头输出一条独立、完整、可单独投产的提示词。",
+        "每条都必须自带官方格式要求的全部字段或段落，不要依赖其它条的内容。",
     );
+    if (request.target !== "seedance") {
+        lines.push("条与条之间用一行「=== 镜头 N ===」分隔（N 从 1 开始），分隔行之外不要写任何解释。");
+    }
 
     const text = lines.join("\n");
     const payloads: string[] = [];
@@ -170,7 +173,7 @@ export async function generateDirectorPrompt(request: DirectorRequest): Promise<
                 model: requestConfig.model,
                 stream: false,
                 messages: [
-                    { role: "system", content: buildDirectorSystemPrompt(request.mode, request.target) },
+                    { role: "system", content: buildDirectorSystemPrompt(request.mode, request.target, { duration: request.duration, aspect: request.aspect }) },
                     { role: "user", content },
                 ],
             }),

@@ -23,6 +23,29 @@ export const DIRECTOR_TARGETS: readonly { value: DirectorTarget; zh: string; hin
     { value: "seedance", zh: "Seedance 2.0", hint: "按 Seedance 结构化镜头块输出" },
 ];
 
+/** 官方「整片打包」锚点：10 秒 2–3 镜、12 秒 3–4 镜、15 秒 3–5 镜。 */
+const SHOT_COUNT_ANCHORS: readonly { seconds: number; min: number; max: number }[] = [
+    { seconds: 10, min: 2, max: 3 },
+    { seconds: 12, min: 3, max: 4 },
+    { seconds: 15, min: 3, max: 5 },
+];
+
+/**
+ * 按总时长倒推镜头数区间，生成用的系统提示词与规范自检共用这一份口径。
+ *
+ * 官方只给了上面三个锚点，其余时长取最近的锚点，不自己编插值公式。
+ */
+export function directorShotRange(duration: number): { min: number; max: number } {
+    const nearest = SHOT_COUNT_ANCHORS.reduce((best, item) => (Math.abs(item.seconds - duration) < Math.abs(best.seconds - duration) ? item : best), SHOT_COUNT_ANCHORS[0]);
+    return { min: nearest.min, max: nearest.max };
+}
+
+/** 本次请求的时长与画幅：模型要据此决定镜头数与画面比例，不能自己猜。 */
+export type DirectorSettings = {
+    duration: number;
+    aspect: string;
+};
+
 /** 四种模式的对齐指令：H3 要求写在最终提示词第一行，后跟一个空行。 */
 const H3_ALIGNMENT: Record<DirectorMode, string> = {
     t2v: "",
@@ -47,7 +70,7 @@ non_diegetic_music: ...
 
 硬性要求：
 1. 镜头用 [Shot 1] [Shot 2] 编号，并给出每镜的起止时间，时间精确到两位小数（0.00–S.SS）。
-2. 镜头数量按官方规范由总时长与叙事节奏决定，不固定数量；各镜头时间必须首尾相接并覆盖到总时长。
+2. 镜头数量按官方「整片打包」密度由总时长倒推，不要询问用户分几条：10 秒 2–3 个、12 秒 3–4 个、15 秒 3–5 个；各镜头时间必须首尾相接并覆盖到总时长。
 3. 每个镜头都要写清：构图、主体、环境、动作、运镜、声音，以及引用内容出现的准确时刻。
 4. 运镜写成「运动类型 + 幅度 + 速度」，例如 slow push-in with small amplitude。
 5. 有角色说话时标明说话人；对白、歌词、画面里可见的文字保留原语言，不要翻译。
@@ -75,7 +98,8 @@ non_diegetic_music
 1. 不得出现没有在 subject_definitions 里定义过的标签。
 2. 时间精确到两位小数，且与要求的视频时长一致。
 3. 对白、歌词、画面文字保留原语言。
-4. 只输出这六个段落，不要额外的解释段落。`;
+4. 只输出这六个段落，不要额外的解释段落。
+5. 镜头数量按官方「整片打包」密度由总时长倒推，不要询问用户分几条：10 秒 2–3 个、12 秒 3–4 个、15 秒 3–5 个；detailed_description 里的镜头时间要首尾相接并覆盖到总时长。`;
 
 /** Seedance 2.0 的结构化镜头格式。 */
 const SEEDANCE = `目标格式：Seedance 2.0，中文提示词。只输出一条完整提示词，它本身就是一次生成、一段视频，按下面的顺序写完，不许跳节、不许换序：
@@ -93,15 +117,19 @@ const SEEDANCE = `目标格式：Seedance 2.0，中文提示词。只输出一�
 3. ⚠️警示里写的镜头数必须与实际写出的【镜头N】块数量完全一致；写了几块就写几个。
 4. 不要在同一个提示词里混用 H3 的字段语法（integrated_multimodal_description、overall_soundscape、non_diegetic_music 一律不出现）。
 5. 对白密度同官方规范：中文普通对白 4.0–4.5 字/秒，慢速画外音 2.5–3.0 字/秒，并留出 0.3–0.5 秒建立与 0.3–0.8 秒收尾的时间。
-6. 一条提示词里最多 5 个镜头；15 秒包络建议 2–3 个，写满 6 个以上会明显过密。`;
+6. 一条提示词里最多 5 个镜头；镜头数按官方「整片打包」密度由总时长倒推：10 秒 2–3 个、12 秒 3–4 个、15 秒 3–5 个，不要询问用户分几条，写满 6 个以上会明显过密。`;
 
 
-/** 按模式与目标模型组装系统提示词。 */
-export function buildDirectorSystemPrompt(mode: DirectorMode, target: DirectorTarget): string {
+/** 按模式、目标模型与本次成片设定组装系统提示词。 */
+export function buildDirectorSystemPrompt(mode: DirectorMode, target: DirectorTarget, settings: DirectorSettings): string {
     const parts: string[] = [
         "你是资深 AI 短片导演与分镜提示词工程师，负责把用户提供的创意、参考图与音频整理成可直接投产的镜头提示词。",
         "只输出最终提示词本身，不要写解释、不要写创作说明、不要用代码块包裹。",
     ];
+    const range = directorShotRange(settings.duration);
+    parts.push(
+        `本次成片设定：总时长 ${settings.duration} 秒、画幅 ${settings.aspect}。镜头数按官方「整片打包」密度由总时长倒推，本次切 ${range.min}–${range.max} 个镜头，不要让用户决定分几条；各镜头的时间合起来要正好覆盖这 ${settings.duration} 秒，画面按 ${settings.aspect} 取景。`,
+    );
 
     if (target === "h3") {
         parts.push(mode === "ref" ? H3_REF : H3_BASE);

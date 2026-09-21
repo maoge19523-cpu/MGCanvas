@@ -215,8 +215,24 @@ describe("整段校验", () => {
         expect(codes(lintDirectorOutput(text, { mode: "t2v", target: "h3", duration: 15 }).issues)).toContain("timeStart");
     });
 
-    it("字速按这一条自己的时长算，而不是按整片总时长", () => {
-        // 5 秒的镜头里放 20 字正好 4 字/秒；若错用整片 15 秒会算成 1.3 字/秒而误报「太慢」。
+    // 官方「整片打包」密度：镜头数要落在总时长对应的区间里。
+    it("镜头数落在总时长区间内不提示", () => {
+        const text = `=== 镜头 1 ===\n${shotAt(1)}\n=== 镜头 2 ===\n${shotAt(2)}\n=== 镜头 3 ===\n${shotAt(3)}`;
+        expect(codes(lintDirectorOutput(text, { mode: "t2v", target: "h3", duration: 15 }).issues)).not.toContain("shotCountDensity");
+    });
+
+    it("15 秒只切 2 个镜头会提示密度偏稀", () => {
+        const text = `=== 镜头 1 ===\n${shotAt(1, 7.5)}\n=== 镜头 2 ===\n${shotAt(2, 7.5)}`;
+        const density = lintDirectorOutput(text, { mode: "t2v", target: "h3", duration: 15 }).issues.find((item) => item.code === "shotCountDensity");
+        expect(density?.severity).toBe("warn");
+    });
+
+    it("Seedance 不按输出块数判密度", () => {
+        const text = `=== 镜头 1 ===\n${shotAt(1)}`;
+        expect(codes(lintDirectorOutput(text, { mode: "t2v", target: "seedance", duration: 15 }).issues)).not.toContain("shotCountDensity");
+    });
+
+    it("字速按这一条自己的时长算，而不是按整片总时长", () => {        // 5 秒的镜头里放 20 字正好 4 字/秒；若错用整片 15 秒会算成 1.3 字/秒而误报「太慢」。
         const line = "她低声说：" + "字".repeat(20);
         const text = `=== 镜头 1 ===\n${shotAt(1)}\n${line}\n=== 镜头 2 ===\n${shotAt(2)}\n${line}`;
         expect(codes(lintDirectorOutput(text, { mode: "t2v", target: "h3", duration: 10 }).issues)).not.toContain("speechSlow");

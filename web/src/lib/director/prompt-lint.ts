@@ -9,7 +9,7 @@
  *
  * 全部是纯函数，不依赖网络与 DOM，方便直接单测。
  */
-import { DIRECTOR_MODES, type DirectorMode, type DirectorTarget } from "./specs";
+import { directorShotRange, DIRECTOR_MODES, type DirectorMode, type DirectorTarget } from "./specs";
 
 export type LintSeverity = "error" | "warn";
 
@@ -381,6 +381,20 @@ export function lintDirectorOutput(text: string, options: { mode: DirectorMode; 
         for (const issue of lintDirectorShot(shot, { ...options, slot })) issues.push({ ...issue, shot: index + 1 });
         cursor = shotEnd(shot) ?? cursor;
     });
+
+    // 官方「整片打包」密度：镜头数要落在总时长对应的区间里。Seedance 的镜头块由 lintSeedance 数，
+    // 整段输出在这里只是一个块，所以只对 H3 判。
+    if (options.target !== "seedance" && options.duration && shots.length) {
+        const range = directorShotRange(options.duration);
+        if (shots.length < range.min || shots.length > range.max) {
+            issues.push({
+                shot: 0,
+                code: "shotCountDensity",
+                severity: "warn",
+                message: `按官方「整片打包」密度，${options.duration} 秒建议 ${range.min}–${range.max} 个镜头，现在切了 ${shots.length} 个。`,
+            });
+        }
+    }
 
     const errors = issues.filter((item) => item.severity === "error").length;
     const warnings = issues.filter((item) => item.severity === "warn").length;

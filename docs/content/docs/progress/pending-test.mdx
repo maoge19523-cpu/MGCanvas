@@ -10,6 +10,8 @@ The current release needs manual verification in these areas:
 
 
 
+- Channel audio voices: a voice the panel did not list used to be rewritten to `alloy`, so Zhipu's `tongtong` reached the provider as `alloy` and failed its enum check; the picked voice must now arrive unchanged. Zhipu GLM-TTS can be verified end to end with model `glm-tts` on base `https://open.bigmodel.cn/api/paas/v4`, voice `tongtong` (or `chuichui` / `xiaochen` / `jam` / `kazi` / `douji` / `luodo`), and format WAV — Zhipu accepts only `wav` and `pcm`, and its default is `pcm`.
+
 - Channel-model audio: an Audio node driven by a channel model must post to `{base}/audio/speech` (the OpenAI speech shape, e.g. Zhipu `…/api/paas/v4/audio/speech`) instead of `{base}/audio/generations`, which was written for music-style endpoints and 404s on ordinary channels. The returned audio must land in the node with a playable waveform, the node must show the running and then succeeded state, and the model shown on the node must be the channel model that was picked. An Audio node whose text lives in an upstream Text node and whose own box is empty must speak that text rather than the literal placeholder `@Text 1`.
 
 - AI director whole-film hand-off: finishing 「一键生成整片」 must leave a composition node already wired underneath the generated film, so music and whole-film trimming need no manual node and connection, and must then show a review prompt repeating the requested duration and aspect plus how many spec-check problems the generation had.

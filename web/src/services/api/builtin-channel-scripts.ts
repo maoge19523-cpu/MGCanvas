@@ -79,7 +79,10 @@ const DASHSCOPE_IMAGE_SCRIPT = [
  * 目前按文生视频（t2v）实现；图生视频在百炼是另一套接口，后续可在此扩展。
  */
 const DASHSCOPE_VIDEO_SCRIPT = [
-    'const RATIO_PIXELS = { "1:1": "960*960", "16:9": "1280*720", "9:16": "720*1280", "4:3": "1088*832", "3:4": "832*1088" };',
+    // 画幅必须落在服务端允许的尺寸里，否则任务会以 InvalidParameter 失败（实测报错会把允许值列出来）：
+    // 1080*1920、1920*1080、1440*1440、1632*1248、1248*1632、480*832、832*480、624*624。
+    // 这里统一用 1080P 档，成像质量更好。
+    'const RATIO_PIXELS = { "1:1": "1440*1440", "16:9": "1920*1080", "9:16": "1080*1920", "4:3": "1632*1248", "3:4": "1248*1632" };',
     'const rawSize = params.size ? String(params.size).trim() : "";',
     'const size = RATIO_PIXELS[rawSize] || (rawSize.includes("x") ? rawSize.replace("x", "*") : rawSize || "1280*720");',
     'const seconds = Number(params.seconds) > 0 ? Number(params.seconds) : undefined;',

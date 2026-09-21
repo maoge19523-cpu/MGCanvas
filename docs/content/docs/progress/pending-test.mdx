@@ -10,6 +10,8 @@ The current release needs manual verification in these areas:
 
 
 
+- Bailian video sizes: the video call script must send one of the sizes the service accepts (1080*1920, 1920*1080, 1440*1440, 1632*1248, 1248*1632, 480*832, 832*480, 624*624) — the earlier values made every task fail with `InvalidParameter`, verified live, while `1920*1080` polled to SUCCEEDED with a `video_url`. Generating a video through a Bailian channel must therefore return a playable clip for each canvas ratio.
+
 - Zhipu image sizes per model: the image call script must pick canvas sizes by model, because `glm-image` only accepts side lengths divisible by 32 — the CogView size for 16:9 (`1440x720`) is rejected with 1214 (verified live), while `1728x960` succeeds. Selecting `glm-image` as the channel image model must therefore still produce an image for every canvas ratio offered in the panel.
 
 - Channel text endpoint: text generation through a channel model from the node prompt panel, the Config-node content panel, and node retry must post to `{base}/chat/completions` and stream the answer into the node as it arrives. Zhipu answers 404 on `/responses` (verified with a real key) and 200 on `/chat/completions`; a first chunk carrying only `role` must be skipped, and a `reasoning_content` field — which both Zhipu and DeepSeek return alongside the answer — must never leak into the node text. A provider that ignores streaming and answers with one JSON body must still fill the node, and the reasoning setting must be sent as the standard `reasoning_effort` field rather than the Responses-API `reasoning` object.

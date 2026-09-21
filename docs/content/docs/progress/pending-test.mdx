@@ -10,6 +10,8 @@ The current release needs manual verification in these areas:
 
 
 
+- Multi-track audio: connecting one audio node to 配音 and another to 音乐 must mix both with the clips' own audio, each following its own volume and fade-out, and the narration must stay clearly audible while the music can be dialled down to silence. Mixing two tracks must not make the whole result noticeably quieter or clip.
+
 - Burned-in subtitles: fill the subtitle field of a segment and compose — that line must appear over that segment only, in Chinese with no missing glyphs, wrapping by itself when long, inside the bottom safe margin, and disappearing exactly where the next line begins. Switching the layout to 字幕居中 must move it to the middle of the frame.
 
 - Composite transitions: in a composite node with at least two clips, set a transition on the first segment and check that the seam shows the chosen effect instead of a hard cut, that the finished clip is shorter than the sum of its segments by exactly the transition duration, and that the audio does not click across the seam. Leaving every seam on 硬切 must still produce exactly the same result as before this change.

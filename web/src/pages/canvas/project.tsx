@@ -102,7 +102,7 @@ import {
     sourceNodeReferenceImages,
 } from "@/lib/canvas/canvas-generation-helpers";
 import { getNodeDefinition, isBuiltinNodeType as isBuiltinType, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
-import { registerBuiltinNodes, COMPOSITE_SEGMENTS_PORT_ID, COMPOSITE_MUSIC_PORT_ID, COMPOSITE_VIDEO_OUTPUT_PORT_ID } from "@/components/canvas/nodes/builtin-nodes";
+import { registerBuiltinNodes, COMPOSITE_SEGMENTS_PORT_ID, COMPOSITE_MUSIC_PORT_ID, COMPOSITE_VOICE_PORT_ID, COMPOSITE_VIDEO_OUTPUT_PORT_ID } from "@/components/canvas/nodes/builtin-nodes";
 import { CanvasCompositePanel } from "@/components/canvas/canvas-composite-panel";
 import { composeVideo, readFfmpegPath, resolveCanvasMediaLocalPath } from "@/services/platform/desktop-ffmpeg";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -2379,19 +2379,21 @@ function MGCanvasProjectPage() {
         [effectiveConfig, finishGenerationRequest, message, openConfigDialog, startGenerationRequest],
     );
 
-    // 合成节点：片段与背景音乐按连线读取，连线顺序即片段顺序。
+    // 合成节点：片段、配音与背景音乐按连线读取，连线顺序即片段顺序。
     type CompositeSourceItem = { connectionId: string; node: CanvasNodeData };
-    const collectCompositeSources = useCallback((compositeNodeId: string): { segments: CompositeSourceItem[]; music: CompositeSourceItem | null } => {
+    const collectCompositeSources = useCallback((compositeNodeId: string): { segments: CompositeSourceItem[]; music: CompositeSourceItem | null; voice: CompositeSourceItem | null } => {
         const segments: CompositeSourceItem[] = [];
         let music: CompositeSourceItem | null = null;
+        let voice: CompositeSourceItem | null = null;
         connectionsRef.current.forEach((connection) => {
             if (connection.toNodeId !== compositeNodeId) return;
             const source = nodesRef.current.find((item) => item.id === connection.fromNodeId);
             if (!source || !source.metadata?.content) return;
             if (connection.toPortId === COMPOSITE_SEGMENTS_PORT_ID && source.type === CanvasNodeType.Video) segments.push({ connectionId: connection.id, node: source });
+            if (!voice && connection.toPortId === COMPOSITE_VOICE_PORT_ID && source.type === CanvasNodeType.Audio) voice = { connectionId: connection.id, node: source };
             if (!music && connection.toPortId === COMPOSITE_MUSIC_PORT_ID && source.type === CanvasNodeType.Audio) music = { connectionId: connection.id, node: source };
         });
-        return { segments, music };
+        return { segments, music, voice };
     }, []);
 
     // 对比节点：按连线顺序取前两张图片，连线顺序决定左右。
@@ -2412,7 +2414,7 @@ function MGCanvasProjectPage() {
                 message.warning("该节点正在合成中，请等待完成。");
                 return;
             }
-            const { segments, music } = collectCompositeSources(node.id);
+            const { segments, music, voice } = collectCompositeSources(node.id);
             if (!segments.length) {
                 message.warning("请先连接至少 1 个视频节点作为片段");
                 setDialogNodeId(node.id);
@@ -2429,14 +2431,14 @@ function MGCanvasProjectPage() {
                         return { path: await resolveCanvasMediaLocalPath(segment.node), start: segmentSettings.start, end: segmentSettings.end, volume: segmentSettings.volume, transition: segmentSettings.transition, transitionDuration: segmentSettings.transitionDuration, subtitle: segmentSettings.subtitle };
                     }),
                 );
-                let musicRequest: { path: string; volume?: number; fadeOut?: number } | undefined;
-                if (music) {
-                    musicRequest = { path: await resolveCanvasMediaLocalPath(music.node), volume: settings.musicVolume, fadeOut: settings.musicFadeOut };
-                }
+                // 配音与背景音乐是两条独立音轨，各自音量与淡出都在合成面板里调。
+                const tracks: { path: string; volume?: number; fadeOut?: number }[] = [];
+                if (voice) tracks.push({ path: await resolveCanvasMediaLocalPath(voice.node), volume: settings.voiceVolume, fadeOut: settings.voiceFadeOut });
+                if (music) tracks.push({ path: await resolveCanvasMediaLocalPath(music.node), volume: settings.musicVolume, fadeOut: settings.musicFadeOut });
                 const result = await composeVideo({
                     ffmpegPath: readFfmpegPath() || undefined,
                     segments: requests,
-                    music: musicRequest,
+                    tracks,
                     longEdge: settings.longEdge,
                     fps: settings.fps,
                     fadeIn: settings.fadeIn,
@@ -4021,12 +4023,13 @@ function MGCanvasProjectPage() {
             const definition = getNodeDefinition(panelNode.type);
             if (definition?.Panel) return renderPluginPanel(panelNode);
             if (panelNode.type === CanvasNodeType.Composite) {
-                const { segments, music } = collectCompositeSources(panelNode.id);
+                const { segments, music, voice } = collectCompositeSources(panelNode.id);
                 return (
                     <CanvasCompositePanel
                         node={panelNode}
                         segments={segments}
                         music={music}
+                        voice={voice}
                         isRunning={runningGenericNodeIds.has(panelNode.id)}
                         onChange={handleConfigNodeChange}
                         onRun={(compositeNode) => void handleRunComposite(compositeNode)}

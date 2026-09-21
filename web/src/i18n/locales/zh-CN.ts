@@ -406,7 +406,7 @@ export default {
         openAgent: "打开本地 Codex 面板",
         nodeTypes: { image: "图片", text: "文本", config: "生成配置", video: "视频", audio: "音频", composite: "合成", compare: "对比", collage: "拼合", generic: "通用生成任务", group: "组" },
         composite: {
-            nodeHint: "把视频节点连到左侧「片段」端口，可再接入一路「音乐」作背景音乐",
+            nodeHint: "把视频节点连到左侧「片段」端口，可再接入「配音」与「音乐」两路音频",
             nodeOpenHint: "点击节点打开合成面板",
             nodeDone: "上次合成：{filename}",
         },

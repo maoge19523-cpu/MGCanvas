@@ -38,9 +38,10 @@ pub struct ComposeSegment {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ComposeMusic {
+pub struct ComposeAudioTrack {
     path: String,
     volume: Option<f64>,
+    fade_in: Option<f64>,
     fade_out: Option<f64>,
 }
 
@@ -49,7 +50,9 @@ pub struct ComposeMusic {
 pub struct ComposeVideoRequest {
     ffmpeg_path: Option<String>,
     segments: Vec<ComposeSegment>,
-    music: Option<ComposeMusic>,
+    // 附加音轨（配音、背景音乐等），各自音量与淡入淡出，按顺序混进成片。
+    #[serde(default)]
+    tracks: Vec<ComposeAudioTrack>,
     long_edge: Option<f64>,
     fps: Option<f64>,
     fade_in: Option<f64>,
@@ -317,18 +320,18 @@ fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<Co
     // 每次转场都会让成片比各段之和短一段转场时长，淡出与背景音乐都按这个总时长算。
     let total: f64 = durations.iter().sum::<f64>() - transitions.iter().map(|(_, seconds)| *seconds).sum::<f64>();
 
-    let music_index = request.segments.len() as u32;
+    let track_index = request.segments.len() as u32;
     let needs_silence = probes.iter().any(|probe| !probe.has_audio);
-    let silence_index = music_index + u32::from(request.music.is_some());
+    let silence_index = track_index + request.tracks.len() as u32;
 
     let mut arguments: Vec<String> = vec!["-hide_banner".to_owned(), "-y".to_owned()];
     for segment in &request.segments {
         arguments.push("-i".to_owned());
         arguments.push(segment.path.clone());
     }
-    if let Some(music) = &request.music {
+    for track in &request.tracks {
         arguments.push("-i".to_owned());
-        arguments.push(music.path.clone());
+        arguments.push(track.path.clone());
     }
     if needs_silence {
         arguments.extend(["-f".to_owned(), "lavfi".to_owned(), "-i".to_owned(), "anullsrc=channel_layout=stereo:sample_rate=44100".to_owned()]);
@@ -453,21 +456,32 @@ fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<Co
     }
 
     let mut audio_label = "ca".to_string();
-    if let Some(music) = &request.music {
-        let volume = clamp(music.volume.unwrap_or(1.0), 0.0, 4.0);
-        let fade = clamp(music.fade_out.unwrap_or(0.0), 0.0, 10.0);
-        let mut music_filter = format!(
-            "[{music_index}:a]aformat=sample_rates=44100:channel_layouts=stereo,volume={volume},atrim=end={},asetpts=PTS-STARTPTS",
-            seconds(total)
-        );
-        if fade > 0.0 {
-            music_filter.push_str(&format!(",afade=t=out:st={}:d={}", seconds((total - fade).max(0.0)), seconds(fade)));
+    if !request.tracks.is_empty() {
+        // 每条附加音轨单独整形：音量、裁到成片时长、淡入淡出。
+        let mut mix_inputs = "[ca]".to_owned();
+        for (index, track) in request.tracks.iter().enumerate() {
+            let volume = clamp(track.volume.unwrap_or(1.0), 0.0, 4.0);
+            let fade_in = clamp(track.fade_in.unwrap_or(0.0), 0.0, 5.0);
+            let fade_out = clamp(track.fade_out.unwrap_or(0.0), 0.0, 10.0);
+            let mut chain = format!(
+                "[{}:a]aformat=sample_rates=44100:channel_layouts=stereo,volume={volume},atrim=end={},asetpts=PTS-STARTPTS",
+                track_index + index as u32,
+                seconds(total)
+            );
+            if fade_in > 0.0 {
+                chain.push_str(&format!(",afade=t=in:st=0:d={}", seconds(fade_in)));
+            }
+            if fade_out > 0.0 {
+                chain.push_str(&format!(",afade=t=out:st={}:d={}", seconds((total - fade_out).max(0.0)), seconds(fade_out)));
+            }
+            chain.push_str(&format!("[mix{index}]"));
+            filters.push(chain);
+            mix_inputs.push_str(&format!("[mix{index}]"));
         }
-        music_filter.push_str("[mx]");
-        filters.push(music_filter);
         // amix 的 normalize 选项需要 FFmpeg 4.4+，为兼容用户可能存在的旧版本（例如 2016 年的构建），
-        // 这里改用通用写法：默认混音会让各输入衰减一半，随后用 volume 补偿回原音量。
-        filters.push("[ca][mx]amix=inputs=2:duration=first,volume=2[aout]".to_owned());
+        // 这里改用通用写法：默认混音会按输入数衰减，随后用 volume 补偿回原音量。
+        let inputs = request.tracks.len() + 1;
+        filters.push(format!("{mix_inputs}amix=inputs={inputs}:duration=first,volume={inputs}[aout]"));
         audio_label = "aout".to_string();
     }
 

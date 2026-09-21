@@ -21,11 +21,11 @@ export function setFfmpegPath(path: string) {
 }
 
 export type ComposeSegmentInput = { path: string; start?: number; end?: number; volume?: number; transition?: string; transitionDuration?: number; subtitle?: string };
-export type ComposeMusicInput = { path: string; volume?: number; fadeOut?: number };
+export type ComposeAudioTrackInput = { path: string; volume?: number; fadeIn?: number; fadeOut?: number };
 export type ComposeVideoRequest = {
     ffmpegPath?: string;
     segments: ComposeSegmentInput[];
-    music?: ComposeMusicInput;
+    tracks?: ComposeAudioTrackInput[];
     longEdge?: number;
     fps?: number;
     fadeIn?: number;

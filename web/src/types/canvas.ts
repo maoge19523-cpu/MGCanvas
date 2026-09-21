@@ -135,6 +135,8 @@ export type CanvasCompositeSegmentSettings = {
 
 export type CanvasCompositeSettings = {
     segments?: Record<string, CanvasCompositeSegmentSettings>;
+    voiceVolume?: number;
+    voiceFadeOut?: number;
     musicVolume?: number;
     musicFadeOut?: number;
     longEdge?: number;

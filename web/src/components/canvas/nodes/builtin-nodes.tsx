@@ -24,10 +24,12 @@ const iconClass = "size-5";
 // 视频合成节点的连接端口：多个视频片段 + 一路背景音乐，输出合成后的视频。
 export const COMPOSITE_SEGMENTS_PORT_ID = "segments";
 export const COMPOSITE_MUSIC_PORT_ID = "music";
+export const COMPOSITE_VOICE_PORT_ID = "voice";
 export const COMPOSITE_VIDEO_OUTPUT_PORT_ID = "video";
 
 const COMPOSITE_PORTS: CanvasNodePort[] = [
     { id: COMPOSITE_SEGMENTS_PORT_ID, label: "片段", direction: "input", dataType: "video", multiple: true, description: "连接多个视频节点作为片段，连线顺序即拼接顺序" },
+    { id: COMPOSITE_VOICE_PORT_ID, label: "配音", direction: "input", dataType: "audio", description: "可连接 1 个音频节点作为人声/配音轨" },
     { id: COMPOSITE_MUSIC_PORT_ID, label: "音乐", direction: "input", dataType: "audio", description: "可连接 1 个音频节点作为背景音乐" },
     { id: COMPOSITE_VIDEO_OUTPUT_PORT_ID, label: "视频", direction: "output", dataType: "video" },
 ];

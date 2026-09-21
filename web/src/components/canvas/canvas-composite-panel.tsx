@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button, Input, InputNumber, Select, Tooltip } from "antd";
-import { ChevronDown, ChevronUp, Clapperboard, LoaderCircle, Music2, Video, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Clapperboard, LoaderCircle, Mic, Music2, Video, X } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { detectFfmpeg } from "@/services/platform/desktop-ffmpeg";
@@ -15,6 +15,7 @@ export type CanvasCompositePanelProps = {
     node: CanvasNodeData;
     segments: CompositeSegmentSource[];
     music: CompositeSegmentSource | null;
+    voice: CompositeSegmentSource | null;
     isRunning: boolean;
     onChange: (nodeId: string, patch: Partial<CanvasNodeMetadata>) => void;
     onRun: (node: CanvasNodeData) => void;
@@ -29,7 +30,7 @@ function clampPercent(value: number | string | null | undefined, fallback: numbe
     return Math.min(400, Math.max(0, parsed));
 }
 
-export function CanvasCompositePanel({ node, segments, music, isRunning, onChange, onRun, onReorderConnections, onRemoveConnection, onFocusReference }: CanvasCompositePanelProps) {
+export function CanvasCompositePanel({ node, segments, music, voice, isRunning, onChange, onRun, onReorderConnections, onRemoveConnection, onFocusReference }: CanvasCompositePanelProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const settings = node.metadata?.compositeSettings || {};
     const desktop = isTauriRuntime();
@@ -84,7 +85,7 @@ export function CanvasCompositePanel({ node, segments, music, isRunning, onChang
                     视频合成
                 </span>
                 <span className="min-w-0 flex-1 truncate">
-                    {segments.length ? `已连接 ${segments.length} 段 · 总时长约 ${totalSeconds.toFixed(1)} 秒${music ? " · 含背景音乐" : ""}` : "未连接片段"}
+                    {segments.length ? `已连接 ${segments.length} 段 · 总时长约 ${totalSeconds.toFixed(1)} 秒${voice ? " · 含配音" : ""}${music ? " · 含背景音乐" : ""}` : "未连接片段"}
                 </span>
                 {isRunning ? (
                     <span className="inline-flex shrink-0 items-center gap-1 text-[10px]" style={{ color: theme.node.muted }}>
@@ -194,6 +195,29 @@ export function CanvasCompositePanel({ node, segments, music, isRunning, onChang
                         </div>
                     );
                 })}
+            </div>
+
+            <div className="mx-3 mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-b pb-2 text-[11px]" style={{ borderColor: theme.toolbar.border }}>
+                <span className="inline-flex shrink-0 items-center gap-1" style={{ color: theme.node.muted }}>
+                    <Mic className="size-3.5" />
+                    配音
+                </span>
+                {voice ? (
+                    <>
+                        <Tooltip title={voice.node.title}>
+                            <button type="button" className="h-6 max-w-[170px] truncate rounded-md px-1.5 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/10" style={{ color: theme.node.text }} onClick={() => onFocusReference(voice.node.id)}>
+                                {voice.node.title || "未命名音频"}
+                            </button>
+                        </Tooltip>
+                        <InputNumber size="small" min={0} max={400} step={5} addonAfter="%" controls={false} value={Math.round((settings.voiceVolume ?? 1) * 100)} style={{ width: 92 }} onChange={(value) => update({ voiceVolume: clampPercent(value, 100) / 100 })} />
+                        <span style={{ color: theme.node.faint }}>
+                            淡出
+                            <InputNumber size="small" min={0} max={30} step={0.5} controls={false} value={settings.voiceFadeOut ?? 0} addonAfter="s" style={{ width: 84 }} onChange={(value) => update({ voiceFadeOut: value === null ? undefined : Math.min(30, Math.max(0, Number(value))) })} />
+                        </span>
+                    </>
+                ) : (
+                    <span style={{ color: theme.node.faint }}>可选：连接 1 个音频节点到本节点「配音」端口</span>
+                )}
             </div>
 
             <div className="mx-3 mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-b pb-2 text-[11px]" style={{ borderColor: theme.toolbar.border }}>

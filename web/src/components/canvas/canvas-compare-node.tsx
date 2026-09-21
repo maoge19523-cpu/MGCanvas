@@ -31,6 +31,26 @@ function CompareSplitView({ left, right, position, onPositionChange, large }: { 
         [onPositionChange],
     );
 
+    /**
+     * 按下即开始拖：整幅图任意位置、分割线的透明横扫区、中间的把手都能起手。
+     *
+     * 指针捕获挂在整幅 frame 上，手滑出把手后仍然跟手；stopPropagation 防止落到
+     * 节点拖拽或画布平移上，所以这里不需要按住 Ctrl 之类的修饰键。
+     */
+    const startDrag = (event: React.PointerEvent<HTMLElement>) => {
+        if (event.button !== 0) return;
+        event.stopPropagation();
+        event.preventDefault();
+        const frame = frameRef.current;
+        if (!frame) return;
+        frame.setPointerCapture(event.pointerId);
+        updateFromClientX(event.clientX);
+    };
+
+    const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    };
+
     const labelClass = "pointer-events-none absolute top-2 rounded-full bg-black/55 px-2 py-0.5 font-medium text-white";
 
     return (
@@ -38,22 +58,14 @@ function CompareSplitView({ left, right, position, onPositionChange, large }: { 
             ref={frameRef}
             data-canvas-no-zoom
             className="relative h-full w-full cursor-ew-resize select-none overflow-hidden"
-            onPointerDown={(event) => {
-                event.stopPropagation();
-                event.currentTarget.setPointerCapture(event.pointerId);
-                updateFromClientX(event.clientX);
-            }}
+            onPointerDown={startDrag}
             onPointerMove={(event) => {
                 if (event.buttons !== 1) return;
                 event.stopPropagation();
                 updateFromClientX(event.clientX);
             }}
-            onPointerUp={(event) => {
-                if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-            }}
-            onPointerCancel={(event) => {
-                if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-            }}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
         >
             <img src={right.url} alt={right.label} draggable={false} className="pointer-events-none absolute inset-0 h-full w-full object-contain" />
             <img src={left.url} alt={left.label} draggable={false} className="pointer-events-none absolute inset-0 h-full w-full object-contain" style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }} />
@@ -65,10 +77,22 @@ function CompareSplitView({ left, right, position, onPositionChange, large }: { 
                 {right.label}
             </span>
 
+            {/* 透明横扫区：鼠标移到分割线附近就能左右拖；不按住按键时也跟随鼠标，直接左右滑动对比。 */}
+            <div
+                className="absolute inset-y-0 z-10 -ml-2 w-4 cursor-ew-resize"
+                style={{ left: `${position}%` }}
+                onPointerDown={startDrag}
+                onPointerMove={(event) => {
+                    if (event.buttons !== 0) return;
+                    event.stopPropagation();
+                    updateFromClientX(event.clientX);
+                }}
+            />
             <div className="pointer-events-none absolute inset-y-0 w-px bg-white/90 shadow-[0_0_0_1px_rgba(0,0,0,.35)]" style={{ left: `${position}%` }} />
             <span
-                className="pointer-events-none absolute top-1/2 grid place-items-center rounded-full bg-white text-stone-700 shadow-[0_2px_10px_rgba(0,0,0,.35)]"
+                className="absolute top-1/2 z-10 grid cursor-ew-resize place-items-center rounded-full bg-white text-stone-700 shadow-[0_2px_10px_rgba(0,0,0,.35)]"
                 style={{ left: `${position}%`, width: large ? 34 : 22, height: large ? 34 : 22, transform: "translate(-50%, -50%)" }}
+                onPointerDown={startDrag}
             >
                 <Columns2 style={{ width: large ? 18 : 12, height: large ? 18 : 12 }} />
             </span>

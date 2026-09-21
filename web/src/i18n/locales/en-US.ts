@@ -418,7 +418,7 @@ export default {
             hint: "Connect two image nodes to the Image input",
             hintMore: "Then drag the divider to compare, or double-click for full screen",
             fullscreen: "Full-screen compare",
-            keyboardHint: "Use the left and right arrow keys to nudge the divider; hold Shift to move faster",
+            keyboardHint: "Move the pointer over the divider to compare left and right, or press and drag it",
         },
         collage: {
             hint: "Connect image nodes to the Image input",

@@ -412,7 +412,7 @@ export default {
             hint: "把两张图片节点连到左侧「图片」端口",
             hintMore: "连接后拖动分割线左右滑动对比，双击可全屏查看",
             fullscreen: "全屏对比",
-            keyboardHint: "左右方向键微调分割线，按住 Shift 加快",
+            keyboardHint: "把鼠标移到分割线上左右移动即可对比，按住左键拖动也行",
         },
         collage: {
             hint: "把图片节点连到左侧「图片」端口",

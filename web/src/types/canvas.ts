@@ -131,14 +131,19 @@ export type CanvasCompositeSegmentSettings = {
     transitionDuration?: number;
     // 这一段要烧进画面的字幕文字。
     subtitle?: string;
+    // 这一段自己的淡入淡出（秒）。
+    fadeIn?: number;
+    fadeOut?: number;
 };
 
 export type CanvasCompositeSettings = {
     segments?: Record<string, CanvasCompositeSegmentSettings>;
     voiceVolume?: number;
     voiceFadeOut?: number;
+    voiceLoop?: boolean;
     musicVolume?: number;
     musicFadeOut?: number;
+    musicLoop?: boolean;
     longEdge?: number;
     fps?: number;
     fadeIn?: number;

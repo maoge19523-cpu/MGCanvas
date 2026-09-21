@@ -2428,13 +2428,13 @@ function MGCanvasProjectPage() {
                 const requests = await Promise.all(
                     segments.map(async (segment) => {
                         const segmentSettings = settings.segments?.[segment.node.id] || {};
-                        return { path: await resolveCanvasMediaLocalPath(segment.node), start: segmentSettings.start, end: segmentSettings.end, volume: segmentSettings.volume, transition: segmentSettings.transition, transitionDuration: segmentSettings.transitionDuration, subtitle: segmentSettings.subtitle };
+                        return { path: await resolveCanvasMediaLocalPath(segment.node), start: segmentSettings.start, end: segmentSettings.end, volume: segmentSettings.volume, transition: segmentSettings.transition, transitionDuration: segmentSettings.transitionDuration, subtitle: segmentSettings.subtitle, fadeIn: segmentSettings.fadeIn, fadeOut: segmentSettings.fadeOut };
                     }),
                 );
                 // 配音与背景音乐是两条独立音轨，各自音量与淡出都在合成面板里调。
-                const tracks: { path: string; volume?: number; fadeOut?: number }[] = [];
-                if (voice) tracks.push({ path: await resolveCanvasMediaLocalPath(voice.node), volume: settings.voiceVolume, fadeOut: settings.voiceFadeOut });
-                if (music) tracks.push({ path: await resolveCanvasMediaLocalPath(music.node), volume: settings.musicVolume, fadeOut: settings.musicFadeOut });
+                const tracks: { path: string; volume?: number; fadeOut?: number; loop?: boolean }[] = [];
+                if (voice) tracks.push({ path: await resolveCanvasMediaLocalPath(voice.node), volume: settings.voiceVolume, fadeOut: settings.voiceFadeOut, loop: settings.voiceLoop });
+                if (music) tracks.push({ path: await resolveCanvasMediaLocalPath(music.node), volume: settings.musicVolume, fadeOut: settings.musicFadeOut, loop: settings.musicLoop });
                 const result = await composeVideo({
                     ffmpegPath: readFfmpegPath() || undefined,
                     segments: requests,

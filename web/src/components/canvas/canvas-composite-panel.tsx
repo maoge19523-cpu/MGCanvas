@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Button, Input, InputNumber, Select, Tooltip } from "antd";
+import { Button, Input, InputNumber, Select, Switch, Tooltip } from "antd";
 import { ChevronDown, ChevronUp, Clapperboard, LoaderCircle, Mic, Music2, Video, X } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -226,6 +226,14 @@ export function CanvasCompositePanel({ node, segments, music, voice, isRunning, 
                                     音量
                                     <InputNumber size="small" min={0} max={400} step={5} addonAfter="%" controls={false} value={Math.round((item.volume ?? 1) * 100)} style={{ width: 96 }} onChange={(value) => updateSegment(segment.node.id, { volume: clampPercent(value, 100) / 100 })} />
                                 </span>
+                                <span className="inline-flex shrink-0 items-center gap-1">
+                                    淡入
+                                    <InputNumber size="small" min={0} max={5} step={0.5} controls={false} addonAfter="s" value={item.fadeIn ?? 0} style={{ width: 84 }} onChange={(value) => updateSegment(segment.node.id, { fadeIn: value === null || !Number(value) ? undefined : Math.min(5, Math.max(0, Number(value))) })} />
+                                </span>
+                                <span className="inline-flex shrink-0 items-center gap-1">
+                                    淡出
+                                    <InputNumber size="small" min={0} max={10} step={0.5} controls={false} addonAfter="s" value={item.fadeOut ?? 0} style={{ width: 84 }} onChange={(value) => updateSegment(segment.node.id, { fadeOut: value === null || !Number(value) ? undefined : Math.min(10, Math.max(0, Number(value))) })} />
+                                </span>
                                 {index < segments.length - 1 ? (
                                     <span className="inline-flex shrink-0 items-center gap-1">
                                         →下一段
@@ -274,6 +282,10 @@ export function CanvasCompositePanel({ node, segments, music, voice, isRunning, 
                         </Tooltip>
                         <InputNumber size="small" min={0} max={400} step={5} addonAfter="%" controls={false} value={Math.round((settings.voiceVolume ?? 1) * 100)} style={{ width: 92 }} onChange={(value) => update({ voiceVolume: clampPercent(value, 100) / 100 })} />
                         <span style={{ color: theme.node.faint }}>
+                            循环
+                            <Switch size="small" checked={settings.voiceLoop ?? false} onChange={(checked) => update({ voiceLoop: checked })} />
+                        </span>
+                        <span style={{ color: theme.node.faint }}>
                             淡出
                             <InputNumber size="small" min={0} max={30} step={0.5} controls={false} value={settings.voiceFadeOut ?? 0} addonAfter="s" style={{ width: 84 }} onChange={(value) => update({ voiceFadeOut: value === null ? undefined : Math.min(30, Math.max(0, Number(value))) })} />
                         </span>
@@ -296,6 +308,10 @@ export function CanvasCompositePanel({ node, segments, music, voice, isRunning, 
                             </button>
                         </Tooltip>
                         <InputNumber size="small" min={0} max={400} step={5} addonAfter="%" controls={false} value={Math.round((settings.musicVolume ?? 1) * 100)} style={{ width: 92 }} onChange={(value) => update({ musicVolume: clampPercent(value, 100) / 100 })} />
+                        <span style={{ color: theme.node.faint }}>
+                            循环
+                            <Switch size="small" checked={settings.musicLoop ?? false} onChange={(checked) => update({ musicLoop: checked })} />
+                        </span>
                         <span style={{ color: theme.node.faint }}>
                             淡出
                             <InputNumber size="small" min={0} max={30} step={0.5} controls={false} value={settings.musicFadeOut ?? 1.5} addonAfter="s" style={{ width: 84 }} onChange={(value) => update({ musicFadeOut: value === null ? undefined : Math.min(30, Math.max(0, Number(value))) })} />

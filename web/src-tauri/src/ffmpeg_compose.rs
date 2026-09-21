@@ -34,6 +34,9 @@ pub struct ComposeSegment {
     transition_duration: Option<f64>,
     // 这一段要烧进画面的字幕文字，为空表示该段不显示字幕。
     subtitle: Option<String>,
+    // 这一段自己的淡入淡出（秒），与接缝上的转场互不影响。
+    fade_in: Option<f64>,
+    fade_out: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -43,6 +46,9 @@ pub struct ComposeAudioTrack {
     volume: Option<f64>,
     fade_in: Option<f64>,
     fade_out: Option<f64>,
+    // 音轨比成片短时循环补齐（背景音乐常用）；loop 是 Rust 关键字，所以字段另取名再改回 JSON 名。
+    #[serde(rename = "loop")]
+    looped: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -330,6 +336,10 @@ fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<Co
         arguments.push(segment.path.clone());
     }
     for track in &request.tracks {
+        // -stream_loop 是输入选项，必须放在它要作用的那个 -i 之前。
+        if track.looped.unwrap_or(false) {
+            arguments.extend(["-stream_loop".to_owned(), "-1".to_owned()]);
+        }
         arguments.push("-i".to_owned());
         arguments.push(track.path.clone());
     }
@@ -341,22 +351,41 @@ fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<Co
     let mut concat_inputs = String::new();
     for (index, ((start, end), probe)) in ranges.iter().zip(&probes).enumerate() {
         let duration = end - start;
-        filters.push(format!(
-            "[{index}:v]trim=start={}:end={},setpts=PTS-STARTPTS,fps={},scale={w}:{h}:force_original_aspect_ratio=decrease:flags=bicubic,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1[v{index}]",
+        // 片段自身的淡入淡出接在缩放之后：此时时间戳已归零，所以 st 直接从 0 与段尾算。
+        let segment_fade_in = clamp(request.segments[index].fade_in.unwrap_or(0.0), 0.0, 5.0);
+        let segment_fade_out = clamp(request.segments[index].fade_out.unwrap_or(0.0), 0.0, 10.0);
+        let mut video_chain = format!(
+            "[{index}:v]trim=start={}:end={},setpts=PTS-STARTPTS,fps={},scale={w}:{h}:force_original_aspect_ratio=decrease:flags=bicubic,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1",
             seconds(*start),
             seconds(*end),
             seconds(fps),
             w = out_width,
             h = out_height
-        ));
+        );
+        if segment_fade_in > 0.0 {
+            video_chain.push_str(&format!(",fade=t=in:st=0:d={}", seconds(segment_fade_in)));
+        }
+        if segment_fade_out > 0.0 {
+            video_chain.push_str(&format!(",fade=t=out:st={}:d={}", seconds((duration - segment_fade_out).max(0.0)), seconds(segment_fade_out)));
+        }
+        video_chain.push_str(&format!("[v{index}]"));
+        filters.push(video_chain);
         if probe.has_audio {
             let volume = clamp(request.segments[index].volume.unwrap_or(1.0), 0.0, 4.0);
-            filters.push(format!(
-                "[{index}:a]atrim=start={}:end={},asetpts=PTS-STARTPTS,aformat=sample_rates=44100:channel_layouts=stereo,volume={}[a{index}]",
+            let mut audio_chain = format!(
+                "[{index}:a]atrim=start={}:end={},asetpts=PTS-STARTPTS,aformat=sample_rates=44100:channel_layouts=stereo,volume={}",
                 seconds(*start),
                 seconds(*end),
                 seconds(volume)
-            ));
+            );
+            if segment_fade_in > 0.0 {
+                audio_chain.push_str(&format!(",afade=t=in:st=0:d={}", seconds(segment_fade_in)));
+            }
+            if segment_fade_out > 0.0 {
+                audio_chain.push_str(&format!(",afade=t=out:st={}:d={}", seconds((duration - segment_fade_out).max(0.0)), seconds(segment_fade_out)));
+            }
+            audio_chain.push_str(&format!("[a{index}]"));
+            filters.push(audio_chain);
         } else {
             filters.push(format!(
                 "[{silence_index}:a]atrim=end={},asetpts=PTS-STARTPTS,aformat=sample_rates=44100:channel_layouts=stereo[a{index}]",

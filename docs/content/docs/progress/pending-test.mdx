@@ -10,7 +10,7 @@ The current release needs manual verification in these areas:
 
 
 
-- Channel text endpoint: text generation through a channel model from the node prompt panel, the Config-node content panel, and node retry must post to `{base}/chat/completions` and stream the answer into the node as it arrives, instead of calling `/responses` (which Zhipu, DeepSeek, Ark, and Bailian do not serve). A provider that ignores streaming and answers with one JSON body must still fill the node, and the reasoning setting must be sent as the standard `reasoning_effort` field rather than the Responses-API `reasoning` object.
+- Channel text endpoint: text generation through a channel model from the node prompt panel, the Config-node content panel, and node retry must post to `{base}/chat/completions` and stream the answer into the node as it arrives; the endpoint and its streaming shape were verified against a real key (a first chunk carrying only `role` must be skipped, and a `reasoning_content` field must never leak into the node text). A provider that ignores streaming and answers with one JSON body must still fill the node, and the reasoning setting must be sent as the standard `reasoning_effort` field rather than the Responses-API `reasoning` object.
 
 - Channel video body: a channel model without a matching call script must post the plain OpenAI videos shape — `model`, `prompt`, `seconds`, `size`, `input_reference[]` — with no `resolution_name` or `preset`; a strict compatible provider must accept the request, and the resolution chosen in the panel must still arrive as `size`.
 

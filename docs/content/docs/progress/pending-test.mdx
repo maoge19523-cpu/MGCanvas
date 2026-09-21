@@ -10,6 +10,8 @@ The current release needs manual verification in these areas:
 
 
 
+- Composite timeline: the strip under the composite panel must size each clip by its real duration, mark a segment with a transition as a diamond and a hard cut as a bar, and jump back to the source clip on the canvas when clicked. Dragging a clip body sideways must reorder the segments and the composed film must follow that new order; dragging either edge must trim that clip's in or out point in proportion to the clip's width, without crossing the opposite bound; the existing 上移/下移 buttons and 入/出 fields must keep editing the same settings.
+
 - Bailian image-to-video: giving the video node a first-frame image must produce a clip that follows that frame, while a plain text run keeps the verified text-to-video shape. Both request shapes are already verified against the live API (the image-to-video task reached SUCCEEDED and returned a `video_url`), so what is left to confirm is the in-app path from a canvas image into the video node.
 
 - 302.AI channel: it is reachable only through the machine's system proxy (direct connections to its overseas node time out), so adding a channel from the new `https://api.302.ai/v1` preset and pressing 「获取模型」 must come back with either the model list or the provider's own wording — a network timeout instead would mean the desktop HTTP layer does not follow the Windows proxy setting and needs its own handling. Chat and image generation through that channel must work without any call script, and video or audio must be checked against the provider's real shapes before any script is written for them.

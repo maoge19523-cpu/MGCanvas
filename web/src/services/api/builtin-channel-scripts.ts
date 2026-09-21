@@ -76,7 +76,7 @@ const DASHSCOPE_IMAGE_SCRIPT = [
  * 阿里云百炼（DashScope）视频生成。
  * 特点是「异步任务」：先创建任务拿 task_id（请求必须带 X-DashScope-Async: enable），
  * 再轮询 /api/v1/tasks/{task_id} 直到 SUCCEEDED，最后取 video_url。
- * 目前按文生视频（t2v）实现；图生视频在百炼是另一套接口，后续可在此扩展。
+ * 文生视频与图生视频是同一个接口：给了首帧图就放在 input.img_url，并把画幅换成清晰度档位。
  */
 const DASHSCOPE_VIDEO_SCRIPT = [
     // 画幅必须落在服务端允许的尺寸里，否则任务会以 InvalidParameter 失败（实测报错会把允许值列出来）：
@@ -86,6 +86,11 @@ const DASHSCOPE_VIDEO_SCRIPT = [
     'const rawSize = params.size ? String(params.size).trim() : "";',
     'const size = RATIO_PIXELS[rawSize] || (rawSize.includes("x") ? rawSize.replace("x", "*") : rawSize || "1280*720");',
     'const seconds = Number(params.seconds) > 0 ? Number(params.seconds) : undefined;',
+    // 图生视频（画布给了首帧图）用的是同一个接口，但首帧图放在 input.img_url，
+    // 尺寸改成清晰度档位（480P / 720P / 1080P）而不是具体的宽高。
+    'const RESOLUTIONS = { "480P": "480P", "720P": "720P", "1080P": "1080P" };',
+    'const resolution = RESOLUTIONS[String(params.resolution || "1080P").trim().toUpperCase()] || "1080P";',
+    'const firstFrame = images && images[0] ? images[0] : "";',
     'const headers = { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };',
     '',
     'let submit;',
@@ -96,8 +101,8 @@ const DASHSCOPE_VIDEO_SCRIPT = [
     '    headers: { ...headers, "X-DashScope-Async": "enable" },',
     '    data: {',
     '      model,',
-    '      input: { prompt },',
-    '      parameters: { size, prompt_extend: true, watermark: false, ...(seconds ? { duration: seconds } : {}) },',
+    '      input: { prompt, ...(firstFrame ? { img_url: firstFrame } : {}) },',
+    '      parameters: { ...(firstFrame ? { resolution } : { size }), prompt_extend: true, watermark: false, ...(seconds ? { duration: seconds } : {}) },',
     '    },',
     '  });',
     '} catch (error) {',

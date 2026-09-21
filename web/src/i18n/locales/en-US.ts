@@ -497,6 +497,7 @@ export default {
             aspect: "Aspect ratio",
             generate: "Generate shot prompts",
             result: "Result (editable)",
+            resultHint: "\"=== 镜头 N ===\" only marks shot boundaries for the self-check; it is stripped before going to the canvas or the model",
             applyToCanvas: "Send to canvas",
             shoot: "Generate the whole film",
             shootTitle: "Generate the whole film",

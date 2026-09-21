@@ -491,6 +491,7 @@ export default {
             aspect: "画幅",
             generate: "生成分镜提示词",
             result: "生成结果（可编辑）",
+            resultHint: "「=== 镜头 N ===」只是面板用来分条自检的标记，落到画布和送模型时会自动去掉",
             applyToCanvas: "落到画布",
             shoot: "一键生成整片",
             shootTitle: "一键生成整片",

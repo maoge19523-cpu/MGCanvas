@@ -88,7 +88,9 @@ export function splitDirectorShots(text: string): string[] {
         .split(/\n\s*={2,}\s*镜头\s*\d+\s*={2,}\s*\n/)
         .map((item) => item.replace(/^\s*={2,}\s*镜头\s*\d+\s*={2,}\s*$/gm, "").trim())
         .filter(Boolean);
-    return blocks.length > 1 ? blocks : [text.trim()];
+    // 只有一条时也要用清理过的块，否则分隔行会被当成提示词内容发出去；
+    // 完全切不出块（压根没有分隔符）才回退整段原文。
+    return blocks.length ? blocks : [text.trim()];
 }
 
 function countHan(text: string): number {

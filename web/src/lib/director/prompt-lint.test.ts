@@ -215,6 +215,15 @@ describe("整段校验", () => {
         expect(codes(lintDirectorOutput(text, { mode: "t2v", target: "h3", duration: 15 }).issues)).toContain("timeStart");
     });
 
+    // 只有一条镜头时，分隔行也不能被当成提示词内容留给模型。
+    it("只有一条镜头时也去掉分隔行", () => {
+        expect(splitDirectorShots(`=== 镜头 1 ===\n${shotAt(1)}`)[0]).not.toContain("=== 镜头");
+    });
+
+    it("完全没有分隔符时整段作为一条", () => {
+        expect(splitDirectorShots(shotAt(1))).toEqual([shotAt(1)]);
+    });
+
     // 官方「整片打包」密度：镜头数要落在总时长对应的区间里。
     it("镜头数落在总时长区间内不提示", () => {
         const text = `=== 镜头 1 ===\n${shotAt(1)}\n=== 镜头 2 ===\n${shotAt(2)}\n=== 镜头 3 ===\n${shotAt(3)}`;

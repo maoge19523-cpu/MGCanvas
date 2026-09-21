@@ -385,7 +385,10 @@ export function CanvasDirectorDialog({
 
                 {result ? (
                     <section className="space-y-2">
-                        <div className="font-medium">{t("canvas.director.result")}</div>
+                        <div className="flex items-center gap-2">
+                            <span className="font-medium">{t("canvas.director.result")}</span>
+                            <span className="text-[11px] text-black/45 dark:text-white/45">{t("canvas.director.resultHint")}</span>
+                        </div>
                         <Input.TextArea rows={12} value={result} onChange={(event) => setResult(event.target.value)} className="font-mono text-[11px]" />
                         {/* 规范自检：把 specs 里注入的硬性要求逐条核对结果摊开给用户看。 */}
                         {lintReport ? (

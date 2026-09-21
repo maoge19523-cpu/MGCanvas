@@ -144,6 +144,8 @@ export default {
         htmlError: "服务返回了 HTML 错误页面（{{preview}}）",
         audioModelRequired: "请先配置音频模型",
         audioGenerationFailed: "音频生成失败",
+        audioInvalidResponse: "服务商没有返回音频：{{detail}}",
+        audioEmptyBody: "响应为空",
         scriptNoAudio: "模型调用脚本没有返回音频",
         geminiAudioUnsupported: "Gemini 调用格式暂不支持音频生成，请使用 OpenAI 格式渠道",
         invalidImageSizeFormat: "图像尺寸格式不支持，请使用 auto、9:16 或 1024x1024",

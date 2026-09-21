@@ -93,16 +93,31 @@ function assertAudioConfig(config: AiConfig, model: string) {
     if (config.apiFormat === "gemini") throw new Error(apiText("geminiAudioUnsupported"));
 }
 
+/**
+ * 只接受真正的音频字节。
+ *
+ * 服务商经常用 HTTP 200 返回一段 JSON 或 HTML 错误，甚至返回空体。此前这些都会被当作音频
+ * 存下来，节点上只显示一个 0:00 的灰色播放器，真正的错误信息被吃掉，用户完全看不出哪里错了。
+ * 现在凡是能确认不是音频的响应一律抛出，并把服务商原话带出来。
+ */
 async function assertAudioBlob(blob: Blob) {
-    if (!blob.type.includes("json")) return;
-    let payload: { code?: number; msg?: string; error?: { message?: string } };
-    try {
-        payload = JSON.parse(await blob.text()) as { code?: number; msg?: string; error?: { message?: string } };
-    } catch {
-        return;
+    if (blob.type.startsWith("audio/") && blob.size > 0) return;
+    const text = (await blob.text()).trim();
+    if (!text) throw new Error(apiText("audioInvalidResponse", { detail: apiText("audioEmptyBody") }));
+    const looksLikeJson = text.startsWith("{") || text.startsWith("[") || blob.type.includes("json");
+    const looksLikeHtml = text.startsWith("<");
+    if (!looksLikeJson && !looksLikeHtml) return;
+    let detail = text.slice(0, 160);
+    if (looksLikeJson) {
+        try {
+            const payload = JSON.parse(text) as { code?: number; msg?: string; message?: string; error?: { message?: string } };
+            detail = payload.msg || payload.message || payload.error?.message || detail;
+            if (!detail && typeof payload.code === "number" && payload.code !== 0) detail = apiText("audioGenerationFailed");
+        } catch {
+            // 解析失败就保留原文片段
+        }
     }
-    if (typeof payload.code === "number" && payload.code !== 0) throw new Error(payload.msg || apiText("audioGenerationFailed"));
-    if (payload.error?.message) throw new Error(payload.error.message);
+    throw new Error(apiText("audioInvalidResponse", { detail: detail || apiText("audioGenerationFailed") }));
 }
 
 function readApiErrorMessage(value: unknown): string {

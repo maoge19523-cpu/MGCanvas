@@ -150,6 +150,8 @@ export default {
         htmlError: "The service returned an HTML error page ({{preview}})",
         audioModelRequired: "Configure an audio model first",
         audioGenerationFailed: "Audio generation failed",
+        audioInvalidResponse: "The provider did not return audio: {{detail}}",
+        audioEmptyBody: "empty response",
         scriptNoAudio: "The model request script did not return audio",
         geminiAudioUnsupported: "The Gemini API format does not support audio generation. Use an OpenAI-format provider.",
         invalidImageSizeFormat: "Unsupported image size. Use auto, 9:16, or 1024x1024.",

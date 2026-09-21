@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.0.2
+
 - [修复] 渠道模型的文本请求打错端点：节点提示词面板、配置节点的文本生成与节点重试此前走 Responses API 的 `/responses`，该端点并非所有服务商都提供——实测智谱返回 404（`/v4/responses` Not Found），其接口索引里也没有这一项，而 `/chat/completions` 返回 200；现在统一走 `/chat/completions`，消息形状、思考强度字段与流式增量解析一并迁移（实测智谱与 DeepSeek 的响应都同时带 `reasoning_content`，正文只取 `content`，思考过程不会混进节点文字；服务商忽略流式直接整段返回 JSON 时也能正常取到文本）。
 - [修复] 渠道视频请求体带中转站私有字段：没有匹配脚本的渠道走 OpenAI videos 兜底时，会额外发送 `resolution_name` 与 `preset`，这两个是中转站的私有参数，正式兼容服务商只回 400/404，而分辨率本来就已按标准 `size` 发出；现在只保留 `model`、`prompt`、`seconds`、`size`、`input_reference[]`。
 - [修复] 渠道音频生成没有使用节点上的音频设置：音色、格式、语速、指令虽然存在节点上并在面板与状态栏正确显示，实际请求用的却是全局默认值（空值被规范化成 `alloy` 与 `mp3`），于是面板里选了 WAV 和智谱音色，发出去的仍是 mp3，服务商回一句「不支持当前 response_format 值」，看起来像对方不认 wav；现在音频请求会合并节点上的四项设置。

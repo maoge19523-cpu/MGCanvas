@@ -50,11 +50,13 @@ description: Major features available in the current project
 
 ## Video composition
 
-- A composite node accepts multiple video nodes as segments and one audio node as background music.
-- Each segment supports start/end trimming (clamped to the source duration), segment volume, music volume and fade-out.
+- A composite node accepts multiple video nodes as segments, plus one audio node on the voice port and one on the music port.
+- Each segment supports start/end trimming (clamped to the source duration), segment volume, and a transition into the next segment (cross dissolve, wipe left or slide up, 0.2–1.5s, capped at 80% of the shorter neighbour) — seams left on a hard cut keep the plain concatenation path.
+- Each segment can carry one line of subtitles, burned in through FFmpeg's libass with the font named explicitly (Microsoft YaHei) so Chinese never renders as missing glyphs; font size and bottom margin scale with the output height, long lines wrap by themselves, and the layout can be bottom or centred.
+- Voice and music are separate tracks with their own volume and fade-out, mixed together with the clips' own audio and volume-compensated so nothing gets quieter.
 - Output options include resolution (long edge 1080/720/480, aspect follows the first segment), frame rate and global fade in/out.
-- Composition runs through a locally installed FFmpeg (not bundled with the installer); common install locations are detected automatically and a manual path can be set in settings.
-- There is no timeline UI; the node targets light editing such as concatenating generated clips with music.
+- Composition runs through a locally installed FFmpeg (not bundled with the installer); common install locations are detected automatically and a manual path can be set in settings. Transitions and subtitles need FFmpeg 4.3 or newer with libass.
+- There is no timeline UI; the node targets light editing such as concatenating generated clips with transitions, subtitles and separate voice and music tracks.
 
 ## MGCanvas Agent
 

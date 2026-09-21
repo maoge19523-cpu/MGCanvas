@@ -109,17 +109,18 @@ export function CanvasNodeAnchoredPopup({
     }, [anchorRect, anchorRef, flipVertical, gap, open, placement, requestedMaxHeight, width]);
 
     /**
-     * 打开期间把节点容器抬到悬浮工具条（z-70）之上。
+     * 打开期间把节点容器抬到画布层所有浮层之上，但仍低于 antd 弹窗（1000）。
      *
      * 弹出层虽然写了 z-index 1200，但它渲染在节点内部，会被节点自身的 z-index（选中时 z-50）
-     * 关在同一个层叠上下文里，于是作为节点兄弟的工具条永远压在上面，把音频设置这类面板挡住。
-     * 只改容器本身的层级，关闭即还原，不影响节点原本的叠放顺序。
+     * 关在同一个层叠上下文里，于是作为节点兄弟的悬浮工具条（z-70）永远压在上面，把音频设置
+     * 这类面板挡住。只改容器本身的层级，关闭即还原，不影响节点原本的叠放顺序。
+     * 取值 999：压过工具条、创建菜单、配置浮层，又不会盖住对话框。
      */
     useEffect(() => {
         if (!open || !position) return undefined;
         const container = position.container;
         const previous = container.style.zIndex;
-        container.style.zIndex = "80";
+        container.style.zIndex = "999";
         return () => {
             container.style.zIndex = previous;
         };

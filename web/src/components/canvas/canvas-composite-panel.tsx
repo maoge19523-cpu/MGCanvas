@@ -295,6 +295,35 @@ export function CanvasCompositePanel({ node, segments, music, voice, isRunning, 
                 />
             </div>
 
+            {segments.length ? (
+                <div className="mx-3 mt-2 flex items-stretch gap-1 pb-2">
+                    {segments.map((segment, index) => {
+                        const item = settings.segments?.[segment.node.id] || {};
+                        const source = (segment.node.metadata?.durationMs || 0) / 1000;
+                        const length = Math.max(0, (item.end && source ? Math.min(item.end, source) : source) - (item.start || 0));
+                        const share = totalSeconds > 0 ? length / totalSeconds : 1 / segments.length;
+                        return (
+                            <div key={segment.node.id} className="flex min-w-0 flex-[1_1_0%] items-center gap-1" style={{ flexGrow: Math.max(0.35, share * 10) }}>
+                                <button
+                                    type="button"
+                                    className="h-8 min-w-0 flex-1 truncate rounded-md border px-1.5 text-[10px] transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                                    style={{ borderColor: theme.toolbar.border, color: theme.node.muted }}
+                                    title={`${segmentLabel(index)} · ${length.toFixed(1)} 秒（点一下在画布上定位）`}
+                                    onClick={() => onFocusReference(segment.node.id)}
+                                >
+                                    {segmentLabel(index)} · {length.toFixed(1)}s
+                                </button>
+                                {index < segments.length - 1 ? (
+                                    <span className="shrink-0 text-[10px]" style={{ color: item.transition ? theme.node.text : theme.node.faint }} title={item.transition ? "已设转场" : "硬切"}>
+                                        {item.transition ? "◆" : "│"}
+                                    </span>
+                                ) : null}
+                            </div>
+                        );
+                    })}
+                </div>
+            ) : null}
+
             <div className="mx-3 mt-2 flex items-center justify-between gap-2 border-t pt-2 pb-2.5" style={{ borderColor: theme.toolbar.border }}>
                 <span className="min-w-0 truncate text-[10px]" style={{ color: ffmpegState.status === "missing" && desktop ? "#fbbf24" : theme.node.faint }} title={ffmpegState.path}>
                     {!desktop ? "视频合成仅在桌面客户端可用" : ffmpegState.status === "checking" ? "检测 FFmpeg 中…" : ffmpegState.status === "ready" ? `FFmpeg：${ffmpegState.path}` : "未检测到 FFmpeg，请在设置 → 本地 FFmpeg 手动指定"}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, InputNumber, Select, Tooltip } from "antd";
+import { Button, Input, InputNumber, Select, Tooltip } from "antd";
 import { ChevronDown, ChevronUp, Clapperboard, LoaderCircle, Music2, Video, X } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -183,6 +183,13 @@ export function CanvasCompositePanel({ node, segments, music, isRunning, onChang
                                         ) : null}
                                     </span>
                                 ) : null}
+                                <Input
+                                    size="small"
+                                    className="min-w-[220px] flex-1"
+                                    placeholder="这一段的字幕，留空则该段不显示"
+                                    value={item.subtitle ?? ""}
+                                    onChange={(event) => updateSegment(segment.node.id, { subtitle: event.target.value || undefined })}
+                                />
                             </div>
                         </div>
                     );
@@ -251,6 +258,17 @@ export function CanvasCompositePanel({ node, segments, music, isRunning, onChang
                     淡出
                     <InputNumber size="small" min={0} max={10} step={0.5} controls={false} value={settings.fadeOut ?? 0.5} addonAfter="s" style={{ width: 84 }} onChange={(value) => update({ fadeOut: value === null ? undefined : Math.min(10, Math.max(0, Number(value))) })} />
                 </span>
+                <Select
+                    size="small"
+                    className="w-[104px]"
+                    value={settings.subtitleStyle ?? "bottom"}
+                    getPopupContainer={getCanvasNodePopupContainer}
+                    options={[
+                        { value: "bottom", label: "字幕底部" },
+                        { value: "center", label: "字幕居中" },
+                    ]}
+                    onChange={(value) => update({ subtitleStyle: value })}
+                />
             </div>
 
             <div className="mx-3 mt-2 flex items-center justify-between gap-2 border-t pt-2 pb-2.5" style={{ borderColor: theme.toolbar.border }}>

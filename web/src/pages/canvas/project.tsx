@@ -2426,7 +2426,7 @@ function MGCanvasProjectPage() {
                 const requests = await Promise.all(
                     segments.map(async (segment) => {
                         const segmentSettings = settings.segments?.[segment.node.id] || {};
-                        return { path: await resolveCanvasMediaLocalPath(segment.node), start: segmentSettings.start, end: segmentSettings.end, volume: segmentSettings.volume, transition: segmentSettings.transition, transitionDuration: segmentSettings.transitionDuration };
+                        return { path: await resolveCanvasMediaLocalPath(segment.node), start: segmentSettings.start, end: segmentSettings.end, volume: segmentSettings.volume, transition: segmentSettings.transition, transitionDuration: segmentSettings.transitionDuration, subtitle: segmentSettings.subtitle };
                     }),
                 );
                 let musicRequest: { path: string; volume?: number; fadeOut?: number } | undefined;
@@ -2442,6 +2442,7 @@ function MGCanvasProjectPage() {
                     fadeIn: settings.fadeIn,
                     fadeOut: settings.fadeOut,
                     title: current.title,
+                    subtitleStyle: settings.subtitleStyle,
                 });
                 const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Video];
                 const videoSize = fitNodeSize(result.width || spec.width, result.height || spec.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);

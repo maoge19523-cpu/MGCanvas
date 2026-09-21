@@ -129,6 +129,8 @@ export type CanvasCompositeSegmentSettings = {
     // 与下一段之间的转场：fade（交叉溶解）/ wipeleft / slideup，为空表示硬切。
     transition?: string;
     transitionDuration?: number;
+    // 这一段要烧进画面的字幕文字。
+    subtitle?: string;
 };
 
 export type CanvasCompositeSettings = {
@@ -139,6 +141,8 @@ export type CanvasCompositeSettings = {
     fps?: number;
     fadeIn?: number;
     fadeOut?: number;
+    // 字幕排版：bottom（底部白字黑描边）或 center（居中大字）。
+    subtitleStyle?: string;
 };
 
 export type CanvasCompositeResult = {

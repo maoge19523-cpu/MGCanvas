@@ -10,6 +10,8 @@ The current release needs manual verification in these areas:
 
 
 
+- Burned-in subtitles: fill the subtitle field of a segment and compose — that line must appear over that segment only, in Chinese with no missing glyphs, wrapping by itself when long, inside the bottom safe margin, and disappearing exactly where the next line begins. Switching the layout to 字幕居中 must move it to the middle of the frame.
+
 - Composite transitions: in a composite node with at least two clips, set a transition on the first segment and check that the seam shows the chosen effect instead of a hard cut, that the finished clip is shorter than the sum of its segments by exactly the transition duration, and that the audio does not click across the seam. Leaving every seam on 硬切 must still produce exactly the same result as before this change.
 
 - Bailian image-to-video: giving the video node a first-frame image must produce a clip that follows that frame, while a plain text run keeps the verified text-to-video shape. Both request shapes are already verified against the live API (the image-to-video task reached SUCCEEDED and returned a `video_url`), so what is left to confirm is the in-app path from a canvas image into the video node.

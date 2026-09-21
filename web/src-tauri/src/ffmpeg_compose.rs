@@ -32,6 +32,8 @@ pub struct ComposeSegment {
     // 为空表示硬切。
     transition: Option<String>,
     transition_duration: Option<f64>,
+    // 这一段要烧进画面的字幕文字，为空表示该段不显示字幕。
+    subtitle: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -53,6 +55,8 @@ pub struct ComposeVideoRequest {
     fade_in: Option<f64>,
     fade_out: Option<f64>,
     title: Option<String>,
+    // 字幕排版：bottom（底部白字黑描边，默认）或 center（居中大字）。
+    subtitle_style: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -389,11 +393,54 @@ fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<Co
         filters.push(format!("[{audio}]anull[ca]"));
     }
 
+    // 字幕：按各段在成片时间轴上的位置生成一份 .srt，再用 libass 烧进画面。
+    // 时间轴与拼接完全一致——每经过一次转场，后面所有片段的起点都要往前挪一个转场时长，
+    // 行尾也要跟着提前，否则两次字幕会在转场处叠着显示。
+    let srt_time = |value: f64| {
+        let millis = (value.max(0.0) * 1000.0).round() as u64;
+        format!("{:02}:{:02}:{:02},{:03}", millis / 3_600_000, millis / 60_000 % 60, millis / 1000 % 60, millis % 1000)
+    };
+    let subtitle_lines: Vec<(f64, f64, String)> = request
+        .segments
+        .iter()
+        .enumerate()
+        .filter_map(|(index, segment)| {
+            let text = segment.subtitle.as_deref().map(str::trim).filter(|text| !text.is_empty())?;
+            let dropped = transitions[..index].iter().map(|(_, seconds)| *seconds).sum::<f64>();
+            let start = (durations[..index].iter().sum::<f64>() - dropped).max(0.0);
+            let cut = transitions.get(index).map(|(_, seconds)| *seconds).unwrap_or(0.0);
+            let end = (start + durations[index] - cut).max(start + 0.2);
+            Some((start, end, text.to_owned()))
+        })
+        .collect();
+
     let mut video_label = "cv".to_string();
+    if !subtitle_lines.is_empty() {
+        let mut srt = String::new();
+        for (index, (start, end, text)) in subtitle_lines.iter().enumerate() {
+            srt.push_str(&format!("{}\n{} --> {}\n{}\n\n", index + 1, srt_time(*start), srt_time(*end), text));
+        }
+        let stem = sanitize_filename_stem(request.title.as_deref().unwrap_or("合成视频"));
+        let srt_path = cache_dir.join(format!("{stem}-{}.srt", unix_timestamp_millis()));
+        std::fs::write(&srt_path, srt).map_err(|error| format!("写入字幕文件失败：{error}"))?;
+        // 滤镜里的路径必须写成 C\:/dir/file.srt：反斜杠换成正斜杠，盘符的冒号要转义。
+        let escaped = srt_path.to_string_lossy().replace('\\', "/").replace(':', "\\:");
+        // 中文字体必须点名，否则 libass 找不到字形会整句渲染成方块。
+        let font_size = (out_height as f64 / 22.0).round().max(16.0) as i64;
+        let margin = (out_height as f64 / 16.0).round().max(8.0) as i64;
+        let centered = request.subtitle_style.as_deref() == Some("center");
+        filters.push(format!(
+            "[cv]subtitles=filename='{escaped}':force_style='FontName=Microsoft YaHei,FontSize={font_size},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,Alignment={},MarginV={}'[vsub]",
+            if centered { 5 } else { 2 },
+            if centered { 0 } else { margin }
+        ));
+        video_label = "vsub".to_string();
+    }
+
     let fade_in = clamp(request.fade_in.unwrap_or(0.0), 0.0, 5.0);
     let fade_out = clamp(request.fade_out.unwrap_or(0.0), 0.0, 10.0);
     if fade_in > 0.0 || fade_out > 0.0 {
-        let mut chain = format!("[cv]");
+        let mut chain = format!("[{video_label}]");
         if fade_in > 0.0 {
             chain.push_str(&format!("fade=t=in:st=0:d={},", seconds(fade_in)));
         }

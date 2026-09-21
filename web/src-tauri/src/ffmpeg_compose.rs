@@ -28,6 +28,10 @@ pub struct ComposeSegment {
     start: Option<f64>,
     end: Option<f64>,
     volume: Option<f64>,
+    // 从这一段过渡到下一段：类型（fade / wipeleft / slideup）与持续时间（秒）。
+    // 为空表示硬切。
+    transition: Option<String>,
+    transition_duration: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -283,7 +287,31 @@ fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<Co
     let to_even = |value: f64| (value.round() as u32 & !1).max(2);
     let out_width = to_even(probes[0].width as f64 * scale);
     let out_height = to_even(probes[0].height as f64 * scale);
-    let total: f64 = ranges.iter().map(|(start, end)| end - start).sum();
+    let durations: Vec<f64> = ranges.iter().map(|(start, end)| end - start).collect();
+    // 片段之间的转场设在「上一段」上，表示它过渡到下一段；没设就是硬切。
+    // 只有真的用上转场时才换滤镜链，其余情况维持已经验证过的 concat 拼片。
+    let transitions: Vec<(String, f64)> = request
+        .segments
+        .iter()
+        .enumerate()
+        .map(|(index, segment)| {
+            if index + 1 >= durations.len() {
+                return (String::new(), 0.0);
+            }
+            let kind = match segment.transition.as_deref() {
+                Some("fade") => "fade",
+                Some("wipeleft") => "wipeleft",
+                Some("slideup") => "slideup",
+                _ => return (String::new(), 0.0),
+            };
+            // 转场不能吃掉整段素材：最多取相邻两段中较短者的八成，再限制在 0.1–1.5 秒。
+            let limit = clamp(durations[index].min(durations[index + 1]) * 0.8, 0.1, 1.5);
+            let wanted = clamp(segment.transition_duration.unwrap_or(0.5), 0.1, 1.5);
+            (kind.to_owned(), wanted.min(limit))
+        })
+        .collect();
+    // 每次转场都会让成片比各段之和短一段转场时长，淡出与背景音乐都按这个总时长算。
+    let total: f64 = durations.iter().sum::<f64>() - transitions.iter().map(|(_, seconds)| *seconds).sum::<f64>();
 
     let music_index = request.segments.len() as u32;
     let needs_silence = probes.iter().any(|probe| !probe.has_audio);
@@ -330,7 +358,36 @@ fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<Co
         }
         concat_inputs.push_str(&format!("[v{index}][a{index}]"));
     }
-    filters.push(format!("{}concat=n={}:v=1:a=1[cv][ca]", concat_inputs, request.segments.len()));
+    if transitions.iter().all(|(_, seconds)| *seconds <= 0.0) {
+        filters.push(format!("{}concat=n={}:v=1:a=1[cv][ca]", concat_inputs, request.segments.len()));
+    } else {
+        // 逐对串联：设了转场的接缝用 xfade / acrossfade，没设的仍是 concat。
+        let mut video = "v0".to_owned();
+        let mut audio = "a0".to_owned();
+        let mut elapsed = durations[0];
+        for index in 1..durations.len() {
+            let (kind, transition) = &transitions[index - 1];
+            let next_video = format!("xv{index}");
+            let next_audio = format!("xa{index}");
+            if *transition > 0.0 {
+                filters.push(format!(
+                    "[{video}][v{index}]xfade=transition={kind}:duration={}:offset={}[{next_video}]",
+                    seconds(*transition),
+                    seconds((elapsed - transition).max(0.0))
+                ));
+                filters.push(format!("[{audio}][a{index}]acrossfade=d={}[{next_audio}]", seconds(*transition)));
+                elapsed = elapsed + durations[index] - transition;
+            } else {
+                filters.push(format!("[{video}][v{index}]concat=n=2:v=1:a=0[{next_video}]"));
+                filters.push(format!("[{audio}][a{index}]concat=n=2:v=0:a=1[{next_audio}]"));
+                elapsed += durations[index];
+            }
+            video = next_video;
+            audio = next_audio;
+        }
+        filters.push(format!("[{video}]null[cv]"));
+        filters.push(format!("[{audio}]anull[ca]"));
+    }
 
     let mut video_label = "cv".to_string();
     let fade_in = clamp(request.fade_in.unwrap_or(0.0), 0.0, 5.0);

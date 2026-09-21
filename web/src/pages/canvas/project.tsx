@@ -2426,7 +2426,7 @@ function MGCanvasProjectPage() {
                 const requests = await Promise.all(
                     segments.map(async (segment) => {
                         const segmentSettings = settings.segments?.[segment.node.id] || {};
-                        return { path: await resolveCanvasMediaLocalPath(segment.node), start: segmentSettings.start, end: segmentSettings.end, volume: segmentSettings.volume };
+                        return { path: await resolveCanvasMediaLocalPath(segment.node), start: segmentSettings.start, end: segmentSettings.end, volume: segmentSettings.volume, transition: segmentSettings.transition, transitionDuration: segmentSettings.transitionDuration };
                     }),
                 );
                 let musicRequest: { path: string; volume?: number; fadeOut?: number } | undefined;

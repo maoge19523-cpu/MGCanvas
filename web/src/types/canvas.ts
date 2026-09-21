@@ -126,6 +126,9 @@ export type CanvasCompositeSegmentSettings = {
     start?: number;
     end?: number;
     volume?: number;
+    // 与下一段之间的转场：fade（交叉溶解）/ wipeleft / slideup，为空表示硬切。
+    transition?: string;
+    transitionDuration?: number;
 };
 
 export type CanvasCompositeSettings = {

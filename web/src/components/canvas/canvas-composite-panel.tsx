@@ -162,6 +162,27 @@ export function CanvasCompositePanel({ node, segments, music, isRunning, onChang
                                     音量
                                     <InputNumber size="small" min={0} max={400} step={5} addonAfter="%" controls={false} value={Math.round((item.volume ?? 1) * 100)} style={{ width: 96 }} onChange={(value) => updateSegment(segment.node.id, { volume: clampPercent(value, 100) / 100 })} />
                                 </span>
+                                {index < segments.length - 1 ? (
+                                    <span className="inline-flex shrink-0 items-center gap-1">
+                                        →下一段
+                                        <Select
+                                            size="small"
+                                            className="w-[92px]"
+                                            value={item.transition ?? "none"}
+                                            getPopupContainer={getCanvasNodePopupContainer}
+                                            options={[
+                                                { value: "none", label: "硬切" },
+                                                { value: "fade", label: "交叉溶解" },
+                                                { value: "wipeleft", label: "左滑" },
+                                                { value: "slideup", label: "上滑" },
+                                            ]}
+                                            onChange={(value) => updateSegment(segment.node.id, { transition: value === "none" ? undefined : value })}
+                                        />
+                                        {item.transition ? (
+                                            <InputNumber size="small" min={0.2} max={1.5} step={0.1} controls={false} addonAfter="s" value={item.transitionDuration ?? 0.5} style={{ width: 82 }} onChange={(value) => updateSegment(segment.node.id, { transitionDuration: value === null || !Number.isFinite(Number(value)) ? undefined : Math.min(1.5, Math.max(0.2, Number(value))) })} />
+                                        ) : null}
+                                    </span>
+                                ) : null}
                             </div>
                         </div>
                     );

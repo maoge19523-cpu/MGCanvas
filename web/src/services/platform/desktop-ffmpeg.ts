@@ -20,7 +20,7 @@ export function setFfmpegPath(path: string) {
     else window.localStorage.removeItem(FFMPEG_PATH_STORAGE_KEY);
 }
 
-export type ComposeSegmentInput = { path: string; start?: number; end?: number; volume?: number };
+export type ComposeSegmentInput = { path: string; start?: number; end?: number; volume?: number; transition?: string; transitionDuration?: number };
 export type ComposeMusicInput = { path: string; volume?: number; fadeOut?: number };
 export type ComposeVideoRequest = {
     ffmpegPath?: string;

@@ -74,14 +74,14 @@ export function CanvasCompositePanel({ node, segments, music, voice, isRunning, 
 
     // 时间轴上的直接操作：拖片段本体换顺序，拖两端裁剪入点/出点。
     // 不锁定指针，也不做坐标换算——按指针每挪过一小段就与相邻片段交换一次，避免画布缩放带来的坐标麻烦。
-    const dragRef = useRef<{ index: number; x: number } | null>(null);
-    const trimRef = useRef<{ index: number; edge: "start" | "end"; x: number; perPixel: number } | null>(null);
+    const dragRef = useRef<{ index: number; x: number; target: number | null } | null>(null);
+    const trimRef = useRef<{ index: number; edge: "start" | "end"; x: number; perPixel: number; pending: number | null } | null>(null);
     const draggedRef = useRef(false);
 
     const startDrag = (event: ReactPointerEvent<HTMLDivElement>, index: number) => {
         event.stopPropagation();
         draggedRef.current = false;
-        dragRef.current = { index, x: event.clientX };
+        dragRef.current = { index, x: event.clientX, target: null };
     };
 
     const startTrim = (event: ReactPointerEvent<HTMLSpanElement>, index: number, edge: "start" | "end") => {
@@ -93,9 +93,11 @@ export function CanvasCompositePanel({ node, segments, music, voice, isRunning, 
         const item = settings.segments?.[segment.node.id] || {};
         const length = Math.max(0.1, (item.end && source ? Math.min(item.end, source) : source) - (item.start || 0));
         draggedRef.current = true;
-        trimRef.current = { index, edge, x: event.clientX, perPixel: box && box.width > 0 ? length / box.width : 0.05 };
+        trimRef.current = { index, edge, x: event.clientX, perPixel: box && box.width > 0 ? length / box.width : 0.05, pending: null };
     };
 
+    // 拖动过程中只记录目标值，不写画布：逐帧写入会形成渲染风暴并触发 React #185。
+    // 松手（pointerup / pointercancel / pointerleave）时一次性提交。
     const handleTimelineMove = (event: ReactPointerEvent<HTMLDivElement>) => {
         const trim = trimRef.current;
         if (trim) {
@@ -108,20 +110,13 @@ export function CanvasCompositePanel({ node, segments, music, voice, isRunning, 
             if (trim.edge === "start") {
                 const from = item.start || 0;
                 const until = (item.end && source ? Math.min(item.end, source) : source) - 0.1;
-                const nextStart = Number(Math.min(Math.max(0, from + delta), Math.max(0, until)).toFixed(2));
-                // 值没变就不要再写画布：逐帧写入没有变化的数据会引发渲染风暴（React #185）。
-                if (nextStart === from) return;
-                updateSegment(segment.node.id, { start: nextStart });
+                trim.pending = Number(Math.min(Math.max(0, from + delta), Math.max(0, until)).toFixed(2));
             } else {
                 const from = item.start || 0;
                 const until = item.end && source ? Math.min(item.end, source) : source;
                 const next = Math.max(from + 0.1, until + delta);
-                const nextEnd = Number((source ? Math.min(next, source) : next).toFixed(2));
-                // 值没变就不要再写画布：逐帧写入没有变化的数据会引发渲染风暴（React #185）。
-                if (nextEnd === until) return;
-                updateSegment(segment.node.id, { end: nextEnd });
+                trim.pending = Number((source ? Math.min(next, source) : next).toFixed(2));
             }
-            trim.x = event.clientX;
             return;
         }
         const drag = dragRef.current;
@@ -131,16 +126,31 @@ export function CanvasCompositePanel({ node, segments, music, voice, isRunning, 
         if (Math.abs(dx) < 24) return;
         const target = drag.index + (dx > 0 ? 1 : -1);
         if (target < 0 || target >= segments.length) return;
-        onReorderConnections(segments[drag.index]!.connectionId, segments[target]!.connectionId);
         draggedRef.current = true;
-        // 基准只按换位方向前进一格，不能重置到当前鼠标位置：否则鼠标稍微回抖就会立刻反向换回来，
-        // 反复重排会高频写入画布并触发渲染风暴（React #185）。
-        dragRef.current = { index: target, x: drag.x + (dx > 0 ? 24 : -24) };
+        drag.target = target;
     };
 
     const endTimelineDrag = () => {
+        const drag = dragRef.current;
+        const trim = trimRef.current;
         dragRef.current = null;
         trimRef.current = null;
+        if (drag && drag.target !== null) {
+            const target = drag.target;
+            if (target >= 0 && target < segments.length && target !== drag.index) {
+                onReorderConnections(segments[drag.index]!.connectionId, segments[target]!.connectionId);
+            }
+        }
+        if (trim && trim.pending !== null) {
+            const segment = segments[trim.index];
+            if (segment) {
+                const item = settings.segments?.[segment.node.id] || {};
+                const current = trim.edge === "start" ? item.start || 0 : item.end || 0;
+                if (trim.pending !== current) {
+                    updateSegment(segment.node.id, trim.edge === "start" ? { start: trim.pending } : { end: trim.pending });
+                }
+            }
+        }
     };
 
     return (

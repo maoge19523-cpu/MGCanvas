@@ -104,12 +104,18 @@ export function CanvasCompositePanel({ node, segments, music, voice, isRunning, 
             if (trim.edge === "start") {
                 const from = item.start || 0;
                 const until = (item.end && source ? Math.min(item.end, source) : source) - 0.1;
-                updateSegment(segment.node.id, { start: Number(Math.min(Math.max(0, from + delta), Math.max(0, until)).toFixed(2)) });
+                const nextStart = Number(Math.min(Math.max(0, from + delta), Math.max(0, until)).toFixed(2));
+                // 值没变就不要再写画布：逐帧写入没有变化的数据会引发渲染风暴（React #185）。
+                if (nextStart === from) return;
+                updateSegment(segment.node.id, { start: nextStart });
             } else {
                 const from = item.start || 0;
                 const until = item.end && source ? Math.min(item.end, source) : source;
                 const next = Math.max(from + 0.1, until + delta);
-                updateSegment(segment.node.id, { end: Number((source ? Math.min(next, source) : next).toFixed(2)) });
+                const nextEnd = Number((source ? Math.min(next, source) : next).toFixed(2));
+                // 值没变就不要再写画布：逐帧写入没有变化的数据会引发渲染风暴（React #185）。
+                if (nextEnd === until) return;
+                updateSegment(segment.node.id, { end: nextEnd });
             }
             trim.x = event.clientX;
             return;

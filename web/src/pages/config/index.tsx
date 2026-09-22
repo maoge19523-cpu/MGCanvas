@@ -6,6 +6,7 @@ import { ConfigPromptSources } from "@/components/layout/config-prompt-sources";
 import { APP_VERSION } from "@/constant/env";
 import { WorkspacePage } from "@/components/layout/workspace-page";
 import { DesktopFfmpegSettings } from "./desktop-ffmpeg-settings";
+import { MemorySettings } from "./memory-settings";
 
 export default function ConfigPage() {
     const { t } = useTranslation();
@@ -43,6 +44,10 @@ export default function ConfigPage() {
                     <div>
                         <div className="mb-3 h-px bg-black/[0.07] dark:bg-white/[0.07]" />
                         <DesktopFfmpegSettings />
+                    </div>
+                    <div>
+                        <div className="mb-3 h-px bg-black/[0.07] dark:bg-white/[0.07]" />
+                        <MemorySettings />
                     </div>
                     <div>
                         <div className="mb-3 h-px bg-black/[0.07] dark:bg-white/[0.07]" />

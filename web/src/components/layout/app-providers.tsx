@@ -32,6 +32,11 @@ const queryClient = new QueryClient({
     },
 });
 
+// 弹层容器统一固定为模块级函数与 document.body：antd 的 Portal 内部有一个没有依赖
+// 数组的 useEffect，会把 getContainer 的结果反复写回 state；只要容器引用每次变化就会
+// 无限重渲染（React #185）。这里保证所有弹层拿到的容器函数与容器节点恒定不变。
+const getPopupContainer = () => document.body;
+
 export function AppProviders({ children }: { children: ReactNode }) {
     const { i18n, t } = useTranslation();
     const theme = useThemeStore((state) => state.theme);
@@ -82,7 +87,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
     }, []);
 
     return (
-        <ConfigProvider locale={locale === "zh-CN" ? zhCN : enUS} theme={getAntThemeConfig(dark)}>
+        <ConfigProvider locale={locale === "zh-CN" ? zhCN : enUS} theme={getAntThemeConfig(dark)} getPopupContainer={getPopupContainer}>
             <ProConfigProvider dark={dark}>
                 <App>
                     <QueryClientProvider client={queryClient}>

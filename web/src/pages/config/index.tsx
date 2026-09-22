@@ -27,6 +27,10 @@ export default function ConfigPage() {
                     <h3 className="mt-3 text-[15px] font-semibold text-stone-900 dark:text-zinc-100">本地 FFmpeg</h3>
                     <p className="mt-2 text-[11px] leading-5 text-stone-500 dark:text-zinc-500">视频合成节点调用本机 FFmpeg；不随安装包分发。</p>
                     <div className="mt-6 h-px bg-black/[0.07] dark:bg-white/[0.07]" />
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400 dark:text-zinc-600">MEMORY</div>
+                    <h3 className="mt-3 text-[15px] font-semibold text-stone-900 dark:text-zinc-100">本地记忆</h3>
+                    <p className="mt-2 text-[11px] leading-5 text-stone-500 dark:text-zinc-500">记下跨对话要保留的偏好，发消息时附给模型；只存本机工作区，可随时关闭或清空。</p>
+                    <div className="mt-6 h-px bg-black/[0.07] dark:bg-white/[0.07]" />
                     <p className="mt-5 text-[10px] leading-[18px] text-stone-400 dark:text-zinc-600">{t("config.apiKeySecurity")}</p>
                 </aside>
                 <section className="flex flex-col gap-8 rounded-[18px] border border-black/[0.08] bg-black/[0.015] p-5 dark:border-white/[0.08] dark:bg-white/[0.025] sm:p-7">

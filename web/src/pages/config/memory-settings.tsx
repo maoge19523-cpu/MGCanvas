@@ -66,10 +66,6 @@ export function MemorySettings() {
     const addEntry = () => {
         const text = draft.trim();
         if (!text) return;
-        if (limits && text.length > limits.entryChars) {
-            message.error(t("agent.skillManager.memoryFailed"));
-            return;
-        }
         const now = new Date().toISOString();
         const next = [...entries, { id: `${Date.now().toString(36)}`, text, createdAt: now, updatedAt: now }];
         setDraft("");

@@ -5,6 +5,7 @@ import "streamdown/styles.css";
 import "./styles/globals.css";
 import { RouterProvider } from "react-router-dom";
 
+import { AppErrorBoundary } from "@/components/layout/app-error-boundary";
 import { AppProviders } from "@/components/layout/app-providers";
 import { APP_WINDOW_TITLE, IS_BETA_CHANNEL } from "@/constant/env";
 import "@/i18n";
@@ -26,7 +27,9 @@ document.body.style.fontFamily = '"SF Pro Display","SF Pro Text","PingFang SC","
 createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
         <AppProviders>
-            <RouterProvider router={router} />
+            <AppErrorBoundary>
+                <RouterProvider router={router} />
+            </AppErrorBoundary>
         </AppProviders>
     </React.StrictMode>,
 );

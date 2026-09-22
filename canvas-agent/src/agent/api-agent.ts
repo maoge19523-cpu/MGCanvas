@@ -1,4 +1,5 @@
-import { AGENT_PROMPT } from "../config.js";
+import { AGENT_PROMPT, ensureSiteWorkspace, loadConfig } from "../config.js";
+import { MemoryStore } from "../memory/store.js";
 import { toolDescriptions, toolNames } from "../canvas/schemas.js";
 import { logger } from "../utils/logger.js";
 import { errorMessage, field } from "../utils/value.js";
@@ -183,11 +184,14 @@ export async function runApiAgentTurn(input: {
         return;
     }
 
+    // 本地记忆（配置页里维护的长期偏好）：与 Codex / Claude 两条后端同一个文件、同一个工作区。
+    const memory = await new MemoryStore(ensureSiteWorkspace(loadConfig()).workspacePath).promptPrefix();
     const messages: ChatMessage[] = [
         {
             role: "system",
             content: [
                 AGENT_PROMPT,
+                ...(memory.prefix ? ["", memory.prefix] : []),
                 "",
                 "补充要求（API 模式）：",
                 "- 用户说的「画布」就是网页当前打开的那一个，直接用画布工具操作，不要去找项目列表。",

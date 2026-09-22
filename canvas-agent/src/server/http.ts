@@ -466,7 +466,12 @@ export function startHttpServer() {
         res.status(ok ? 200 : 409).json({ ok, ...(ok ? {} : { error: "当前没有可停止的任务" }) });
     }));
     app.post("/agent/claude/turn", (req, res) => {
-        runClaudeTurn(String(req.body?.prompt || ""), emit);
+        // Claude 后端同样带上本地记忆；先取好前缀再交给它，claude.ts 无需改动。
+        // 这里不用 await：该处理函数不是 async，读记忆失败时 read() 内部已兜底。
+        const claudePrompt = String(req.body?.prompt || "");
+        void new MemoryStore(initialWorkspace.workspacePath).promptPrefix().then((memory) => {
+            runClaudeTurn(memory.prefix ? `${memory.prefix}\n\n${claudePrompt}` : claudePrompt, emit);
+        });
         res.json({ ok: true });
     });
     // 基于 API Key 的后端（DeepSeek / 豆包）：由本进程完成工具调用循环。

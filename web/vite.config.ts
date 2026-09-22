@@ -56,6 +56,10 @@ export default defineConfig(({ mode }) => ({
         __APP_CHANNEL__: JSON.stringify(mode === "beta" ? "beta" : "release"),
     },
     build: {
+        // 诊断用（定位 React #185 渲染循环后应改回）：生产构建保留可读函数名与 sourcemap，
+        // 否则崩溃时的组件栈只有 minify 后的乱码名，无法定位组件。
+        minify: false,
+        sourcemap: true,
         rollupOptions: {
             input: {
                 app: resolve(webDir, "index.html"),

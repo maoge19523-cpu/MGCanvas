@@ -227,7 +227,13 @@ export function useVersionCheck() {
         }
     }, [message, t]);
 
+    // 首次版本检查只跑一次：App.useApp() 的 message 每次渲染都是新身份，会让下面几个
+    // useCallback 每次渲染都重建，effect 随之反复执行并再次写入 state（releases 每次都是
+    // 新数组），形成渲染风暴（React #185）。用一次性守卫断开这条链。
+    const initialCheckDoneRef = useRef(false);
     useEffect(() => {
+        if (initialCheckDoneRef.current) return;
+        initialCheckDoneRef.current = true;
         if (desktopUpdaterEnabled) {
             void checkDesktopUpdate(false);
             return;

@@ -39,12 +39,16 @@ export function CanvasCompositePanel({ node, segments, music, voice, isRunning, 
     useEffect(() => {
         if (!desktop) return;
         let active = true;
+        // 探测结果与当前状态一致时必须返回同一个对象：每次都塞新对象会让这个 effect 反复触发
+        // 渲染，与拖动写入叠加就形成渲染风暴（React #185）。
+        const applyFfmpegState = (next: { status: "ready" | "missing"; path: string }) =>
+            setFfmpegState((current) => (current.status === next.status && current.path === next.path ? current : next));
         void detectFfmpeg()
             .then((path) => {
-                if (active) setFfmpegState(path ? { status: "ready", path } : { status: "missing", path: "" });
+                if (active) applyFfmpegState(path ? { status: "ready", path } : { status: "missing", path: "" });
             })
             .catch(() => {
-                if (active) setFfmpegState({ status: "missing", path: "" });
+                if (active) applyFfmpegState({ status: "missing", path: "" });
             });
         return () => {
             active = false;

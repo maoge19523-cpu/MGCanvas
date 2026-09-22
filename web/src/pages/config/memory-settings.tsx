@@ -99,7 +99,7 @@ export function MemorySettings() {
                     <p className="mt-2 text-[11px] leading-5 text-stone-500 dark:text-zinc-500">{t("agent.skillManager.memoryDescription")}</p>
                 </div>
                 <label className="inline-flex shrink-0 items-center gap-2 text-[11px] text-stone-500 dark:text-zinc-500">
-                    <Switch size="small" style={enabled ? { backgroundColor: "#16a34a" } : undefined} checked={enabled} loading={busy} disabled={!connected || !loaded} onChange={(checked) => void persist({ enabled: checked, entries })} />
+                    <Switch size="small" checked={enabled} loading={busy} disabled={!connected || !loaded} onChange={(checked) => void persist({ enabled: checked, entries })} />
                     {t("agent.skillManager.memoryEnabled")}
                 </label>
             </div>

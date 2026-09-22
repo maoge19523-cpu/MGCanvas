@@ -47,6 +47,10 @@ export function getAntThemeConfig(dark: boolean): ThemeConfig {
             controlItemBgActiveHover: color.itemSelectedHoverBg,
         },
         components: {
+            Switch: {
+                colorPrimary: "#16a34a",
+                colorPrimaryHover: "#15803d",
+            },
             Button: {
                 primaryShadow: "none",
             },

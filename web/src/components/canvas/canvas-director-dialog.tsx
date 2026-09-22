@@ -180,6 +180,7 @@ export function CanvasDirectorDialog({
 
     return (
         <Modal
+            getContainer={() => document.body}
             open={open}
             onCancel={onClose}
             width={980}

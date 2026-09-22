@@ -179,6 +179,7 @@ export function CanvasDirectorDialog({
     };
 
     return (
+        {open ? (
         <Modal
             getContainer={() => document.body}
             open={open}
@@ -480,5 +481,6 @@ export function CanvasDirectorDialog({
                 ) : null}
             </div>
         </Modal>
+        ) : null}
     );
 }

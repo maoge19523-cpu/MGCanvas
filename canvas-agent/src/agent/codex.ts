@@ -68,7 +68,6 @@ export async function runCodexTurn(prompt: string, lifecycleEmit: AgentEmit, att
     // 不能用本轮对话的画布工作区，否则读到的是另一份空的 memory.json。
     const memoryWorkspace = ensureSiteWorkspace(loadConfig()).workspacePath;
     const memory = await new MemoryStore(memoryWorkspace).promptPrefix();
-    console.log(`[memory] workspace=${memoryWorkspace} prefixLen=${memory.prefix.length} dropped=${memory.dropped}`);
     const turnPrompt = memory.prefix ? `${memory.prefix}\n\n${prompt}` : prompt;
     codexQueue = codexQueue.catch(() => undefined).then(() => runCodexTurnNow(turnPrompt, lifecycleEmit, attachments, options));
     await codexQueue;

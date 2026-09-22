@@ -94,6 +94,9 @@
 
 ## 交付前必须完成构建（重要）
 
+- 改动 `canvas-agent` 的代码后必须重启 Agent 进程：开发时 Agent 由 `npm run dev`（tsx）启动，tsx 不热重载，进程一直跑的是启动那一刻的源码。不重启就会出现「源码已改、现象不变」，让人误判修复无效、反复重测同一问题。重启办法：停掉该进程（命令行含 `canvas-agent` 的 node 进程）后重新 `npm run dev`，确认日志里出现 `MGCanvas Agent started` 与 `Local URL: http://127.0.0.1:17371`。
+- 排查 Agent 行为前先看它的日志确认走的是哪条后端：`codex` / `claude` / API 模式（日志里是 `API agent turn started`，带 `label`、`model`、`baseUrl`）。改代码前不确认路径，就会像「只给 Codex 和 Claude 加了本地记忆、而实际用的是 API 模式」那样白改一轮。
+
 改动源码后，**必须走完「提交 → 打包 → 安装」三步**，再让用户测试；只改源码不算完成。
 
 - 每次改完先 `git status --short` 确认没有未提交改动；有就提交。

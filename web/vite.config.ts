@@ -50,19 +50,12 @@ export default defineConfig(({ mode }) => ({
         },
     },
     define: {
-        // 诊断用（定位渲染循环后应删除）：强制生产包使用开发版 React，
-        // 生产版 React 对 #185 只给编号，开发版会打印完整原因并点名出问题的订阅。
-        "process.env.NODE_ENV": JSON.stringify("development"),
         __APP_VERSION__: JSON.stringify(localVersion),
         __APP_RELEASES__: JSON.stringify(parseChangelog(localChangelog)),
         // 测试版与正式版共用一份源码，只靠构建模式区分运行渠道。
         __APP_CHANNEL__: JSON.stringify(mode === "beta" ? "beta" : "release"),
     },
     build: {
-        // 诊断用（定位 React #185 渲染循环后应改回）：生产构建保留可读函数名与 sourcemap，
-        // 否则崩溃时的组件栈只有 minify 后的乱码名，无法定位组件。
-        minify: false,
-        sourcemap: true,
         rollupOptions: {
             input: {
                 app: resolve(webDir, "index.html"),

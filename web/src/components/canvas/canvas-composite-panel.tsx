@@ -30,7 +30,7 @@ function clampPercent(value: number | string | null | undefined, fallback: numbe
     return Math.min(400, Math.max(0, parsed));
 }
 
-export function CanvasCompositePanel({ node, segments, music, voice, isRunning, onChange, onRun, onReorderConnections, onRemoveConnection, onFocusReference }: CanvasCompositePanelProps) {
+export function CanvasCompositePanel({ node, segments: segmentsProp, music, voice, isRunning, onChange, onRun, onReorderConnections, onRemoveConnection, onFocusReference }: CanvasCompositePanelProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const settings = node.metadata?.compositeSettings || {};
     const desktop = isTauriRuntime();
@@ -64,7 +64,7 @@ export function CanvasCompositePanel({ node, segments, music, voice, isRunning, 
             },
         });
 
-    const totalSeconds = segments.reduce((sum, segment) => {
+    const totalSeconds = segmentsProp.reduce((sum, segment) => {
         const item = settings.segments?.[segment.node.id] || {};
         const durationSec = (segment.node.metadata?.durationMs || 0) / 1000;
         return sum + Math.max(0, (item.end && durationSec ? Math.min(item.end, durationSec) : durationSec) - (item.start || 0));
@@ -77,32 +77,36 @@ export function CanvasCompositePanel({ node, segments, music, voice, isRunning, 
     const dragRef = useRef<{ index: number; x: number; target: number | null } | null>(null);
     const trimRef = useRef<{ index: number; edge: "start" | "end"; x: number; perPixel: number; pending: number | null } | null>(null);
     const draggedRef = useRef(false);
+    // 拖动过程的实时预览只放在组件内：不写画布数据，避免逐帧写入形成渲染风暴。
+    const [previewTarget, setPreviewTarget] = useState<number | null>(null);
+    const [previewTrim, setPreviewTrim] = useState<{ id: string; start?: number; end?: number } | null>(null);
 
     const startDrag = (event: ReactPointerEvent<HTMLDivElement>, index: number) => {
         event.stopPropagation();
         draggedRef.current = false;
         dragRef.current = { index, x: event.clientX, target: null };
+        setPreviewTarget(null);
     };
 
     const startTrim = (event: ReactPointerEvent<HTMLSpanElement>, index: number, edge: "start" | "end") => {
         event.stopPropagation();
         const box = (event.currentTarget.parentElement as HTMLElement | null)?.getBoundingClientRect();
-        const segment = segments[index];
+        const segment = segmentsProp[index];
         if (!segment) return;
         const source = (segment.node.metadata?.durationMs || 0) / 1000;
         const item = settings.segments?.[segment.node.id] || {};
         const length = Math.max(0.1, (item.end && source ? Math.min(item.end, source) : source) - (item.start || 0));
         draggedRef.current = true;
         trimRef.current = { index, edge, x: event.clientX, perPixel: box && box.width > 0 ? length / box.width : 0.05, pending: null };
+        setPreviewTrim(null);
     };
 
-    // 拖动过程中只记录目标值，不写画布：逐帧写入会形成渲染风暴并触发 React #185。
-    // 松手（pointerup / pointercancel / pointerleave）时一次性提交。
+    // 拖动过程中只记录目标值并刷新组件内预览，不写画布；松手时一次性提交。
     const handleTimelineMove = (event: ReactPointerEvent<HTMLDivElement>) => {
         const trim = trimRef.current;
         if (trim) {
             event.stopPropagation();
-            const segment = segments[trim.index];
+            const segment = segmentsProp[trim.index];
             if (!segment) return;
             const item = settings.segments?.[segment.node.id] || {};
             const source = (segment.node.metadata?.durationMs || 0) / 1000;
@@ -111,11 +115,13 @@ export function CanvasCompositePanel({ node, segments, music, voice, isRunning, 
                 const from = item.start || 0;
                 const until = (item.end && source ? Math.min(item.end, source) : source) - 0.1;
                 trim.pending = Number(Math.min(Math.max(0, from + delta), Math.max(0, until)).toFixed(2));
+                setPreviewTrim({ id: segment.node.id, start: trim.pending });
             } else {
                 const from = item.start || 0;
                 const until = item.end && source ? Math.min(item.end, source) : source;
                 const next = Math.max(from + 0.1, until + delta);
                 trim.pending = Number((source ? Math.min(next, source) : next).toFixed(2));
+                setPreviewTrim({ id: segment.node.id, end: trim.pending });
             }
             return;
         }
@@ -125,9 +131,10 @@ export function CanvasCompositePanel({ node, segments, music, voice, isRunning, 
         const dx = event.clientX - drag.x;
         if (Math.abs(dx) < 24) return;
         const target = drag.index + (dx > 0 ? 1 : -1);
-        if (target < 0 || target >= segments.length) return;
+        if (target < 0 || target >= segmentsProp.length) return;
         draggedRef.current = true;
         drag.target = target;
+        setPreviewTarget(target);
     };
 
     const endTimelineDrag = () => {
@@ -135,14 +142,16 @@ export function CanvasCompositePanel({ node, segments, music, voice, isRunning, 
         const trim = trimRef.current;
         dragRef.current = null;
         trimRef.current = null;
+        setPreviewTarget(null);
+        setPreviewTrim(null);
         if (drag && drag.target !== null) {
             const target = drag.target;
-            if (target >= 0 && target < segments.length && target !== drag.index) {
-                onReorderConnections(segments[drag.index]!.connectionId, segments[target]!.connectionId);
+            if (target >= 0 && target < segmentsProp.length && target !== drag.index) {
+                onReorderConnections(segmentsProp[drag.index]!.connectionId, segmentsProp[target]!.connectionId);
             }
         }
         if (trim && trim.pending !== null) {
-            const segment = segments[trim.index];
+            const segment = segmentsProp[trim.index];
             if (segment) {
                 const item = settings.segments?.[segment.node.id] || {};
                 const current = trim.edge === "start" ? item.start || 0 : item.end || 0;
@@ -152,6 +161,18 @@ export function CanvasCompositePanel({ node, segments, music, voice, isRunning, 
             }
         }
     };
+
+    // 这一屏显示的顺序：拖动中按预览重排，松手后与画布数据一致。只影响显示，不写画布。
+    const segments = (() => {
+        const from = dragRef.current?.index ?? -1;
+        if (previewTarget === null || from < 0 || from >= segmentsProp.length) return segmentsProp;
+        if (previewTarget < 0 || previewTarget >= segmentsProp.length) return segmentsProp;
+        const list = segmentsProp.slice();
+        const [moved] = list.splice(from, 1);
+        if (!moved) return segmentsProp;
+        list.splice(previewTarget, 0, moved);
+        return list;
+    })();
 
     return (
         <div

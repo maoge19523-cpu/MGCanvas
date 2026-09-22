@@ -56,6 +56,7 @@ let codexAppStart: Promise<CodexAppClient> | null = null;
 /** 仅表示最近主动加载/选择的线程；运行中的 turn 身份由 CodexAppClient 自己维护。 */
 let loadedThreadId = "";
 
+import { ensureSiteWorkspace, loadConfig } from "../config.js";
 import { MemoryStore } from "../memory/store.js";
 
 export { summarizeCodexThread } from "./codex-history.js";
@@ -63,9 +64,9 @@ export { summarizeCodexThread } from "./codex-history.js";
 /** 将 Codex turn 加入串行队列并等待执行完成。 */
 export async function runCodexTurn(prompt: string, lifecycleEmit: AgentEmit, attachments: AgentAttachment[] = [], options: CodexRunOptions = {}) {
     if (!prompt.trim()) return;
-    // 本地记忆只影响发给模型的内容，不改动用户原始消息；开关关闭或没有条目时前缀为空。
-    const workspace = String(options.cwd || "").trim();
-    const memory = workspace ? await new MemoryStore(workspace).promptPrefix() : { prefix: "", dropped: 0 };
+    // 记忆必须和配置页读写用的那个工作区一致（ensureSiteWorkspace），
+    // 不能用本轮对话的画布工作区，否则读到的是另一份空的 memory.json。
+    const memory = await new MemoryStore(ensureSiteWorkspace(loadConfig()).workspacePath).promptPrefix();
     const turnPrompt = memory.prefix ? `${memory.prefix}\n\n${prompt}` : prompt;
     codexQueue = codexQueue.catch(() => undefined).then(() => runCodexTurnNow(turnPrompt, lifecycleEmit, attachments, options));
     await codexQueue;

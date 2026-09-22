@@ -123,7 +123,7 @@ export function MemorySettings() {
                         )}
                     </div>
                     <div className="mt-3 flex items-center justify-between gap-4 text-[11px] text-stone-400 dark:text-zinc-600">
-                        <span className="tabular-nums">
+                        <span className={`tabular-nums ${entries.length >= (limits?.entries ?? 50) * 0.8 || usedBytes >= (limits?.totalBytes ?? 32768) * 0.8 ? "text-amber-600 dark:text-amber-500" : ""}`}>
                             {t("agent.skillManager.memoryUsage", {
                                 count: entries.length,
                                 max: limits?.entries ?? 50,

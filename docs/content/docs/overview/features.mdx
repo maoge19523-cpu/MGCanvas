@@ -67,6 +67,13 @@ description: Major features available in the current project
 
 See [Codex App Plugin](/docs/overview/codex-app-plugin) for installation and usage.
 
+## Skills and local memory
+
+- **Install a skill from a link**: paste the URL of a `SKILL.md` into the Skill page to install it. The local Agent downloads and validates the document (follows redirects, 20-second timeout, 512KB cap; the parent directory name is used when the front matter has no `name`, and a missing `description` is refused with a reason). Only http/https links are accepted, and the usual skill naming rules still apply.
+- **Install a skill from the open ecosystem**: search by keyword, review each result's name, source and install count, then install it. The Agent resolves the real `SKILL.md` path inside the matching repository and reuses the same download, validation and write path, so an installed skill can be edited, enabled, disabled and deleted like any other.
+- **Skill resource files**: the "Files" entry on a managed skill row lists, creates, edits and deletes the extra files in that skill directory (notes, templates, examples). One file is capped at 512KB, at most 200 files and 4 levels deep; path traversal and symlinks are refused, and `SKILL.md` and `agents/openai.yaml` are not editable there because they keep their own revision check.
+- **Local memory**: the Configuration page stores long-lived preferences in the local workspace only (one entry 2000 characters, 50 entries, 32KB in total; going over the limit is reported instead of being silently truncated). While the switch is on, the entries are attached to what is sent to the model on every message, and nothing is attached when it is off; the text you typed is never altered, and the preferences are expected to land in real node parameters — for example a default 16:9 frame ends up in the generation node's aspect ratio — rather than only being repeated back in the reply.
+
 ## Plugin system
 
 Canvas plugins can contribute node types, rendering, inspectors, serialization, migration, toolbar actions, and optional AI generation capabilities. Built-in and local plugins are managed through the canvas UI.

@@ -139,7 +139,10 @@ function TabButton({ label, active, theme, onClick }: { label: string; active: b
     return (
         <button type="button" onClick={onClick} className="relative pb-1.5 text-sm font-semibold transition-opacity" style={{ color: theme.node.text, opacity: active ? 1 : 0.45 }}>
             {label}
-            {active ? <motion.span layoutId="sidePanelTabIndicator" className="absolute inset-x-0 -bottom-px h-0.5 rounded-full" style={{ background: theme.toolbar.activeText }} transition={{ type: "spring", stiffness: 500, damping: 34 }} /> : null}
+            {/* 不用 layoutId 共享布局动画：它会启用 framer-motion 的 MeasureLayout，
+                该组件在 componentDidUpdate 里触发布局投影重算并在微任务里改状态，
+                与画布高频重渲染叠加会形成 React #185 渲染循环。 */}
+            {active ? <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full" style={{ background: theme.toolbar.activeText }} /> : null}
         </button>
     );
 }

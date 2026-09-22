@@ -71,6 +71,7 @@ export function VersionReleaseModal({ className, style }: VersionReleaseModalPro
                     {hasNewVersion ? <span className="absolute -right-1.5 -top-1 size-1.5 rounded-full bg-green-500" /> : null}
                 </span>
             </button>
+            {open ? (
             <Modal title={t("version.title")} open={open} width={680} centered footer={null} onCancel={() => setOpen(false)}>
                 <div className={`mb-5 grid gap-3 ${canCheckUpdates ? "grid-cols-2" : "grid-cols-1"}`}>
                     <div className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
@@ -217,6 +218,7 @@ export function VersionReleaseModal({ className, style }: VersionReleaseModalPro
                     />
                 </div>
             </Modal>
+            ) : null}
         </>
     );
 }

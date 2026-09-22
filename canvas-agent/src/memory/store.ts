@@ -48,10 +48,10 @@ export class MemoryStore {
         return this.save({ enabled: current.enabled, entries: [] });
     }
 
-    /** 拼接给模型看的前缀；停用或没有条目时返回空串。 */
-    async promptPrefix() {
+    /** 拼接给模型看的前缀；返回形状固定，停用或没有条目时 prefix 为空串。 */
+    async promptPrefix(): Promise<{ prefix: string; dropped: number }> {
         const state = await this.read();
-        if (!state.enabled || !state.entries.length) return "";
+        if (!state.enabled || !state.entries.length) return { prefix: "", dropped: 0 };
         const parts: string[] = [];
         let used = 0;
         let dropped = 0;
@@ -64,7 +64,7 @@ export class MemoryStore {
             parts.push(`- ${entry.text}`);
             used += cost;
         }
-        if (!parts.length) return "";
+        if (!parts.length) return { prefix: "", dropped };
         return { prefix: `【本地记忆】\n${parts.join("\n")}`, dropped };
     }
 }
@@ -87,7 +87,7 @@ function normalizeEntries(input: unknown): MemoryEntry[] {
             createdAt: String(record.createdAt ?? "").trim() || now,
             updatedAt: String(record.updatedAt ?? "").trim() || now,
         });
-        if (entries.length > MAX_MEMORY_ENTRIES) throw new Error(`本地记忆最多 ${MAX_MEMORY_ENTRIES} 条`);
+        if (entries.length >= MAX_MEMORY_ENTRIES) throw new Error(`本地记忆最多 ${MAX_MEMORY_ENTRIES} 条`);
     }
     return entries;
 }

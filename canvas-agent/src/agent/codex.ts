@@ -56,12 +56,18 @@ let codexAppStart: Promise<CodexAppClient> | null = null;
 /** 仅表示最近主动加载/选择的线程；运行中的 turn 身份由 CodexAppClient 自己维护。 */
 let loadedThreadId = "";
 
+import { MemoryStore } from "../memory/store.js";
+
 export { summarizeCodexThread } from "./codex-history.js";
 
 /** 将 Codex turn 加入串行队列并等待执行完成。 */
 export async function runCodexTurn(prompt: string, lifecycleEmit: AgentEmit, attachments: AgentAttachment[] = [], options: CodexRunOptions = {}) {
     if (!prompt.trim()) return;
-    codexQueue = codexQueue.catch(() => undefined).then(() => runCodexTurnNow(prompt, lifecycleEmit, attachments, options));
+    // 本地记忆只影响发给模型的内容，不改动用户原始消息；开关关闭或没有条目时前缀为空。
+    const workspace = String(options.cwd || "").trim();
+    const memory = workspace ? await new MemoryStore(workspace).promptPrefix() : { prefix: "", dropped: 0 };
+    const turnPrompt = memory.prefix ? `${memory.prefix}\n\n${prompt}` : prompt;
+    codexQueue = codexQueue.catch(() => undefined).then(() => runCodexTurnNow(turnPrompt, lifecycleEmit, attachments, options));
     await codexQueue;
 }
 

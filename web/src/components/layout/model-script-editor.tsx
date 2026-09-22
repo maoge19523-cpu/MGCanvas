@@ -7,6 +7,11 @@ import { useTranslation } from "react-i18next";
 import { getPluginReturn, getPluginTemplates, getPluginVariables } from "@/services/api/model-plugin";
 import type { ModelCapability } from "@/stores/use-config-store";
 
+// CodeMirror 的扩展数组与 style 必须是稳定引用：每次渲染都传新数组会让编辑器重建状态，
+// 进而反复触发渲染，形成渲染风暴（React #185）。
+const SCRIPT_EXTENSIONS = [javascript()];
+const SCRIPT_EDITOR_STYLE = { height: "100%", fontSize: 13 } as const;
+
 function isDarkMode() {
     return typeof document !== "undefined" && document.documentElement.classList.contains("dark");
 }
@@ -101,9 +106,9 @@ export function ModelScriptEditor({ open, capability, modelName, value, onSave, 
                         onChange={setDraft}
                         height="100%"
                         theme={isDarkMode() ? "dark" : "light"}
-                        extensions={[javascript()]}
+                        extensions={SCRIPT_EXTENSIONS}
                         placeholder={t("config.scriptEditor.placeholder")}
-                        style={{ height: "100%", fontSize: 13 }}
+                        style={SCRIPT_EDITOR_STYLE}
                         className="h-full [&_.cm-editor]:h-full [&_.cm-gutters]:border-none [&_.cm-scroller]:overflow-auto"
                     />
                 </div>

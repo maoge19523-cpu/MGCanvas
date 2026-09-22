@@ -13,6 +13,8 @@ import {DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWor
 import { logger } from "../utils/logger.js";
 import { checkVersions } from "../version-check.js";
 import { fetchSkillDocument, skillSourceUrl } from "../skills/install.js";
+import { MAX_MEMORY_ENTRIES, MAX_MEMORY_ENTRY_CHARS, MAX_MEMORY_TOTAL_BYTES, MemoryStore } from "../memory/store.js";
+import { deleteSkillResource, listSkillResources, readSkillResource, writeSkillResource } from "../skills/files.js";
 import { resolveSkillDocumentUrl, searchSkills } from "../skills/search.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
 
@@ -228,8 +230,38 @@ export function startHttpServer() {
         session.emitAll("skills_changed", { forceReload: true });
         res.status(201).json({ ok: true, data });
     }));
+    // 本地记忆：纯本地读写，不触发模型调用，也不产生费用。
+    app.get("/agent/codex/memory", route(async (_req, res) => {
+        const store = new MemoryStore(initialWorkspace.workspacePath);
+        res.json({ ok: true, data: { ...await store.read(), limits: { entryChars: MAX_MEMORY_ENTRY_CHARS, entries: MAX_MEMORY_ENTRIES, totalBytes: MAX_MEMORY_TOTAL_BYTES } } });
+    }));
+    app.post("/agent/codex/memory", codexMutation(async (req, res) => {
+        const store = new MemoryStore(initialWorkspace.workspacePath);
+        res.json({ ok: true, data: await store.save({ enabled: req.body?.enabled, entries: req.body?.entries }) });
+    }));
+    app.post("/agent/codex/memory/clear", codexMutation(async (_req, res) => {
+        const store = new MemoryStore(initialWorkspace.workspacePath);
+        res.json({ ok: true, data: await store.clear() });
+    }));
     app.post("/agent/codex/skills/search", route(async (req, res) => {
         res.json({ ok: true, data: await searchSkills(String(req.body?.query || "")) });
+    }));
+    // 资源文件路由同样必须在 /skills/:name 之前注册。
+    app.get("/agent/codex/skills/:name/files", route(async (req, res) => {
+        res.json({ ok: true, data: await listSkillResources(skillStore, String(req.params.name || "")) });
+    }));
+    app.post("/agent/codex/skills/:name/files/read", route(async (req, res) => {
+        res.json({ ok: true, data: await readSkillResource(skillStore, String(req.params.name || ""), String(req.body?.path || "")) });
+    }));
+    app.post("/agent/codex/skills/:name/files/write", codexMutation(async (req, res) => {
+        const data = await writeSkillResource(skillStore, String(req.params.name || ""), String(req.body?.path || ""), String(req.body?.content ?? ""));
+        session.emitAll("skills_changed", { forceReload: true });
+        res.json({ ok: true, data });
+    }));
+    app.post("/agent/codex/skills/:name/files/delete", codexMutation(async (req, res) => {
+        const data = await deleteSkillResource(skillStore, String(req.params.name || ""), String(req.body?.path || ""));
+        session.emitAll("skills_changed", { forceReload: true });
+        res.json({ ok: true, data });
     }));
     app.get("/agent/codex/skills/:name", route(async (req, res) => {
         res.json({ ok: true, data: await skillStore.get(routeParam(req.params.name)) });

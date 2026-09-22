@@ -5,7 +5,7 @@ import { Check, ChevronDown, CircleAlert, FilePenLine, LoaderCircle, LockKeyhole
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
-import { createCodexSkill, createCodexSkillDraft, deleteCodexSkill, fetchCodexSkill, installCodexSkill, installCodexSkillFromSearch, searchCodexSkills, postState, setCodexSkillEnabled, updateCodexSkill, type AgentSkillDetail, type AgentSkillDraft, type AgentSkillInterface, type AgentSkillScope, type AgentSkillSearchHit, type AgentSkillSummary } from "@/services/api/canvas-agent";
+import { createCodexSkill, createCodexSkillDraft, deleteCodexSkill, deleteCodexSkillFile, fetchCodexSkill, fetchCodexSkillFiles, installCodexSkill, installCodexSkillFromSearch, readCodexSkillFile, searchCodexSkills, writeCodexSkillFile, postState, setCodexSkillEnabled, updateCodexSkill, type AgentSkillDetail, type AgentSkillDraft, type AgentSkillInterface, type AgentSkillResourceFile, type AgentSkillScope, type AgentSkillSearchHit, type AgentSkillSummary } from "@/services/api/canvas-agent";
 import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
 import { useAgentStore, type AgentChatItem } from "@/stores/use-agent-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -54,6 +54,12 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
     const [searchQuery, setSearchQuery] = useState("");
     const [searching, setSearching] = useState(false);
     const [searchHits, setSearchHits] = useState<AgentSkillSearchHit[]>([]);
+    const [filesOpen, setFilesOpen] = useState(false);
+    const [filesTarget, setFilesTarget] = useState<AgentSkillSummary | null>(null);
+    const [filesList, setFilesList] = useState<AgentSkillResourceFile[]>([]);
+    const [filesBusy, setFilesBusy] = useState(false);
+    const [fileEditing, setFileEditing] = useState<{ path: string; content: string } | null>(null);
+    const [fileDraftPath, setFileDraftPath] = useState("");
     const [errorsOpen, setErrorsOpen] = useState(false);
     const confirmRef = useRef<{ destroy: () => void } | null>(null);
     const [form] = Form.useForm<SkillFormValues>();
@@ -273,6 +279,94 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
         },
     };
 
+    // 资源文件：只动技能目录里的附加文件，SKILL.md 本体仍走「编辑」。
+    const reloadFiles = async (name: string) => {
+        const response = await fetchCodexSkillFiles(endpoint, token, name);
+        setFilesList(response.data || []);
+    };
+
+    const openFiles = async (skill: AgentSkillSummary) => {
+        const connectionRevision = useAgentSkillStore.getState().connectionRevision;
+        setFilesTarget(skill);
+        setFilesOpen(true);
+        setFileEditing(null);
+        setFileDraftPath("");
+        setFilesBusy(true);
+        try {
+            await reloadFiles(skill.name);
+        } catch (error) {
+            if (connectionIsCurrent(connectionRevision)) message.error(error instanceof Error ? error.message : t("agent.skillManager.filesFailed"));
+        } finally {
+            if (connectionIsCurrent(connectionRevision)) setFilesBusy(false);
+        }
+    };
+
+    const openFile = async (target: string) => {
+        if (!filesTarget) return;
+        const connectionRevision = useAgentSkillStore.getState().connectionRevision;
+        setFilesBusy(true);
+        try {
+            const response = await readCodexSkillFile(endpoint, token, filesTarget.name, target);
+            if (response.data) setFileEditing({ path: response.data.path, content: response.data.content });
+        } catch (error) {
+            if (connectionIsCurrent(connectionRevision)) message.error(error instanceof Error ? error.message : t("agent.skillManager.filesFailed"));
+        } finally {
+            if (connectionIsCurrent(connectionRevision)) setFilesBusy(false);
+        }
+    };
+
+    const saveFile = async () => {
+        if (!filesTarget || !fileEditing) return;
+        const connectionRevision = useAgentSkillStore.getState().connectionRevision;
+        setFilesBusy(true);
+        try {
+            await writeCodexSkillFile(endpoint, token, filesTarget.name, fileEditing.path, fileEditing.content);
+            message.success(t("agent.skillManager.savedFile", { path: fileEditing.path }));
+            await reloadFiles(filesTarget.name);
+            setFileEditing(null);
+        } catch (error) {
+            if (connectionIsCurrent(connectionRevision)) message.error(error instanceof Error ? error.message : t("agent.skillManager.filesFailed"));
+        } finally {
+            if (connectionIsCurrent(connectionRevision)) setFilesBusy(false);
+        }
+    };
+
+    const createFile = async () => {
+        const target = fileDraftPath.trim();
+        if (!filesTarget || !target) return;
+        const connectionRevision = useAgentSkillStore.getState().connectionRevision;
+        setFilesBusy(true);
+        try {
+            await writeCodexSkillFile(endpoint, token, filesTarget.name, target, "");
+            setFileDraftPath("");
+            await reloadFiles(filesTarget.name);
+            setFileEditing({ path: target, content: "" });
+        } catch (error) {
+            if (connectionIsCurrent(connectionRevision)) message.error(error instanceof Error ? error.message : t("agent.skillManager.filesFailed"));
+        } finally {
+            if (connectionIsCurrent(connectionRevision)) setFilesBusy(false);
+        }
+    };
+
+    const removeFile = (target: string) => {
+        Modal.confirm({
+            title: t("agent.skillManager.deleteFile"),
+            content: t("agent.skillManager.deleteFileConfirm", { path: target }),
+            okButtonProps: { danger: true },
+            onOk: async () => {
+                if (!filesTarget) return;
+                const connectionRevision = useAgentSkillStore.getState().connectionRevision;
+                try {
+                    await deleteCodexSkillFile(endpoint, token, filesTarget.name, target);
+                    if (fileEditing?.path === target) setFileEditing(null);
+                    await reloadFiles(filesTarget.name);
+                } catch (error) {
+                    if (connectionIsCurrent(connectionRevision)) message.error(error instanceof Error ? error.message : t("agent.skillManager.filesFailed"));
+                }
+            },
+        });
+    };
+
     // 生态搜索：结果只是候选，点安装才真正下载落盘（走与链接安装同一条链路）。
     const runSearch = async () => {
         const keyword = searchQuery.trim();
@@ -447,6 +541,7 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
                                             <Button type="text" size="small" disabled={!connected || !skill.enabled || Boolean(busySkill)} icon={selected ? <Check className="size-3.5" /> : <Sparkles className="size-3.5" />} onClick={() => useSkill(skill)}>{t(selected ? "agent.skillManager.selected" : "agent.skillManager.use")}</Button>
                                             {skill.managed ? (
                                                 <>
+                                                    <Button type="text" size="small" disabled={!connected || Boolean(busySkill) || Boolean(generatingSource)} aria-label={t("agent.skillManager.filesTitle", { name: skill.interface?.displayName || skill.name })} onClick={() => void openFiles(skill)}>{t("agent.skillManager.files")}</Button>
                                                     <Tooltip title={t("common.edit")}><Button type="text" shape="circle" size="small" aria-label={t("agent.skillManager.editNamed", { name: skill.interface?.displayName || skill.name })} disabled={!connected || Boolean(busySkill) || Boolean(generatingSource)} icon={<FilePenLine className="size-3.5" />} onClick={() => void openEdit(skill)} /></Tooltip>
                                                     <Tooltip title={t("common.delete")}><Button danger type="text" shape="circle" size="small" aria-label={t("agent.skillManager.deleteNamed", { name: skill.interface?.displayName || skill.name })} disabled={!connected || Boolean(busySkill) || Boolean(generatingSource)} icon={<Trash2 className="size-3.5" />} onClick={() => confirmDelete(skill)} /></Tooltip>
                                                 </>
@@ -465,6 +560,40 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
                     </div>
                 )}
             </div>
+
+            <Modal
+                title={t("agent.skillManager.filesTitle", { name: filesTarget?.interface?.displayName || filesTarget?.name || "" })}
+                open={filesOpen}
+                footer={null}
+                width={640}
+                onCancel={() => setFilesOpen(false)}
+            >
+                <div className="mt-2 text-xs leading-5" style={{ color: theme.node.muted }}>{t("agent.skillManager.filesHint")}</div>
+                <div className="mt-3 flex gap-2">
+                    <Input className="min-w-0 flex-1" allowClear disabled={filesBusy} value={fileDraftPath} onChange={(event) => setFileDraftPath(event.target.value)} onPressEnter={() => void createFile()} placeholder={t("agent.skillManager.newFilePath")} />
+                    <Button size="small" className="!h-8 shrink-0" disabled={filesBusy || !fileDraftPath.trim()} onClick={() => void createFile()}>{t("agent.skillManager.newFile")}</Button>
+                </div>
+                <div className="thin-scrollbar mt-3 max-h-[40vh] divide-y overflow-y-auto" style={{ borderColor: theme.node.stroke }}>
+                    {filesList.length ? filesList.map((file) => (
+                        <div key={file.path} className="flex items-center gap-2 py-2">
+                            <button type="button" className="min-w-0 flex-1 truncate text-left text-sm hover:underline" onClick={() => void openFile(file.path)}>{file.path}</button>
+                            <span className="shrink-0 text-[11px]" style={{ color: theme.node.faint }}>{Math.max(1, Math.round(file.size / 1024))} KB</span>
+                            <Button danger type="text" size="small" aria-label={t("agent.skillManager.deleteFile")} onClick={() => removeFile(file.path)} icon={<Trash2 className="size-3.5" />} />
+                        </div>
+                    )) : (
+                        <div className="py-6 text-center text-xs" style={{ color: theme.node.muted }}>{filesBusy ? t("agent.skills.loading") : t("agent.skillManager.filesEmpty")}</div>
+                    )}
+                </div>
+                {fileEditing ? (
+                    <div className="mt-3">
+                        <div className="mb-1 truncate text-xs" style={{ color: theme.node.muted }}>{fileEditing.path}</div>
+                        <Input.TextArea className="thin-scrollbar" autoSize={{ minRows: 8, maxRows: 16 }} disabled={filesBusy} value={fileEditing.content} onChange={(event) => setFileEditing({ path: fileEditing.path, content: event.target.value })} />
+                        <div className="mt-2 flex justify-end">
+                            <Button type="primary" size="small" className="!h-8" loading={filesBusy} onClick={() => void saveFile()}>{t("agent.skillManager.saveFile")}</Button>
+                        </div>
+                    </div>
+                ) : null}
+            </Modal>
 
             <Modal title={t("agent.skillManager.loadErrors", { count: errors.length })} open={errorsOpen} footer={null} width={720} onCancel={() => setErrorsOpen(false)}>
                 <div className="thin-scrollbar mt-4 max-h-[60vh] overflow-y-auto rounded-md border px-3 py-2 text-xs leading-5" style={{ borderColor: theme.node.stroke }}>

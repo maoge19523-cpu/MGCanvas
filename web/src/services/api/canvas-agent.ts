@@ -99,6 +99,42 @@ export function installCodexSkillFromSearch(endpoint: string, token: string, hit
     return fetchAgentJson<AgentSkillResponse>(endpoint, token, "/agent/codex/skills/install", jsonPost({ source: hit.source, name: hit.name }));
 }
 
+export type AgentSkillResourceFile = { path: string; size: number };
+
+/** Skill 目录里的资源文件（附加说明、模板、示例等），SKILL.md 本身不在这里。 */
+export function fetchCodexSkillFiles(endpoint: string, token: string, name: string) {
+    return fetchAgentJson<{ ok?: boolean; data?: AgentSkillResourceFile[] }>(endpoint, token, `/agent/codex/skills/${encodeURIComponent(name)}/files`);
+}
+
+export function readCodexSkillFile(endpoint: string, token: string, name: string, path: string) {
+    return fetchAgentJson<{ ok?: boolean; data?: { path: string; size: number; content: string } }>(endpoint, token, `/agent/codex/skills/${encodeURIComponent(name)}/files/read`, jsonPost({ path }));
+}
+
+export function writeCodexSkillFile(endpoint: string, token: string, name: string, path: string, content: string) {
+    return fetchAgentJson<{ ok?: boolean; data?: AgentSkillResourceFile }>(endpoint, token, `/agent/codex/skills/${encodeURIComponent(name)}/files/write`, jsonPost({ path, content }));
+}
+
+export function deleteCodexSkillFile(endpoint: string, token: string, name: string, path: string) {
+    return fetchAgentJson<{ ok?: boolean; data?: { path: string } }>(endpoint, token, `/agent/codex/skills/${encodeURIComponent(name)}/files/delete`, jsonPost({ path }));
+}
+
+export type AgentMemoryEntry = { id: string; text: string; createdAt: string; updatedAt: string };
+export type AgentMemoryLimits = { entryChars: number; entries: number; totalBytes: number };
+export type AgentMemoryState = { enabled: boolean; entries: AgentMemoryEntry[]; limits?: AgentMemoryLimits };
+
+/** 本地记忆：纯本地读写，不会触发模型调用。 */
+export function fetchAgentMemory(endpoint: string, token: string) {
+    return fetchAgentJson<{ ok?: boolean; data?: AgentMemoryState }>(endpoint, token, "/agent/codex/memory");
+}
+
+export function saveAgentMemory(endpoint: string, token: string, state: Pick<AgentMemoryState, "enabled" | "entries">) {
+    return fetchAgentJson<{ ok?: boolean; data?: AgentMemoryState }>(endpoint, token, "/agent/codex/memory", jsonPost({ enabled: state.enabled, entries: state.entries }));
+}
+
+export function clearAgentMemory(endpoint: string, token: string) {
+    return fetchAgentJson<{ ok?: boolean; data?: AgentMemoryState }>(endpoint, token, "/agent/codex/memory/clear", jsonPost({}));
+}
+
 export function fetchCodexSkill(endpoint: string, token: string, name: string) {
     return fetchAgentJson<AgentSkillResponse>(endpoint, token, `/agent/codex/skills/${encodeURIComponent(name)}`);
 }

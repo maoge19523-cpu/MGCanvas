@@ -10,12 +10,6 @@ The current release needs manual verification in these areas:
 
 
 
-- Skill install from a link: paste a link to a SKILL.md from the web into the new field on the Skills tab and that Skill must appear in the list with its name and description. A SKILL.md without `name` must fall back to the folder name in the link, one without `description` must be refused with a readable reason, a malformed or non-http link must be refused before any download, an oversized or missing file must fail with a clear message, and a name that already exists must be reported instead of overwritten.
-
-- Skill resource files: on a managed Skill, click "Files" next to "Use" and the Resource files window must list that Skill's extra files with their sizes. Creating `reference/guide.md` must add it to the list and open it for editing, saving must persist, clicking a file name must reload its content, and deleting must ask for confirmation first. Creating `SKILL.md` must be refused because the Skill itself manages it, paths like `../x.md` or `C:\x.md` must be refused, and a file larger than 512KB must report the limit instead of crashing.
-
-- Local memory: on the config page, the Local memory section must let you toggle it, add an entry, edit an entry in place, delete a single entry, clear everything (keeping the toggle state) and show live usage. An entry over 2000 characters must be refused instead of silently truncated, and more than 50 entries must be refused. With the switch on and an entry such as "default frame is 16:9", a new chat that generates an image must follow it; switching it off must stop affecting generation, and the text you typed must never be altered in the input box. A malformed or missing memory file must not break the section.
-
 - Built-in speech scripts: with a 百炼 channel (model `qwen-tts`) or a 智谱 channel (model `cogtts`) an audio generation must work without writing any script, because the built-in one is matched by the interface address. 百炼 returns a temporary audio URL and must still play; 智谱 returns raw audio bytes and must not be mangled by text decoding. The 音色 field must reach the request, and generating audio for 方舟 must fail with a clear message rather than silence.
 
 - Segment fades and track loop: a segment's own fade in/out must darken and silence that segment's start and end, its own audio included, while a transition on the same seam still plays. Turning 循环 on for the music track must make a track shorter than the film repeat until the film ends, and its fade-out must still be measured from the film's end.

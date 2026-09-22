@@ -65,7 +65,12 @@ export class MemoryStore {
             used += cost;
         }
         if (!parts.length) return { prefix: "", dropped };
-        return { prefix: `【本地记忆】\n${parts.join("\n")}`, dropped };
+        const prefix = [
+            "【本地记忆】以下是用户长期有效的偏好，本轮以及后续都要遵守：",
+            ...parts,
+            "要求：把上面的偏好落实到实际操作与参数上（例如画幅要写进生图节点/视频节点的画幅参数、音色写进配音节点、字幕样式写进合成节点），不要只在回复里复述一遍。",
+        ].join("\n");
+        return { prefix, dropped };
     }
 }
 

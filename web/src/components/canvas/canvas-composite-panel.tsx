@@ -123,7 +123,9 @@ export function CanvasCompositePanel({ node, segments, music, voice, isRunning, 
         if (target < 0 || target >= segments.length) return;
         onReorderConnections(segments[drag.index]!.connectionId, segments[target]!.connectionId);
         draggedRef.current = true;
-        dragRef.current = { index: target, x: event.clientX };
+        // 基准只按换位方向前进一格，不能重置到当前鼠标位置：否则鼠标稍微回抖就会立刻反向换回来，
+        // 反复重排会高频写入画布并触发渲染风暴（React #185）。
+        dragRef.current = { index: target, x: drag.x + (dx > 0 ? 24 : -24) };
     };
 
     const endTimelineDrag = () => {

@@ -140,6 +140,7 @@ export function CanvasTopBar({
 
                 </div>
             </div>
+            {shortcutsOpen ? (
             <Modal title={t("canvas.shortcuts")} open={shortcutsOpen} onCancel={() => setShortcutsOpen(false)} footer={null} centered>
                 <div className="space-y-2 border-t pt-4 text-sm" style={{ borderColor: theme.node.stroke }}>
                     <Shortcut keys={[t("canvas.shortcut.dragCanvas")]} value={t("canvas.shortcut.pan")} />
@@ -157,6 +158,7 @@ export function CanvasTopBar({
                     <Shortcut keys={[t("canvas.shortcut.dropMedia")]} value={t("canvas.shortcut.upload")} />
                 </div>
             </Modal>
+            ) : null}
         </>
     );
 }

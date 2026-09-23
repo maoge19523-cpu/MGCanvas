@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Copy, FileText, FolderPlus, ImagePlus } from "lucide-react";
 import { App, Button, Modal, Space, Tag } from "antd";
 import { useTranslation } from "react-i18next";
@@ -6,6 +6,8 @@ import { useTranslation } from "react-i18next";
 import { formatPromptDate, type Prompt } from "@/services/api/prompts";
 import { BUILTIN_STYLE_PROMPTS } from "@/services/api/builtin-prompt-styles";
 import { compressStyleCover, saveStyleCover } from "@/services/api/style-covers";
+import { PromptVariableFields } from "@/components/prompts/prompt-variable-fields";
+import { applyPromptVariables, extractPromptVariables } from "@/components/prompts/prompt-variables";
 
 export function PromptDetailDialog({ prompt, onClose, onCopy, onSaveAsset, onCoverSaved }: { prompt: Prompt | null; onClose: () => void; onCopy: (prompt: string) => void; onSaveAsset?: (prompt: Prompt) => void; onCoverSaved?: (cover: string) => void }) {
     const { i18n, t } = useTranslation();
@@ -13,6 +15,23 @@ export function PromptDetailDialog({ prompt, onClose, onCopy, onSaveAsset, onCov
     const fileRef = useRef<HTMLInputElement>(null);
     // 只有内置风格才谈得上封面：远程提示词源的封面由它自己数据里的图片决定。
     const styleId = prompt ? BUILTIN_STYLE_PROMPTS.find((item) => item.prompt === prompt.prompt)?.id : undefined;
+    // 带 {{变量}} 的提示词先填值再复制，没变量的仍是直接复制。
+    const [template, setTemplate] = useState("");
+    const [variableValues, setVariableValues] = useState<Record<string, string>>({});
+
+    const copyPrompt = (text: string) => {
+        if (!extractPromptVariables(text).length) {
+            onCopy(text);
+            return;
+        }
+        setVariableValues({});
+        setTemplate(text);
+    };
+
+    const applyTemplate = () => {
+        onCopy(applyPromptVariables(template, variableValues));
+        setTemplate("");
+    };
 
     const applyCover = async (file: File | undefined) => {
         if (!file || !styleId) return;
@@ -25,6 +44,15 @@ export function PromptDetailDialog({ prompt, onClose, onCopy, onSaveAsset, onCov
             message.error(error instanceof Error ? error.message : t("prompts.coverFailed"));
         }
     };
+
+    // 填值期间详情弹窗让位，取消后自动回到详情。
+    if (template) {
+        return (
+            <Modal title={t("prompts.fillVariables")} open onCancel={() => setTemplate("")} onOk={applyTemplate} okText={t("common.copy")} cancelText={t("common.cancel")} width={480} centered>
+                <PromptVariableFields template={template} values={variableValues} onChange={setVariableValues} />
+            </Modal>
+        );
+    }
 
     return (
         <Modal title={prompt?.title} open={Boolean(prompt)} onCancel={onClose} footer={null} width={720} centered styles={{ body: { height: "calc(85vh - 55px)", overflow: "hidden" } }}>
@@ -61,7 +89,7 @@ export function PromptDetailDialog({ prompt, onClose, onCopy, onSaveAsset, onCov
                     </div>
                     <div className="shrink-0 pt-4">
                         <Space wrap>
-                            <Button type="primary" icon={<Copy className="size-4" />} onClick={() => onCopy(prompt.prompt)}>
+                            <Button type="primary" icon={<Copy className="size-4" />} onClick={() => copyPrompt(prompt.prompt)}>
                                 {t("common.copyPrompt")}
                             </Button>
                             {styleId ? (

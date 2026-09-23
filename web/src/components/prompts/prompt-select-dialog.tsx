@@ -1,5 +1,5 @@
 import { Search } from "lucide-react";
-import { type ChangeEvent, type UIEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type UIEvent, useEffect, useRef, useState } from "react";
 import { App, Empty, Input, Modal, Spin, Tag } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -8,6 +8,7 @@ import { BUILTIN_STYLE_SOURCE_ID } from "@/services/api/prompt-source-presets";
 import { compressStyleCover, saveStyleCover } from "@/services/api/style-covers";
 import { cn } from "@/lib/utils";
 import { PromptCard } from "./prompt-card";
+import { PromptVariableFields } from "./prompt-variable-fields";
 import { applyPromptVariables, extractPromptVariables } from "./prompt-variables";
 import { usePromptList } from "./use-prompt-list";
 
@@ -25,7 +26,6 @@ export function PromptSelectDialog({ open, onOpenChange, onSelect }: { open: boo
     // 选中的提示词若带 {{变量}}，先在这里逐个填值，填完再交回调用方。
     const [template, setTemplate] = useState("");
     const [variableValues, setVariableValues] = useState<Record<string, string>>({});
-    const variables = useMemo(() => extractPromptVariables(template), [template]);
     const toggleTag = (tag: string) => {
         if (tag === ALL_PROMPTS_OPTION) return setSelectedTags([]);
         setSelectedTags((items) => (items.includes(tag) ? items.filter((item) => item !== tag) : [...items, tag]));
@@ -137,15 +137,7 @@ export function PromptSelectDialog({ open, onOpenChange, onSelect }: { open: boo
                 </div>
             </Modal>
             <Modal title={t("prompts.fillVariables")} open={Boolean(template)} onCancel={() => setTemplate("")} onOk={applyTemplate} okText={t("prompts.use")} cancelText={t("common.cancel")} width={480} centered>
-                <div className="thin-scrollbar max-h-[56dvh] overflow-y-auto pr-1" data-canvas-no-zoom>
-                    {variables.map((name) => (
-                        <div key={name} className="mb-3 last:mb-0">
-                            <div className="mb-1 text-xs font-medium">{name}</div>
-                            <Input value={variableValues[name] || ""} placeholder={t("prompts.variablePlaceholder", { name })} onChange={(event) => setVariableValues((current) => ({ ...current, [name]: event.target.value }))} />
-                        </div>
-                    ))}
-                    <p className="mt-2 text-xs leading-5 text-stone-500 dark:text-stone-400">{t("prompts.variableHint")}</p>
-                </div>
+                <PromptVariableFields template={template} values={variableValues} onChange={setVariableValues} />
             </Modal>
         </>
     );

@@ -83,9 +83,9 @@ const CHANNEL_PRESETS: readonly ChannelPreset[] = [
  * 19 条平铺太长，按用途分成对话 / 语音 / 图像视频 / 本地四组。
  */
 const CHANNEL_PRESET_GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
-    ["对话与通用", ["openai", "deepseek", "kimi", "zhipu", "siliconflow", "ark", "dashscope", "hunyuan", "gemini"]],
+    ["对话与通用", ["openai", "deepseek", "kimi", "zhipu", "siliconflow", "ark", "dashscope", "hunyuan", "gemini", "anthropic"]],
     ["语音合成", ["ark-speech", "dashscope-speech", "openai-speech", "minimax-speech", "fish-speech"]],
-    ["图像与视频", ["302ai", "anthropic", "runninghub"]],
+    ["图像与视频", ["302ai", "runninghub"]],
     ["本地部署", ["ollama", "lmstudio"]],
 ];
 

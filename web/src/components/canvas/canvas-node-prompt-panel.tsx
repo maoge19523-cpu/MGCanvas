@@ -108,7 +108,8 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
 
             <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
-                    <CanvasPromptLibrary onSelect={updatePrompt} />
+                    {/* 选中风格时接在已有提示词后面，避免把用户已经写好的内容冲掉。 */}
+                    <CanvasPromptLibrary onSelect={(style) => updatePrompt(prompt.trim() ? `${prompt.trim()}，${style}` : style)} />
                     {objectMode && onAddObjectReference && onRemoveObjectReference ? (
                         <CanvasObjectReferencePicker
                             currentNodeId={node.id}

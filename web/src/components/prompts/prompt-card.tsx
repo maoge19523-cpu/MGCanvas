@@ -1,4 +1,4 @@
-import { Copy, FileText } from "lucide-react";
+import { Copy, FileText, ImagePlus } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "antd";
 import { useTranslation } from "react-i18next";
@@ -9,6 +9,7 @@ export function PromptCard({
     item,
     onOpen,
     onCopy,
+    onSetCover,
     actionLabel,
     actionIcon = <Copy className="size-3.5" />,
     actionType = "text",
@@ -18,6 +19,8 @@ export function PromptCard({
     item: Prompt;
     onOpen: () => void;
     onCopy: () => void;
+    /** 只有内置风格源会传，用来把用户自己的图设成这张风格卡的封面。 */
+    onSetCover?: () => void;
     actionLabel?: string;
     actionIcon?: ReactNode;
     actionType?: "text" | "primary";
@@ -27,9 +30,26 @@ export function PromptCard({
     const { i18n, t } = useTranslation();
     return (
         <article className={`group flex min-w-0 flex-col overflow-hidden rounded-[16px] border border-black/[0.08] bg-black/[0.015] transition duration-200 hover:-translate-y-0.5 hover:border-black/[0.17] dark:border-white/[0.08] dark:bg-white/[0.025] dark:hover:border-white/[0.17] ${compact ? "cursor-pointer" : "h-full"}`}>
-            <button type="button" className="block w-full cursor-pointer overflow-hidden text-left" onClick={onOpen}>
-                {item.coverUrl ? <img src={item.coverUrl} alt={item.title} className={compact ? "aspect-square w-full object-cover transition-transform duration-300 group-hover:scale-[1.025]" : "aspect-[16/10] w-full object-cover transition-transform duration-300 group-hover:scale-[1.018]"} loading="lazy" /> : <span className={compact ? "grid aspect-square w-full place-items-center bg-black/[0.025] text-stone-400 dark:bg-white/[0.025] dark:text-zinc-600" : "grid aspect-[16/10] w-full place-items-center bg-black/[0.025] text-stone-400 dark:bg-white/[0.025] dark:text-zinc-600"}><FileText className="size-7" /></span>}
-            </button>
+            <div className="relative">
+                <button type="button" className="block w-full cursor-pointer overflow-hidden text-left" onClick={onOpen}>
+                    {item.coverUrl ? <img src={item.coverUrl} alt={item.title} className={compact ? "aspect-square w-full object-cover transition-transform duration-300 group-hover:scale-[1.025]" : "aspect-[16/10] w-full object-cover transition-transform duration-300 group-hover:scale-[1.018]"} loading="lazy" /> : <span className={compact ? "grid aspect-square w-full place-items-center bg-black/[0.025] text-stone-400 dark:bg-white/[0.025] dark:text-zinc-600" : "grid aspect-[16/10] w-full place-items-center bg-black/[0.025] text-stone-400 dark:bg-white/[0.025] dark:text-zinc-600"}><FileText className="size-7" /></span>}
+                </button>
+                {/* 按钮放在封面按钮外层，避免 button 嵌套 button；悬停或已有封面常显，平时不干扰浏览。 */}
+                {onSetCover ? (
+                    <button
+                        type="button"
+                        title={item.coverUrl ? "换封面" : "设为封面"}
+                        aria-label={item.coverUrl ? "换封面" : "设为封面"}
+                        className={`absolute right-1.5 top-1.5 grid size-6 cursor-pointer place-items-center rounded-full bg-black/45 text-white backdrop-blur transition hover:bg-black/65 ${item.coverUrl ? "" : "opacity-0 group-hover:opacity-100"}`}
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            onSetCover();
+                        }}
+                    >
+                        <ImagePlus className="size-3.5" />
+                    </button>
+                ) : null}
+            </div>
             <button type="button" className={compact ? "block w-full cursor-pointer text-left" : "block w-full flex-1 cursor-pointer text-left"} onClick={onOpen}>
                 <div className={compact ? "px-3 py-2.5" : "p-4"}>
                     <div className="flex items-start justify-between gap-3">

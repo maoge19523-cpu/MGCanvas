@@ -24,7 +24,7 @@ type ChannelPreset = {
 };
 
 const CHANNEL_PRESETS: readonly ChannelPreset[] = [
-    { id: "openai", label: "OpenAI · 文本/图片", baseUrl: "https://api.openai.com/v1", apiFormat: "openai" },
+    { id: "openai", label: "OpenAI · 文本/图片/视频", baseUrl: "https://api.openai.com/v1", apiFormat: "openai" },
     { id: "deepseek", label: "DeepSeek · 文本", baseUrl: "https://api.deepseek.com", apiFormat: "openai", models: [{ name: "deepseek-chat", capability: "text" }] },
     { id: "kimi", label: "月之暗面 Kimi · 文本", baseUrl: "https://api.moonshot.cn/v1", apiFormat: "openai", models: [{ name: "moonshot-v1-8k", capability: "text" }] },
     // 智谱的文本、图片、语音是同一个 Base URL：下拉里只保留一项并在 label 注明用途。
@@ -44,7 +44,7 @@ const CHANNEL_PRESETS: readonly ChannelPreset[] = [
     { id: "siliconflow", label: "硅基流动 · 文本/图片/视频", baseUrl: "https://api.siliconflow.cn/v1", apiFormat: "openai" },
     {
         id: "ark",
-        label: "火山方舟（豆包）· 图片/视频",
+        label: "火山方舟（豆包）· 文本/图片/视频",
         baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
         apiFormat: "ark",
         models: [
@@ -54,7 +54,7 @@ const CHANNEL_PRESETS: readonly ChannelPreset[] = [
     },
     {
         id: "dashscope",
-        label: "阿里云百炼（兼容模式）· 文本/图片",
+        label: "阿里云百炼（兼容模式）· 文本/图片/视频",
         baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
         apiFormat: "openai",
         models: [
@@ -78,8 +78,24 @@ const CHANNEL_PRESETS: readonly ChannelPreset[] = [
     { id: "gemini", label: "Google Gemini · 文本/图片", baseUrl: "https://generativelanguage.googleapis.com", apiFormat: "gemini" },
 ];
 
-// 下拉项：value 必须是 Base URL（选中后会填进输入框），presetId 用来精确找回对应的预设。
-const CHANNEL_PRESET_OPTIONS = CHANNEL_PRESETS.map((preset) => ({ presetId: preset.id, value: preset.baseUrl, label: `${preset.label} · ${preset.baseUrl}` }));
+/**
+ * 下拉分组：只决定下拉里的展示分组与顺序，不改预设本身的 id 与 value（baseUrl）。
+ * 19 条平铺太长，按用途分成对话 / 语音 / 图像视频 / 本地四组。
+ */
+const CHANNEL_PRESET_GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
+    ["对话与通用", ["openai", "deepseek", "kimi", "zhipu", "siliconflow", "ark", "dashscope", "hunyuan", "gemini"]],
+    ["语音合成", ["ark-speech", "dashscope-speech", "openai-speech", "minimax-speech", "fish-speech"]],
+    ["图像与视频", ["302ai", "anthropic", "runninghub"]],
+    ["本地部署", ["ollama", "lmstudio"]],
+];
+
+// 下拉项：分组项只多包一层 options，叶子项各自带 presetId（onSelect 靠它精确定位到自己那条预设）。
+type ChannelPresetOption = { label: string; presetId?: string; value?: string; options?: ChannelPresetOption[] };
+
+const CHANNEL_PRESET_OPTIONS: ChannelPresetOption[] = CHANNEL_PRESET_GROUPS.map(([groupLabel, ids]) => ({
+    label: groupLabel,
+    options: CHANNEL_PRESETS.filter((preset) => ids.includes(preset.id)).map((preset) => ({ presetId: preset.id, value: preset.baseUrl, label: `${preset.label} · ${preset.baseUrl}` })),
+}));
 
 type ScriptTarget = { name: string; capability: ModelCapability; value: string };
 

@@ -32,9 +32,15 @@ async function fetchSource(source: PromptSource, options?: RunOptions) {
     return response.json();
 }
 
+import { readStyleCovers } from "./style-covers";
+
 export async function runPromptSource(source: PromptSource, options?: RunOptions): Promise<RawPrompt[]> {
     // 内置风格源没有地址，直接返回打包在程序里的数据，避免为了随开随用去联网。
-    if (source.builtIn && !source.url.trim()) return BUILTIN_STYLE_PROMPTS;
+    // 封面是用出来的，存在本机，读取时合并进来。
+    if (source.builtIn && !source.url.trim()) {
+        const covers = await readStyleCovers();
+        return BUILTIN_STYLE_PROMPTS.map((item) => (covers[item.id] ? { ...item, coverUrl: covers[item.id] } : item));
+    }
     if (!source.url.trim()) throw new Error(i18n.t("config.promptSources.runtime.urlRequired"));
     let data: unknown;
     try {

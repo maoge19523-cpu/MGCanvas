@@ -28,14 +28,23 @@ export async function uploadImage(input: string | Blob): Promise<UploadedImage> 
 }
 
 export async function resolveImageUrl(storageKey?: string, fallback = "") {
-    if (!storageKey) return fallback;
+    return (await resolveImageUrlState(storageKey, fallback)).url;
+}
+
+/**
+ * 与 resolveImageUrl 同源，但额外报告本地副本是否还在。
+ * storageKey 对应的 Blob 丢失时（清过缓存、换机器等）只能退回早已失效的 blob: 地址，
+ * 界面需要据此提示「文件已丢失」，否则用户看到的就是一张没有说明的破图。
+ */
+export async function resolveImageUrlState(storageKey?: string, fallback = ""): Promise<{ url: string; missing: boolean }> {
+    if (!storageKey) return { url: fallback, missing: false };
     const cached = objectUrls.get(storageKey);
-    if (cached) return cached;
-    const blob = await store.getItem<Blob>(storageKey);
-    if (!blob) return fallback;
+    if (cached) return { url: cached, missing: false };
+    const blob = await store.getItem<Blob>(storageKey).catch(() => null);
+    if (!blob) return { url: fallback, missing: true };
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
-    return url;
+    return { url, missing: false };
 }
 
 export async function getImageBlob(storageKey: string) {

@@ -28,7 +28,12 @@ export function useMissingImageQueue({ projectId, ready, nodes, runNode }: Missi
     const stopRef = useRef(false);
     const nodesRef = useRef(nodes);
     const runNodeRef = useRef(runNode);
+    // 当前画布 id：一轮跑完后用它判断这轮结果还属不属于现在这张画布。
+    const projectIdRef = useRef(projectId);
 
+    useEffect(() => {
+        projectIdRef.current = projectId;
+    }, [projectId]);
     useEffect(() => {
         nodesRef.current = nodes;
     }, [nodes]);
@@ -71,7 +76,11 @@ export function useMissingImageQueue({ projectId, ready, nodes, runNode }: Missi
             let finished = 0;
             for (const nodeId of pending) {
                 if (stopRef.current) break;
-                const prompt = nodesRef.current.find((item) => item.id === nodeId)?.metadata?.prompt?.trim() || "";
+                const target = nodesRef.current.find((item) => item.id === nodeId);
+                // 切到别的画布、或节点在排队期间被删掉时，这个 id 已经不在当前 nodes 里；
+                // 继续跑会按「没有来源节点」的路径把图片生成到当前画布上。
+                if (!target) break;
+                const prompt = target.metadata?.prompt?.trim() || "";
                 let result: boolean | undefined;
                 try {
                     result = await runNodeRef.current(nodeId, prompt);
@@ -89,7 +98,8 @@ export function useMissingImageQueue({ projectId, ready, nodes, runNode }: Missi
                 if (!result) failed.push(nodeId);
             }
 
-            setFailedIds(failed);
+            // 切到别的画布后这轮的失败项属于原画布，不要写进新画布的界面状态。
+            if (projectIdRef.current === projectId) setFailedIds(failed);
             setRunning(false);
             stopRef.current = false;
             // 落盘：没轮到的 + 失败的留给下次「只重试失败项」；全部补齐就清掉记录。

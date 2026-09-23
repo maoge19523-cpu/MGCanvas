@@ -1,8 +1,8 @@
 import { defaultConfig, resolveModelForCapability, type AiConfig } from "@/stores/use-config-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import i18n from "@/i18n";
-import { resolveImageUrl, uploadImage } from "@/services/image-storage";
-import { resolveMediaUrl } from "@/services/file-storage";
+import { resolveImageUrl, resolveImageUrlState, uploadImage } from "@/services/image-storage";
+import { resolveMediaUrlState } from "@/services/file-storage";
 import { cacheRemoteMedia, importLegacyCachedMedia, isLocalMediaCacheUrl, localMediaCacheUrl } from "@/services/local-media-cache";
 import { isDesktopAssetUrl, isTauriRuntime, readDesktopFileBlob } from "@/services/platform/desktop-runtime";
 import { imageMetadata, referenceUrl } from "@/lib/canvas/canvas-node-factory";
@@ -71,9 +71,15 @@ export async function hydrateCanvasImages(nodes: CanvasNodeData[]) {
                 return { ...node, metadata: { ...metadata, content: durableContent } };
             }
             const isStoredFileResult = metadata?.providerResult?.outputs?.some((output) => output.kind === "file");
-            if ((node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio || isStoredFileResult) && metadata?.storageKey) return { ...node, metadata: { ...metadata, content: await resolveMediaUrl(metadata.storageKey, content) } };
+            if ((node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio || isStoredFileResult) && metadata?.storageKey) {
+                const resolved = await resolveMediaUrlState(metadata.storageKey, content);
+                return { ...node, metadata: { ...metadata, content: resolved.url, fileMissing: resolved.missing || undefined } };
+            }
             if (node.type !== CanvasNodeType.Image || !content) return metadata === node.metadata ? node : { ...node, metadata };
-            if (metadata?.storageKey) return { ...node, metadata: { ...metadata, content: await resolveImageUrl(metadata.storageKey, content) } };
+            if (metadata?.storageKey) {
+                const resolved = await resolveImageUrlState(metadata.storageKey, content);
+                return { ...node, metadata: { ...metadata, content: resolved.url, fileMissing: resolved.missing || undefined } };
+            }
             if (!content.startsWith("data:image/")) return { ...node, metadata };
             return { ...node, metadata: { ...metadata, ...imageMetadata(await uploadImage(content)) } };
         }),

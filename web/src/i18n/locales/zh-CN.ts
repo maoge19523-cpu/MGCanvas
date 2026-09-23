@@ -658,6 +658,8 @@ export default {
             imageHistoryHint: "选择一个版本在当前节点中预览",
             imageHistoryActive: "当前",
             openImageHistory: "打开历史版本，共 {{count}} 个",
+            fileMissing: "文件已丢失",
+            fileMissingHint: "本地副本已被清理或来自其他设备，请重新上传该素材或重新生成",
         },
         sidePanel: {
             canvas: "画布",

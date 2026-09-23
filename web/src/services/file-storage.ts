@@ -18,14 +18,19 @@ export async function uploadMediaFile(input: string | Blob, prefix = "file"): Pr
 }
 
 export async function resolveMediaUrl(storageKey?: string, fallback = "") {
-    if (!storageKey) return fallback;
+    return (await resolveMediaUrlState(storageKey, fallback)).url;
+}
+
+/** 与 resolveMediaUrl 同源，但额外报告 storageKey 对应的本地副本是否还在，见 image-storage 里的同款说明。 */
+export async function resolveMediaUrlState(storageKey?: string, fallback = ""): Promise<{ url: string; missing: boolean }> {
+    if (!storageKey) return { url: fallback, missing: false };
     const cached = objectUrls.get(storageKey);
-    if (cached) return cached;
-    const blob = await store.getItem<Blob>(storageKey);
-    if (!blob) return fallback;
+    if (cached) return { url: cached, missing: false };
+    const blob = await store.getItem<Blob>(storageKey).catch(() => null);
+    if (!blob) return { url: fallback, missing: true };
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
-    return url;
+    return { url, missing: false };
 }
 
 export async function getMediaBlob(storageKey: string) {

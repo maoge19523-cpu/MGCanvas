@@ -465,6 +465,13 @@ export const CanvasNode = React.memo(function CanvasNode({
                 {showImageInfo && hasImageContent ? <ImageInfoBar node={data} /> : null}
                 {hasImageContent ? <ImageHistoryControl node={data} onSelect={(historyId) => onSelectImageHistory?.(data.id, historyId)} /> : null}
 
+                {data.metadata?.fileMissing && (hasImageContent || hasVideoContent || hasAudioContent) ? (
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 flex flex-col items-center gap-0.5 bg-gradient-to-t from-black/85 via-black/55 to-transparent px-3 pb-2.5 pt-6 text-center text-white" title={t("canvas.node.fileMissingHint")}>
+                        <span className="text-[11px] font-semibold">{t("canvas.node.fileMissing")}</span>
+                        <span className="text-[10px] leading-4 text-white/60">{t("canvas.node.fileMissingHint")}</span>
+                    </div>
+                ) : null}
+
                 {!isGroup && !hasImageContent && !hasVideoContent && !hasAudioContent ? (
                     // 底部渐隐带是节点的兄弟元素，不参与圆角裁剪，需要自己带圆角，
                     // 否则会在节点底部露出两个直角。

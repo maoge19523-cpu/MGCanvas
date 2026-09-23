@@ -664,6 +664,8 @@ export default {
             imageHistoryHint: "Choose a version to preview in this node",
             imageHistoryActive: "Current",
             openImageHistory: "Open version history, {{count}} versions",
+            fileMissing: "File missing",
+            fileMissingHint: "The local copy was cleaned up or came from another device. Re-upload the asset or generate again.",
         },
         sidePanel: {
             canvas: "Canvas",

@@ -202,6 +202,8 @@ export type CanvasNodeMetadata = {
     mimeType?: string;
     bytes?: number;
     durationMs?: number;
+    /** 载入时 storageKey 指向的本地文件已经不存在：节点上只剩失效地址，界面据此提示「文件已丢失」。 */
+    fileMissing?: boolean;
     sourceOrigin?: "upload" | "asset" | "generated";
     groupId?: string;
     genericOperation?: string;

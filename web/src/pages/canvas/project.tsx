@@ -983,7 +983,12 @@ function MGCanvasProjectPage() {
             nodesRef.current.forEach((node) => {
                 if (ids.has(node.id)) node.metadata?.batchChildIds?.forEach((childId) => allIds.add(childId));
             });
-            allIds.forEach((id) => stopGenerationByRunningId(id));
+            allIds.forEach((id) => {
+                stopGenerationByRunningId(id);
+                // 一并清掉即时任务日志：日志会在下次打开画布时按 nodeSnapshot 重建节点，
+                // 不清就会把用户刚删掉的节点复活。
+                clearGenericTaskJournal(projectId, id);
+            });
             setNodes((prev) => {
                 const next = prev.filter((node) => !allIds.has(node.id));
                 return next.map((node) => {
@@ -2373,7 +2378,9 @@ function MGCanvasProjectPage() {
                         prev.map((item) => {
                             if (item.id !== node.id) return item;
                             const imagePatch = { ...imageMetadata(primaryImage), prompt, model: modelValue, status: NODE_STATUS_SUCCESS, errorDetails: undefined, providerTask: channelDoneTask() };
-                            const historyPatch = extraOutputs.length ? mergeGeneratedImageOutputsHistory({ ...item.metadata, ...imagePatch }, [primaryOutput, ...extraOutputs], channelDoneTask(), primaryOutput) : {};
+                            // 用打补丁前的 metadata 做基底：渠道模型重跑会覆盖节点上的原图，
+                            // 先把上一版并进图片历史，否则这一版就再也找不回来了。
+                            const historyPatch = mergeGeneratedImageOutputsHistory(item.metadata, [primaryOutput, ...extraOutputs], channelDoneTask(), primaryOutput);
                             // 图片框按生成结果的实际宽高比自适应：选了 1024×1024 就应显示为方框，而不是横屏框裁切。
                             return { ...item, ...fitMediaNodeGeometry(item, imagePatch.naturalWidth, imagePatch.naturalHeight, imageSpec.width, imageSpec.height), metadata: { ...item.metadata, ...imagePatch, ...historyPatch } };
                         }),
@@ -2463,6 +2470,8 @@ function MGCanvasProjectPage() {
                     subtitleSize: settings.subtitleSize,
                 });
                 const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Video];
+                // 合成要跑很久，期间画布可能已经切走、节点也可能被删：这时不能再往当前画布追加成片节点。
+                if (!nodesRef.current.some((item) => item.id === node.id)) return;
                 const videoSize = fitNodeSize(result.width || spec.width, result.height || spec.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
                 const outputId = `video-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
                 const outputNode: CanvasNodeData = {
@@ -3913,7 +3922,19 @@ function MGCanvasProjectPage() {
                                   type: CanvasNodeType.Image,
                                   width: imageSize.width,
                                   height: imageSize.height,
-                                  metadata: { ...item.metadata, ...imageMetadata(uploadedImage), prompt, ...generationMetadata },
+                                  metadata: {
+                                      ...item.metadata,
+                                      ...imageMetadata(uploadedImage),
+                                      prompt,
+                                      ...generationMetadata,
+                                      // 重新生成会直接覆盖节点上的原图：先把上一版并进图片历史，
+                                      // 用户可以在节点右上角的版本列表里切回去。
+                                      ...mergeGeneratedImageOutputsHistory(
+                                          item.metadata,
+                                          [{ kind: "image", url: uploadedImage.url, sourceUrl: uploadedImage.url, storageKey: uploadedImage.storageKey, mimeType: uploadedImage.mimeType, bytes: uploadedImage.bytes, width: uploadedImage.width, height: uploadedImage.height }],
+                                          item.metadata?.providerTask || { provider: "generic" as const },
+                                      ),
+                                  },
                               }
                             : item,
                     ),
@@ -4690,6 +4711,8 @@ function applyGenericResultToSource(
                       naturalWidth: output.width,
                       naturalHeight: output.height,
                       durationMs: output.durationMs,
+                      // 已经有了新的本地文件，清掉上一轮载入时标记的「文件已丢失」。
+                      fileMissing: undefined,
                   }
                 : {}),
             status: output ? NODE_STATUS_SUCCESS : providerTask.phase === "failed" ? NODE_STATUS_ERROR : NODE_STATUS_IDLE,

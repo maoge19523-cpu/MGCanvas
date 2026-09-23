@@ -7,6 +7,6 @@ description: Planned follow-up work
 
 - Replace the Claude Code CLI adapter with a Claude Agent SDK adapter and improve the tool queue, following the [Local Agent Integration Plan](/docs/progress/local-agent-integration-plan).
 - Configure production Windows code signing and Apple Developer signing/notarization after the required certificates and secrets are available.
-- 完成 ComfyUI 本地模式剩余阶段（[产品需求](../../../product/comfyui-local-mode-prd.md)）：工作流导入向导、宏节点执行与运行历史均已完成并通过本地验收；剩下的是**实时内部节点进度**（需在原生侧等待执行时上报当前节点，事件照抄已有的 `comfyui-local://status` / `://log` 写法，前端在宏节点上显示「正在跑：某节点」）、隔离环境/进程管理，以及 macOS 验收。
+- 完成 ComfyUI 本地模式剩余阶段（[产品需求](../../../product/comfyui-local-mode-prd.md)）：工作流导入向导、宏节点执行、运行历史与执行期间的实时节点进度均已完成并通过本地验收；剩下的是隔离环境/进程管理，以及 macOS 验收。
 - Keep adding built-in call scripts for the providers users actually use.
 - 方舟（豆包）语音合成：内置脚本已写好但尚未打通。已确认的事实——方舟的 `/models` 列表里没有语音模型，需要在渠道里手动加一个模型名（例如 `doubao-tts`）并打开它的「音频」能力；内置脚本已按接口地址自动匹配（`volces.com` 命中），但它请求 `openspeech.bytedance.com/api/v3/tts/unidirectional` 时对方返回空，正确路径与鉴权方式待确认（可考虑改成用渠道的 `baseUrl` 而不是写死域名）。另一个坑：模型上一旦存了自定义脚本就会**完全覆盖**内置脚本，应用自带的 OpenAI 规范模板会把地址拼成 `…/api/v3/v1/audio/speech` 从而 404，排查时先确认该模型的「调用脚本」是空的。

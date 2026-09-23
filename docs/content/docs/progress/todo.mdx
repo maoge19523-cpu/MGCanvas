@@ -9,3 +9,4 @@ description: Planned follow-up work
 - Configure production Windows code signing and Apple Developer signing/notarization after the required certificates and secrets are available.
 - Complete the remaining ComfyUI Local Mode phases described in the [product requirements](../../../../product/comfyui-local-mode-prd.md): isolated environment/process management, the workflow import wizard, macro-node execution, and Windows/macOS acceptance.
 - Keep adding built-in call scripts for the providers users actually use.
+- 方舟（豆包）语音合成：内置脚本已写好但尚未打通。已确认的事实——方舟的 `/models` 列表里没有语音模型，需要在渠道里手动加一个模型名（例如 `doubao-tts`）并打开它的「音频」能力；内置脚本已按接口地址自动匹配（`volces.com` 命中），但它请求 `openspeech.bytedance.com/api/v3/tts/unidirectional` 时对方返回空，正确路径与鉴权方式待确认（可考虑改成用渠道的 `baseUrl` 而不是写死域名）。另一个坑：模型上一旦存了自定义脚本就会**完全覆盖**内置脚本，应用自带的 OpenAI 规范模板会把地址拼成 `…/api/v3/v1/audio/speech` 从而 404，排查时先确认该模型的「调用脚本」是空的。

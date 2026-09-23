@@ -329,6 +329,63 @@ const ZHIPU_VIDEO_SCRIPT = [
     'return { url: done };',
 ].join("\n");
 /**
+ * 火山方舟（豆包）语音合成。
+ *
+ * 方舟的语音模型走火山语音的单向流式接口：POST /api/v3/tts/unidirectional，
+ * 鉴权用 X-Api-Key（方舟的 API Key 即可）、X-Api-Resource-Id 指定模型版本、
+ * X-Api-Request-Id 为随机请求号，文本与音色放在 req_params，音频格式放在 audio_params。
+ * 返回是分片的，音频以 base64 放在每一片的 data 字段里，因此这里按行解析并拼接后再交给音频流程。
+ */
+const ARK_AUDIO_SCRIPT = [
+    // 面板上的音色是固定的 OpenAI 名称（alloy / echo …），方舟并不认识它们：
+    // 命中这些名字时改用豆包默认音色，用户手填的火山音色 ID 则原样透传。
+    'const OPENAI_VOICES = ["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse", "marin", "cedar"];',
+    'const rawVoice = params.voice ? String(params.voice).trim() : "";',
+    'const speaker = rawVoice && !OPENAI_VOICES.includes(rawVoice.toLowerCase()) ? rawVoice : "zh_female_cancan_mars_bigtts";',
+    'const format = params.format ? String(params.format) : "mp3";',
+    'const requestId = globalThis.crypto && globalThis.crypto.randomUUID ? globalThis.crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2);',
+    '',
+    'let body;',
+    'try {',
+    '  body = await request({',
+    '    method: "post",',
+    '    url: "https://openspeech.bytedance.com/api/v3/tts/unidirectional",',
+    '    headers: {',
+    '      "Content-Type": "application/json",',
+    '      "X-Api-Key": apiKey,',
+    '      "X-Api-Resource-Id": "seed-tts-2.0",',
+    '      "X-Api-Request-Id": requestId,',
+    '    },',
+    '    data: { req_params: { text: prompt, speaker, audio_params: { format, sample_rate: 24000 } } },',
+    '    responseType: "text",',
+    '  });',
+    '} catch (error) {',
+    '  const status = error?.response?.status;',
+    '  const data = error?.response?.data;',
+    '  throw new Error(`方舟语音合成调用失败${status ? `（HTTP ${status}）` : ""}：` + (data ? JSON.stringify(data).slice(0, 500) : error?.message || String(error)));',
+    '}',
+    '',
+    'const text = typeof body === "string" ? body : JSON.stringify(body || "");',
+    'const chunks = [];',
+    'for (const line of text.split(/\\r?\\n/)) {',
+    '  const trimmed = line.trim();',
+    '  if (!trimmed || trimmed[0] !== "{") continue;',
+    '  try {',
+    '    const parsed = JSON.parse(trimmed);',
+    '    if (parsed && typeof parsed.data === "string" && parsed.data) chunks.push(parsed.data);',
+    '  } catch (ignore) {}',
+    '}',
+    'const base64 = chunks.join("");',
+    'if (!base64) throw new Error("方舟语音合成没有返回音频数据：" + text.slice(0, 300));',
+    '',
+    'const binary = atob(base64);',
+    'const bytes = new Uint8Array(binary.length);',
+    'for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);',
+    'const mime = format === "wav" ? "audio/wav" : format === "ogg_opus" ? "audio/ogg" : "audio/mpeg";',
+    'return new Blob([bytes], { type: mime });',
+].join("\n");
+
+/**
  * 阿里云百炼（DashScope）语音合成。
  *
  * 百炼的兼容模式没有语音合成接口（`/compatible-mode/v1/audio/speech` 实测 404），
@@ -397,6 +454,13 @@ const ZHIPU_AUDIO_SCRIPT = [
 ].join("\n");
 
 export const BUILTIN_CHANNEL_SCRIPTS: readonly BuiltinChannelScript[] = [
+    {
+        id: "ark-audio",
+        label: "火山方舟（豆包）语音合成",
+        match: /openspeech\.bytedance\.com|volces\.com|ark\.cn-beijing|doubao-tts|volcengine/i,
+        capability: "audio",
+        script: ARK_AUDIO_SCRIPT,
+    },
     {
         id: "dashscope-image",
         label: "阿里云百炼 DashScope 图像生成",

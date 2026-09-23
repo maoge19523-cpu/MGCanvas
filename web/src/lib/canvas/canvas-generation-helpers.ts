@@ -1,4 +1,5 @@
 import { defaultConfig, resolveModelForCapability, type AiConfig } from "@/stores/use-config-store";
+import { useAssetStore } from "@/stores/use-asset-store";
 import i18n from "@/i18n";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { resolveMediaUrl } from "@/services/file-storage";
@@ -213,6 +214,30 @@ export async function hydrateAssistantImages(sessions: CanvasAssistantSession[])
 
 export function getGenerationCount(count: string) {
     return Math.max(1, Math.min(15, Math.floor(Math.abs(Number(count)) || 1)));
+}
+
+/**
+ * 从提示词里解析 `@素材名`：不切词，直接遍历素材集合做包含匹配，命中即按素材 id 去重。
+ * 这些素材会在图片生成时一并作为参考图传给模型。
+ */
+export function resolvePromptAssetReferences(prompt: string) {
+    if (!prompt.includes("@")) return [];
+    const seen = new Set<string>();
+    const references: ReferenceImage[] = [];
+    for (const asset of useAssetStore.getState().assets) {
+        if (asset.kind !== "image") continue;
+        const name = asset.title.trim();
+        if (!name || seen.has(asset.id) || !prompt.includes(`@${name}`)) continue;
+        seen.add(asset.id);
+        references.push({ id: asset.id, name, type: asset.data.mimeType || "image/png", dataUrl: asset.data.dataUrl, storageKey: asset.data.storageKey });
+    }
+    return references;
+}
+
+/** 把 @ 到的素材参考图追加到已连接参考图后面，按 storageKey / id 去重。 */
+export function mergeReferenceImages(base: ReferenceImage[], extra: ReferenceImage[]) {
+    const seen = new Set(base.map((image) => image.storageKey || image.id));
+    return base.concat(extra.filter((image) => !seen.has(image.storageKey || image.id)));
 }
 
 export function getInputSummary(inputs: NodeGenerationInput[]) {

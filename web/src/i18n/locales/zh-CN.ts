@@ -203,7 +203,7 @@ export default {
         tags: "标签",
         search: "搜索标题、内容或标签",
         searchTitle: "按标题查询",
-        loadFailed: "获取提示词失败",
+        loadFailed: "获取提示词失败",
         coverSaved: "封面已更新",
         coverFailed: "设置封面失败",
         sourceMissing: "提示词来源不存在",
@@ -463,6 +463,14 @@ export default {
             imageInfo: "图片信息",
             history: "历史",
             autoSave: "画布更改会自动保存",
+        },
+        missingQueue: {
+            run: "缺图生成 {{count}}",
+            runHint: "按顺序补齐画布上还没有图的图片节点，已成功的不再重复生成",
+            progress: "生成中 {{done}}/{{total}}",
+            stopHint: "跑完当前节点后停止后续生成",
+            retryFailed: "重试失败 {{count}}",
+            retryHint: "只重新生成上次失败的节点",
         },
         director: {
             title: "AI 导演",

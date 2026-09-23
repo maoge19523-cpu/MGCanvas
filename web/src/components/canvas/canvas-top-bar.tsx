@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BookOpen, Bot, Download, Home, Image as ImageIcon, Images, Menu, Plus, Redo2, Sparkles, Trash2, Undo2, Upload } from "lucide-react";
 import { Dropdown, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
@@ -31,6 +31,7 @@ export function CanvasTopBar({
     agentOpen,
     compactAgentStatus,
     onToggleAgent,
+    queueControl,
 }: {
     title: string;
     titleDraft: string;
@@ -53,6 +54,7 @@ export function CanvasTopBar({
     agentOpen: boolean;
     compactAgentStatus: { connected: boolean; enabled: boolean; activity: string };
     onToggleAgent: () => void;
+    queueControl?: ReactNode;
 }) {
     const colorTheme = useThemeStore((state) => state.theme);
     const { t } = useTranslation();
@@ -131,6 +133,7 @@ export function CanvasTopBar({
                         )}
                     </div>
                     <CompactAgentStatus status={compactAgentStatus} onClick={onToggleAgent} />
+                    {queueControl}
                 </div>
 
                 <div className="pointer-events-auto flex items-center gap-1 opacity-70 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100">

@@ -6,7 +6,7 @@ import { applyCanvasAgentOps, type CanvasAgentOp, type CanvasAgentSnapshot } fro
 import type { CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
 import type { CanvasConnection, CanvasNodeData, ContextMenuState, ViewportTransform } from "@/types/canvas";
 
-type GenerateNodeRef = MutableRefObject<((nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => Promise<void>) | null>;
+type GenerateNodeRef = MutableRefObject<((nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => Promise<boolean | undefined>) | null>;
 
 type AgentBridgeParams = {
     projectId: string;

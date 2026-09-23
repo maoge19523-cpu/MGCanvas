@@ -6,6 +6,8 @@ import { FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
 import i18n from "@/i18n";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { isImeComposing, isPlainEnterKey } from "@/lib/keyboard-event";
+import { buildAssetMentionReferences, mergeMentionReferences } from "@/lib/canvas/canvas-asset-references";
+import { useAssetStore } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { CanvasNodeAnchoredPopup } from "@/components/canvas/canvas-node-popup";
@@ -40,7 +42,10 @@ export function CanvasPromptChipInput({ value, references, onChange, onSubmit, c
     const [activeIndex, setActiveIndex] = useState(0);
     const [imagePreview, setImagePreview] = useState<string | null>(null);
 
-    const activeReferences = useMemo(() => references.filter((item) => item.active), [references]);
+    const assets = useAssetStore((state) => state.assets);
+    // 候选源 = 画布已连接资源 + 「我的素材」里的图片；画布资源优先，仅扩候选源，其余交互逻辑不变。
+    const mergedReferences = useMemo(() => mergeMentionReferences(references, buildAssetMentionReferences(assets)), [assets, references]);
+    const activeReferences = useMemo(() => mergedReferences.filter((item) => item.active), [mergedReferences]);
     const referenceByLabel = useMemo(() => new Map(activeReferences.map((item) => [item.label, item])), [activeReferences]);
     // Match longer labels first so a shorter label cannot split a longer one.
     const activeLabels = useMemo(() => Array.from(new Set(activeReferences.map((item) => item.label))).sort((a, b) => b.length - a.length), [activeReferences]);

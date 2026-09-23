@@ -209,7 +209,7 @@ export default {
         tags: "Tags",
         search: "Search titles, content, or tags",
         searchTitle: "Search by title",
-        loadFailed: "Failed to load prompts",
+        loadFailed: "Failed to load prompts",
         coverSaved: "Cover updated",
         coverFailed: "Could not set the cover",
         sourceMissing: "Prompt source not found",
@@ -469,6 +469,14 @@ export default {
             imageInfo: "Image info",
             history: "History",
             autoSave: "Canvas changes are saved automatically",
+        },
+        missingQueue: {
+            run: "Fill {{count}} missing",
+            runHint: "Generate the image nodes that still have no image, one by one; already generated ones are skipped",
+            progress: "Generating {{done}}/{{total}}",
+            stopHint: "Stops after the current node finishes",
+            retryFailed: "Retry {{count}} failed",
+            retryHint: "Only regenerate the nodes that failed last time",
         },
         director: {
             title: "AI Director",

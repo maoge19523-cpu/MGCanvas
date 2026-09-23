@@ -11,7 +11,7 @@ export type CanvasResourceReference = {
     id: string;
     connectionId?: string;
     objectReferenceId?: string;
-    source: "connection" | "object" | "self";
+    source: "connection" | "object" | "self" | "asset";
     outputPortId?: string;
     nodeId: string;
     kind: CanvasResourceKind;

@@ -77,6 +77,7 @@ import { useAgentStore } from "@/stores/use-agent-store";
 import { watermarkImageBlob } from "@/lib/canvas/canvas-watermark";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
+import { useMissingImageQueue } from "@/pages/canvas/hooks/use-missing-image-queue";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
 import { buildNodeMentionReferences, reorderCanvasConnections, reorderCanvasObjectReferences, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { applyNodeConfigPatch, audioMetadata, buildAudioGenerationMetadata, buildImageGenerationMetadata, createCanvasNode, imageMetadata, videoMetadata } from "@/lib/canvas/canvas-node-factory";
@@ -97,8 +98,10 @@ import {
     hydrateCanvasImages,
     imageExtension,
     isGenerationCanceled,
+    mergeReferenceImages,
     resetInterruptedGeneration,
     resolveMetadataReferences,
+    resolvePromptAssetReferences,
     sourceNodeReferenceImages,
 } from "@/lib/canvas/canvas-generation-helpers";
 import { getNodeDefinition, isBuiltinNodeType as isBuiltinType, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
@@ -111,6 +114,7 @@ import { writeFile } from "@tauri-apps/plugin-fs";
 import { desktopFileUrl, invokeDesktop, isTauriRuntime, readDesktopFileBlob } from "@/services/platform/desktop-runtime";
 import { CanvasRefreshShell } from "@/components/canvas/canvas-refresh-shell";
 import { CanvasTopBar } from "@/components/canvas/canvas-top-bar";
+import { CanvasMissingImageQueueButton } from "@/components/canvas/canvas-missing-image-queue-button";
 import { ConnectionCreateMenu, NodeCreateMenu, type PendingConnectionCreate } from "@/components/canvas/canvas-create-menus";
 import {
     CanvasNodeType,
@@ -315,7 +319,7 @@ function MGCanvasProjectPage() {
     const selectedNodeIdsRef = useRef(selectedNodeIds);
     const viewportRef = useRef(viewport);
     const focusAnimRef = useRef<number | null>(null);
-    const generateNodeRef = useRef<((nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => Promise<void>) | null>(null);
+    const generateNodeRef = useRef<((nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => Promise<boolean | undefined>) | null>(null);
     const connectingParamsRef = useRef(connectingParams);
     const selectionBoxRef = useRef(selectionBox);
     const pendingConnectionCreateRef = useRef(pendingConnectionCreate);
@@ -772,6 +776,9 @@ function MGCanvasProjectPage() {
         setDialogNodeId,
         applyAgentOps,
     });
+    // 缺图队列：串行补齐当前项目里还没有图的图片节点，generateNodeRef 在下面回填。
+    const runMissingImageNode = useCallback((nodeId: string, prompt: string) => generateNodeRef.current?.(nodeId, "image", prompt) ?? Promise.resolve(false), []);
+    const missingQueue = useMissingImageQueue({ projectId, ready: projectLoaded, nodes, runNode: runMissingImageNode });
     const createNode = useCallback(
         (type: CanvasNodeTypeId, position?: Position) => {
             const targetPosition = position || getCanvasCenter();
@@ -3369,7 +3376,7 @@ function MGCanvasProjectPage() {
                                   },
                               ]
                             : [];
-                    const referenceImages = sourceReference.length ? sourceReference : generationContext.referenceImages;
+                    const referenceImages = mergeReferenceImages(sourceReference.length ? sourceReference : generationContext.referenceImages, resolvePromptAssetReferences(effectivePrompt));
                     const generationType = referenceImages.length ? ("edit" as const) : ("generation" as const);
                     const generationMetadata = buildImageGenerationMetadata(generationType, generationConfig, count, referenceImages);
                     const parentConfig = NODE_DEFAULT_SIZE[isConfigNode ? CanvasNodeType.Config : isImageNode ? CanvasNodeType.Image : CanvasNodeType.Text];
@@ -3527,7 +3534,8 @@ function MGCanvasProjectPage() {
                                     : node,
                         ),
                     );
-                    return;
+                    // 返回本次是否至少成功一张：缺图队列靠它判断该节点要不要进失败列表。
+                    return hasSuccess;
                 }
 
                 if (mode === "video") {
@@ -4234,6 +4242,18 @@ function MGCanvasProjectPage() {
                     agentOpen={agentPanelOpen}
                     compactAgentStatus={{ connected: localAgentConnected, enabled: localAgentEnabled, activity: localAgentActivity }}
                     onToggleAgent={toggleAgentPanel}
+                    queueControl={
+                        <CanvasMissingImageQueueButton
+                            missingCount={missingQueue.missingCount}
+                            total={missingQueue.total}
+                            done={missingQueue.done}
+                            failedCount={missingQueue.failedCount}
+                            running={missingQueue.running}
+                            onRun={missingQueue.runMissing}
+                            onStop={missingQueue.stop}
+                            onRetryFailed={missingQueue.retryFailed}
+                        />
+                    }
                 />
 
                 <MGCanvasSurface

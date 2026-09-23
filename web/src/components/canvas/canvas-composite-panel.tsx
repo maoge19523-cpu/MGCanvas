@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Button, Input, InputNumber, Select, Switch, Tooltip } from "antd";
-import { ChevronDown, ChevronUp, Clapperboard, LoaderCircle, Mic, Music2, Video, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { Button, Input, InputNumber, Select, Switch, Tooltip, message } from "antd";
+import { ChevronDown, ChevronUp, Clapperboard, Info, LoaderCircle, Mic, Music2, Pause, Play, Video, X } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { detectFfmpeg } from "@/services/platform/desktop-ffmpeg";
@@ -28,6 +28,87 @@ function clampPercent(value: number | string | null | undefined, fallback: numbe
     const parsed = typeof value === "string" ? Number(value) : value;
     if (parsed === null || parsed === undefined || Number.isNaN(parsed)) return fallback;
     return Math.min(400, Math.max(0, parsed));
+}
+
+// 顺序连播预览的片段快照：入出点、音量、淡入淡出都取面板当前参数，offset 是该段在总时间轴上的起点。
+// 预览只读这份快照，不回写画布，也不改 metadata.compositeSettings 的结构。
+export type CompositePreviewClip = { id: string; connectionId: string; title: string; src: string; start: number; length: number; offset: number; volume: number; fadeIn: number; fadeOut: number };
+
+function segmentTiming(sourceSeconds: number, item: NonNullable<CanvasCompositeSettings["segments"]>[string]) {
+    const start = Math.max(0, item.start || 0);
+    const end = item.end && sourceSeconds ? Math.min(item.end, sourceSeconds) : sourceSeconds;
+    return { start, length: Math.max(0, (end || 0) - start) };
+}
+
+/** 按连线顺序（即片段顺序）算出每段的秒数与起点，总时长只由各段净时长决定，与顺序无关。 */
+export function buildCompositePreviewClips(segments: CompositeSegmentSource[], settings: CanvasCompositeSettings): CompositePreviewClip[] {
+    let offset = 0;
+    return segments.map((segment) => {
+        const item = settings.segments?.[segment.node.id] || {};
+        const { start, length } = segmentTiming((segment.node.metadata?.durationMs || 0) / 1000, item);
+        const clip: CompositePreviewClip = {
+            id: segment.node.id,
+            connectionId: segment.connectionId,
+            title: segment.node.title || "未命名",
+            src: segment.node.metadata?.content || "",
+            start,
+            length,
+            offset,
+            volume: item.volume ?? 1,
+            fadeIn: item.fadeIn ?? 0,
+            fadeOut: item.fadeOut ?? 0,
+        };
+        offset += length;
+        return clip;
+    });
+}
+
+/**
+ * 播放头纯计算：给当前段与媒体时间，算出全局秒数、该段音量（含淡入淡出）以及这一段是否播完。
+ * 抽成纯函数既让 requestAnimationFrame 循环体保持一行调用，也便于单测直接覆盖连播切换。
+ */
+export function resolveCompositePlayback(clips: CompositePreviewClip[], index: number, currentTime: number) {
+    const clip = clips[index];
+    if (!clip) return null;
+    const local = Math.max(0, Math.min(currentTime - clip.start, clip.length));
+    const fadeIn = clip.fadeIn > 0 ? local / clip.fadeIn : 1;
+    const fadeOut = clip.fadeOut > 0 ? (clip.length - local) / clip.fadeOut : 1;
+    return {
+        index,
+        local,
+        seconds: clip.offset + local,
+        // 浏览器音量上限是 1，面板允许的 400% 只能在 FFmpeg 侧生效，这里封顶。
+        volume: Math.min(1, Math.max(0, clip.volume * Math.min(1, fadeIn, fadeOut))),
+        finished: local >= clip.length - 0.03,
+    };
+}
+
+/** 播放中拖动/点击播放头时，把全局秒数反查成「第几段 + 段内媒体时间」。 */
+export function resolveCompositeSeek(clips: CompositePreviewClip[], seconds: number) {
+    const last = clips.length - 1;
+    let index = clips.findIndex((clip) => seconds < clip.offset + clip.length);
+    if (index < 0) index = last;
+    const clip = clips[index];
+    return clip ? { index, currentTime: clip.start + Math.max(0, Math.min(seconds - clip.offset, clip.length)) } : null;
+}
+
+// 标尺刻度步长：在 0.5s～120s 里挑一档，让刻度数不超过 8 个。
+const TIMELINE_TICK_STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60, 120];
+
+function timelineTickStep(total: number) {
+    return TIMELINE_TICK_STEPS.find((step) => total / step <= 8) ?? TIMELINE_TICK_STEPS[TIMELINE_TICK_STEPS.length - 1];
+}
+
+function timelineTickLabel(seconds: number, step: number) {
+    if (seconds >= 60) return `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, "0")}`;
+    return step < 1 ? seconds.toFixed(1) : String(Math.round(seconds));
+}
+
+/** 播放头读数与总时长统一用「分:秒.十分位」，与导出时长口径一致。 */
+export function formatTimelineTime(seconds: number) {
+    const safe = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+    const minutes = Math.floor(safe / 60);
+    return `${minutes}:${(safe - minutes * 60).toFixed(1).padStart(4, "0")}`;
 }
 
 export function CanvasCompositePanel({ node, segments: segmentsProp, music, voice, isRunning, onChange, onRun, onReorderConnections, onRemoveConnection, onFocusReference }: CanvasCompositePanelProps) {
@@ -64,11 +145,10 @@ export function CanvasCompositePanel({ node, segments: segmentsProp, music, voic
             },
         });
 
-    const totalSeconds = segmentsProp.reduce((sum, segment) => {
-        const item = settings.segments?.[segment.node.id] || {};
-        const durationSec = (segment.node.metadata?.durationMs || 0) / 1000;
-        return sum + Math.max(0, (item.end && durationSec ? Math.min(item.end, durationSec) : durationSec) - (item.start || 0));
-    }, 0);
+    // 片段顺序即连线顺序。时间标尺、播放头与顺序连播预览都以这份快照为唯一口径：
+    // 拖动预览期间显示的 segments 可能临时换序，但总时长与顺序无关，播放也只按已提交的顺序走。
+    const previewClips = buildCompositePreviewClips(segmentsProp, settings);
+    const totalSeconds = previewClips.reduce((sum, clip) => sum + clip.length, 0);
 
     const segmentLabel = (index: number) => `片段 ${index + 1}`;
 
@@ -162,6 +242,224 @@ export function CanvasCompositePanel({ node, segments: segmentsProp, music, voic
         }
     };
 
+    // ── 时间标尺 / 播放头 / 顺序连播预览 ─────────────────────────────────────
+    // 播放头秒数是纯 UI 状态：只存在 ref 里，不进画布 store、不进节点 metadata，也**不进 React 状态**。
+    // 播放期间每帧只写 ref 并直接改 DOM（播放头 left、读数 textContent），组件一次都不重渲染，
+    // 从根上避免重演「逐帧写状态 → 渲染风暴 → React #185」。播放/暂停这一个低频开关才用 state。
+    const [previewPlaying, setPreviewPlaying] = useState(false);
+    const previewVideoRef = useRef<HTMLVideoElement | null>(null);
+    const playheadRef = useRef<HTMLDivElement | null>(null);
+    const previewTimeRef = useRef<HTMLSpanElement | null>(null);
+    const previewClipRef = useRef<HTMLSpanElement | null>(null);
+    const timelineRef = useRef<HTMLDivElement | null>(null);
+    const previewSecondsRef = useRef(0);
+    const previewTotalRef = useRef(0);
+    const previewPlayingRef = useRef(false);
+    const previewIndexRef = useRef(0);
+    const previewClipsRef = useRef<CompositePreviewClip[]>([]);
+    const previewFrameRef = useRef(0);
+    const previewAwaitingRef = useRef(false);
+    const previewHandlersRef = useRef<{ loaded: () => void; failed: () => void } | null>(null);
+    const seekDraggingRef = useRef(false);
+
+    // 播放头与读数一律直接改 DOM：这两个节点的 style/textContent 不参与 React 渲染，
+    // 因此其它原因引起的重渲染也不会把播放中的位置冲掉。
+    const paintPlayhead = (seconds: number, total = totalSeconds) => {
+        if (playheadRef.current) playheadRef.current.style.left = `${total > 0 ? Math.min(100, Math.max(0, (seconds / total) * 100)) : 0}%`;
+        if (previewTimeRef.current) previewTimeRef.current.textContent = formatTimelineTime(seconds);
+        const index = previewClipsRef.current.findIndex((clip) => seconds < clip.offset + clip.length);
+        const active = previewPlayingRef.current && index >= 0 ? previewClipsRef.current[index] : null;
+        if (previewClipRef.current) previewClipRef.current.textContent = active ? `· 片段 ${index + 1} ${active.title}` : "";
+    };
+
+    const detachPreviewHandlers = (video: HTMLVideoElement) => {
+        const handlers = previewHandlersRef.current;
+        if (!handlers) return;
+        video.removeEventListener("loadedmetadata", handlers.loaded);
+        video.removeEventListener("error", handlers.failed);
+        previewHandlersRef.current = null;
+    };
+
+    // 清干净一个 <video>：pause + 移除 src + load()，否则元素被卸载后仍会在后台继续出声。
+    const releasePreviewVideo = (video: HTMLVideoElement) => {
+        detachPreviewHandlers(video);
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+        video.volume = 1;
+    };
+
+    const stopPreview = () => {
+        if (previewFrameRef.current) cancelAnimationFrame(previewFrameRef.current);
+        previewFrameRef.current = 0;
+        previewPlayingRef.current = false;
+        previewAwaitingRef.current = false;
+        if (previewVideoRef.current) releasePreviewVideo(previewVideoRef.current);
+        setPreviewPlaying(false);
+    };
+
+    // 用稳定的 callback ref 接管 <video>：元素被移除（关闭面板、片段清空、切换节点）时 React 会先回调 null
+    // 再摘 DOM，正好在这里停播；普通 useEffect 清理拿到的 ref 那时已经是 null，拦不住后台播放。
+    const attachPreviewVideo = useCallback((element: HTMLVideoElement | null) => {
+        const previous = previewVideoRef.current;
+        if (previous && previous !== element) releasePreviewVideo(previous);
+        previewVideoRef.current = element;
+    }, []);
+
+    // 逐段播放：切 src → 等元数据 → 定位到入点 → play()，段尾由 rAF 循环判定后切下一段。
+    const startPreviewClip = (index: number, seekTo?: number) => {
+        const video = previewVideoRef.current;
+        const clip = previewClipsRef.current[index];
+        if (!video || !clip) {
+            stopPreview();
+            return;
+        }
+        detachPreviewHandlers(video);
+        previewIndexRef.current = index;
+        previewAwaitingRef.current = true;
+        // 换段瞬间先把播放头放到该段落点：等元数据的空档里读数不会停在上一段末尾。
+        const landing = seekTo ?? clip.start;
+        paintPlayhead(clip.offset + Math.max(0, landing - clip.start), previewTotalRef.current);
+        const loaded = () => {
+            detachPreviewHandlers(video);
+            previewAwaitingRef.current = false;
+            if (landing > 0) video.currentTime = landing;
+            void video.play().catch(() => {
+                message.warning("预览播放被系统拦截，请再点一次播放");
+                stopPreview();
+            });
+        };
+        const failed = () => {
+            detachPreviewHandlers(video);
+            message.warning(`片段「${clip.title}」无法在预览中播放`);
+            stopPreview();
+        };
+        previewHandlersRef.current = { loaded, failed };
+        video.addEventListener("loadedmetadata", loaded);
+        video.addEventListener("error", failed);
+        video.src = clip.src;
+        video.load();
+    };
+
+    // 播放心跳：读 <video>.currentTime → 算播放头秒数与音量 → 段尾切下一段，末段播完停表。
+    // 抽成一步是为了让两条驱动共用：rAF 负责播放头平滑跟随，timeupdate 兜住「窗口不可见时浏览器停掉 rAF」
+    // 的情况（否则当前段会越过出点一直放下去）。两处同时触发也安全——previewAwaitingRef 会挡住重复切段。
+    const stepPreview = () => {
+        if (!previewPlayingRef.current) return false;
+        const video = previewVideoRef.current;
+        if (!video) {
+            stopPreview();
+            return false;
+        }
+        if (previewAwaitingRef.current) return true;
+        const clips = previewClipsRef.current;
+        const state = resolveCompositePlayback(clips, previewIndexRef.current, video.currentTime);
+        if (!state) {
+            stopPreview();
+            return false;
+        }
+        video.volume = state.volume;
+        previewSecondsRef.current = state.seconds;
+        paintPlayhead(state.seconds, previewTotalRef.current);
+        if (state.finished) {
+            // 跳过零时长的片段（源视频没有探测到时长），找不到下一段就停表。
+            const next = clips.findIndex((clip, index) => index > state.index && clip.length > 0);
+            if (next < 0) {
+                stopPreview();
+                paintPlayhead(previewTotalRef.current, previewTotalRef.current);
+                return false;
+            }
+            startPreviewClip(next);
+        }
+        return true;
+    };
+
+    const tickPreview = () => {
+        previewFrameRef.current = 0;
+        if (!stepPreview()) return;
+        previewFrameRef.current = requestAnimationFrame(tickPreview);
+    };
+
+    // 播放中定位：把播放头秒数换成「第几段 + 段内时间」，同段只 seek，跨段才重新起播。
+    const seekPreview = (seconds: number) => {
+        if (!previewPlayingRef.current) return;
+        const target = resolveCompositeSeek(previewClipsRef.current, seconds);
+        if (!target) return;
+        if (target.index === previewIndexRef.current && !previewAwaitingRef.current) {
+            if (previewVideoRef.current) previewVideoRef.current.currentTime = target.currentTime;
+            return;
+        }
+        startPreviewClip(target.index, target.currentTime);
+    };
+
+    // 点击/拖动标尺只改播放头（ref + DOM）；拖动过程中不提交给 <video>，松手时才 seekPreview 一次。
+    const movePlayheadFromClientX = (clientX: number, commit: boolean) => {
+        const box = timelineRef.current?.getBoundingClientRect();
+        if (!box || box.width <= 0 || totalSeconds <= 0) return;
+        const seconds = Math.min(totalSeconds, Math.max(0, ((clientX - box.left) / box.width) * totalSeconds));
+        previewSecondsRef.current = seconds;
+        paintPlayhead(seconds);
+        if (commit) seekPreview(seconds);
+    };
+
+    const startSeek = (event: ReactPointerEvent<HTMLDivElement>) => {
+        event.stopPropagation();
+        seekDraggingRef.current = true;
+        movePlayheadFromClientX(event.clientX, false);
+    };
+
+    const moveSeek = (event: ReactPointerEvent<HTMLDivElement>) => {
+        if (!seekDraggingRef.current) return;
+        event.stopPropagation();
+        movePlayheadFromClientX(event.clientX, false);
+    };
+
+    const endSeek = () => {
+        if (!seekDraggingRef.current) return;
+        seekDraggingRef.current = false;
+        seekPreview(previewSecondsRef.current);
+    };
+
+    const togglePreview = () => {
+        if (previewPlayingRef.current) {
+            stopPreview();
+            return;
+        }
+        const clips = previewClips;
+        const total = clips.reduce((sum, clip) => sum + clip.length, 0);
+        const first = clips.findIndex((clip) => clip.length > 0 && clip.src);
+        if (first < 0 || total <= 0) {
+            message.warning("暂无可预览的片段时长");
+            return;
+        }
+        previewClipsRef.current = clips;
+        previewTotalRef.current = total;
+        // 播放头停在末尾时从头开始，否则从当前播放头位置续播。
+        const from = previewSecondsRef.current >= total - 0.05 ? 0 : Math.max(0, previewSecondsRef.current);
+        const resolved = resolveCompositeSeek(clips, from);
+        const target = resolved && clips[resolved.index]!.length > 0 ? resolved : { index: first, currentTime: clips[first]!.start };
+        previewPlayingRef.current = true;
+        setPreviewPlaying(true);
+        startPreviewClip(target.index, target.currentTime);
+        if (!previewFrameRef.current) previewFrameRef.current = requestAnimationFrame(tickPreview);
+    };
+
+    // 总时长变化（改入出点、增删片段）后重新对齐读数——同样只写 DOM，不触发重渲染。
+    useEffect(() => {
+        const clamped = Math.min(previewSecondsRef.current, totalSeconds);
+        previewSecondsRef.current = clamped;
+        paintPlayhead(clamped, totalSeconds);
+    }, [totalSeconds]);
+
+    // 组件卸载（关闭面板等）时停表；<video> 已由上面的 callback ref 释放。
+    useEffect(() => () => stopPreview(), []);
+
+    // 面板换到另一个合成节点时停播，播放头回到 0。
+    useEffect(() => {
+        stopPreview();
+        previewSecondsRef.current = 0;
+    }, [node.id]);
+
     // 这一屏显示的顺序：拖动中按预览重排，松手后与画布数据一致。只影响显示，不写画布。
     const segments = (() => {
         const from = dragRef.current?.index ?? -1;
@@ -173,6 +471,11 @@ export function CanvasCompositePanel({ node, segments: segmentsProp, music, voic
         list.splice(previewTarget, 0, moved);
         return list;
     })();
+
+    // 标尺刻度：0 到总时长之间按步长铺开，末位刻度不贴右边（总时长在读数里单独显示）。
+    const tickStep = timelineTickStep(totalSeconds);
+    const ticks: number[] = [];
+    for (let tick = 0; totalSeconds > 0 && tick < totalSeconds; tick += tickStep) ticks.push(Number(tick.toFixed(3)));
 
     return (
         <div
@@ -435,43 +738,98 @@ export function CanvasCompositePanel({ node, segments: segmentsProp, music, voic
 
             {segments.length ? (
                 <div className="mx-3 mt-2 pb-2">
-                    <div className="flex items-stretch gap-1" onPointerMove={handleTimelineMove} onPointerUp={endTimelineDrag} onPointerCancel={endTimelineDrag} onPointerLeave={endTimelineDrag}>
-                        {segments.map((segment, index) => {
-                            const base = settings.segments?.[segment.node.id] || {};
-                            // 拖动裁剪时用组件内预览秒数显示时长，仍然不写画布数据。
-                            const preview = previewTrim && previewTrim.id === segment.node.id ? previewTrim : null;
-                            const item = preview ? { ...base, ...(preview.start !== undefined ? { start: preview.start } : {}), ...(preview.end !== undefined ? { end: preview.end } : {}) } : base;
-                            const source = (segment.node.metadata?.durationMs || 0) / 1000;
-                            const length = Math.max(0, (item.end && source ? Math.min(item.end, source) : source) - (item.start || 0));
-                            const share = totalSeconds > 0 ? length / totalSeconds : 1 / segments.length;
-                            return (
-                                <div key={segment.node.id} className="flex min-w-0 flex-[1_1_0%] items-center gap-1" style={{ flexGrow: Math.max(0.35, share * 10) }}>
-                                    <div
-                                        className="relative h-8 min-w-0 flex-1 cursor-grab select-none rounded-md border transition-colors hover:bg-black/5 active:cursor-grabbing dark:hover:bg-white/10"
-                                        style={{ borderColor: theme.toolbar.border }}
-                                        title={`${segmentLabel(index)} · ${length.toFixed(1)} 秒（拖动换序，拖两端裁剪）`}
-                                        onPointerDown={(event) => startDrag(event, index)}
-                                        onClick={() => {
-                                            if (!draggedRef.current) onFocusReference(segment.node.id);
-                                        }}
-                                    >
-                                        <span className="pointer-events-none absolute inset-0 flex items-center justify-center truncate px-2 text-[10px]" style={{ color: theme.node.muted }}>
-                                            {segmentLabel(index)} · {length.toFixed(1)}s
+                    <div className="flex min-w-0 items-center gap-2 text-[10px]" style={{ color: theme.node.faint }}>
+                        <Button
+                            size="small"
+                            type="text"
+                            className="!h-6 !w-6 !min-w-6 !p-0"
+                            disabled={totalSeconds <= 0}
+                            icon={previewPlaying ? <Pause className="size-3.5 fill-current" /> : <Play className="size-3.5 fill-current" />}
+                            aria-label={previewPlaying ? "暂停顺序预览" : "顺序连播预览"}
+                            onClick={togglePreview}
+                        />
+                        <span className="shrink-0 tabular-nums" style={{ color: theme.node.muted }}>
+                            <span ref={previewTimeRef} />
+                            <span style={{ color: theme.node.faint }}> / {formatTimelineTime(totalSeconds)}</span>
+                        </span>
+                        <span ref={previewClipRef} className="min-w-0 flex-1 truncate" />
+                        <Tooltip title="预览用浏览器直接播放各段原始素材，不含转场、字幕烧字与多轨混音；成片由 FFmpeg 合成（画面归一化 pad/scale、烧字、混音），效果以导出为准">
+                            <span className="inline-flex shrink-0 cursor-help items-center gap-0.5">
+                                <Info className="size-3" />
+                                预览仅用于对时
+                            </span>
+                        </Tooltip>
+                    </div>
+                    <div className="relative mt-1" ref={timelineRef}>
+                        {totalSeconds > 0 ? (
+                            <div
+                                className="relative h-6 cursor-pointer touch-none select-none"
+                                title="点击或拖动定位播放头"
+                                onPointerDown={startSeek}
+                                onPointerMove={moveSeek}
+                                onPointerUp={endSeek}
+                                onPointerCancel={endSeek}
+                                onPointerLeave={endSeek}
+                            >
+                                {ticks.map((tick) => (
+                                    <span key={tick} className="absolute top-0 flex flex-col items-center" style={{ left: `${(tick / totalSeconds) * 100}%`, transform: tick === 0 ? "none" : "translateX(-50%)" }}>
+                                        <span className="h-1.5 w-px" style={{ background: theme.node.faint }} />
+                                        <span className="text-[9px] leading-none tabular-nums" style={{ color: theme.node.faint }}>
+                                            {timelineTickLabel(tick, tickStep)}
                                         </span>
-                                        <span className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize rounded-l-md hover:bg-black/10 dark:hover:bg-white/15" title="拖动裁剪入点" onPointerDown={(event) => startTrim(event, index, "start")} />
-                                        <span className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize rounded-r-md hover:bg-black/10 dark:hover:bg-white/15" title="拖动裁剪出点" onPointerDown={(event) => startTrim(event, index, "end")} />
+                                    </span>
+                                ))}
+                                <span className="absolute right-0 bottom-0 text-[9px] leading-none" style={{ color: theme.node.faint }}>
+                                    秒
+                                </span>
+                            </div>
+                        ) : null}
+                        <div className="flex items-stretch gap-1" onPointerMove={handleTimelineMove} onPointerUp={endTimelineDrag} onPointerCancel={endTimelineDrag} onPointerLeave={endTimelineDrag}>
+                            {segments.map((segment, index) => {
+                                const base = settings.segments?.[segment.node.id] || {};
+                                // 拖动裁剪时用组件内预览秒数显示时长，仍然不写画布数据。
+                                const preview = previewTrim && previewTrim.id === segment.node.id ? previewTrim : null;
+                                const item = preview ? { ...base, ...(preview.start !== undefined ? { start: preview.start } : {}), ...(preview.end !== undefined ? { end: preview.end } : {}) } : base;
+                                const source = (segment.node.metadata?.durationMs || 0) / 1000;
+                                const length = Math.max(0, (item.end && source ? Math.min(item.end, source) : source) - (item.start || 0));
+                                const share = totalSeconds > 0 ? length / totalSeconds : 1 / segments.length;
+                                return (
+                                    <div key={segment.node.id} className="flex min-w-0 flex-[1_1_0%] items-center gap-1" style={{ flexGrow: Math.max(0.35, share * 10) }}>
+                                        <div
+                                            className="relative h-8 min-w-0 flex-1 cursor-grab select-none rounded-md border transition-colors hover:bg-black/5 active:cursor-grabbing dark:hover:bg-white/10"
+                                            style={{ borderColor: theme.toolbar.border }}
+                                            title={`${segmentLabel(index)} · ${length.toFixed(1)} 秒（拖动换序，拖两端裁剪）`}
+                                            onPointerDown={(event) => startDrag(event, index)}
+                                            onClick={(event) => {
+                                                if (draggedRef.current) return;
+                                                // 点击片段条也是一次性事件：定位播放头到点击位置，再按原逻辑聚焦节点。
+                                                movePlayheadFromClientX(event.clientX, true);
+                                                onFocusReference(segment.node.id);
+                                            }}
+                                        >
+                                            <span className="pointer-events-none absolute inset-0 flex items-center justify-center truncate px-2 text-[10px]" style={{ color: theme.node.muted }}>
+                                                {segmentLabel(index)} · {length.toFixed(1)}s
+                                            </span>
+                                            <span className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize rounded-l-md hover:bg-black/10 dark:hover:bg-white/15" title="拖动裁剪入点" onPointerDown={(event) => startTrim(event, index, "start")} />
+                                            <span className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize rounded-r-md hover:bg-black/10 dark:hover:bg-white/15" title="拖动裁剪出点" onPointerDown={(event) => startTrim(event, index, "end")} />
+                                        </div>
+                                        {index < segments.length - 1 ? (
+                                            <span className="shrink-0 text-[10px]" style={{ color: item.transition ? theme.node.text : theme.node.faint }} title={item.transition ? "已设转场" : "硬切"}>
+                                                {item.transition ? "◆" : "│"}
+                                            </span>
+                                        ) : null}
                                     </div>
-                                    {index < segments.length - 1 ? (
-                                        <span className="shrink-0 text-[10px]" style={{ color: item.transition ? theme.node.text : theme.node.faint }} title={item.transition ? "已设转场" : "硬切"}>
-                                            {item.transition ? "◆" : "│"}
-                                        </span>
-                                    ) : null}
-                                </div>
-                            );
-                        })}
+                                );
+                            })}
+                        </div>
+                        {/* 播放头：位置只由 paintPlayhead 直接写 style.left，不参与 React 渲染。 */}
+                        <div ref={playheadRef} data-composite-playhead className="pointer-events-none absolute inset-y-0 w-px" style={{ left: "0%", background: theme.canvas.selectionStroke }} />
+                        {/* 顺序预览的播放器：1px 且不可见，但**不用 display:none**，避免个别 WebView 因不可见而暂停媒体；
+                            callback ref 稳定，元素被移除时能在摘 DOM 之前停播并清掉 src。 */}
+                        <video ref={attachPreviewVideo} onTimeUpdate={stepPreview} className="pointer-events-none absolute h-px w-px opacity-0" playsInline preload="metadata" />
                     </div>
                     <div className="mt-1 text-[10px]" style={{ color: theme.node.faint }}>
-                        拖动片段换顺序，拖两端裁剪入点/出点，点一下定位到画布
+                        拖动片段换顺序，拖两端裁剪入点/出点，点一下定位到画布；点标尺或拖播放头可定位预览进度
                     </div>
                 </div>
             ) : null}

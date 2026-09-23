@@ -367,12 +367,20 @@ const ARK_AUDIO_SCRIPT = [
     '',
     'const text = typeof body === "string" ? body : JSON.stringify(body || "");',
     'const chunks = [];',
+    'const push = (value) => { if (value && typeof value.data === "string" && value.data) chunks.push(value.data); };',
+    // 单向流式接口按 SSE 返回，每行形如 “data: {...}”；也有实现直接逐行吐 JSON。
+    // 之前只认以 { 开头的行，于是带 data: 前缀的分片全被跳过，表现为“没有返回音频数据”。
     'for (const line of text.split(/\\r?\\n/)) {',
-    '  const trimmed = line.trim();',
+    '  const trimmed = line.trim().replace(/^data:\\s*/, "").trim();',
     '  if (!trimmed || trimmed[0] !== "{") continue;',
     '  try {',
-    '    const parsed = JSON.parse(trimmed);',
-    '    if (parsed && typeof parsed.data === "string" && parsed.data) chunks.push(parsed.data);',
+    '    push(JSON.parse(trimmed));',
+    '  } catch (ignore) {}',
+    '}',
+    // 兜底：接口一次性返回单个 JSON 时，按行解析拿不到东西。
+    'if (!chunks.length) {',
+    '  try {',
+    '    push(JSON.parse(text.trim()));',
     '  } catch (ignore) {}',
     '}',
     'const base64 = chunks.join("");',

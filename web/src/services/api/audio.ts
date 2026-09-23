@@ -5,6 +5,7 @@ import i18n from "@/i18n";
 import { audioMimeType, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@/lib/audio-generation";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
+import { findBuiltinChannelScript } from "./builtin-channel-scripts";
 import { runModelPlugin } from "./model-plugin";
 
 type RequestOptions = { signal?: AbortSignal };
@@ -25,7 +26,7 @@ export async function requestAudioGeneration(config: AiConfig, prompt: string, o
     const requestConfig = resolveModelRequestConfig(config, config.model || config.audioModel);
     const model = requestConfig.model.trim();
     const format = normalizeAudioFormatValue(config.audioFormat);
-    const script = resolveModelScript(config, config.model || config.audioModel);
+    const script = resolveModelScript(config, config.model || config.audioModel) || findBuiltinChannelScript(requestConfig.baseUrl, "audio");
     if (script) {
         if (!model) throw new Error(apiText("audioModelRequired"));
         if (!requestConfig.baseUrl.trim()) throw new Error(apiText("baseUrlRequired"));

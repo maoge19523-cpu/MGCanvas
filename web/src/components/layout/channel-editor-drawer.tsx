@@ -9,22 +9,77 @@ import { ModelScriptEditor } from "./model-script-editor";
 import { ModelSelectModal } from "./model-select-modal";
 
 /**
- * 常用渠道接口地址。
+ * 服务商预设。
  * 多数用户在服务商文档里找不到「Base URL」，这里给出可直接选用的完整地址，
- * 减少填错（例如误把网页控制台地址当成接口地址）。
+ * 同时带上该服务商的调用协议与确认可用的默认模型，选中即可用，减少填错。
+ * 模型只收录能确认存在的名称，不确定的预设留空由用户自己添加；
+ * 语音合成的预设按 baseUrl 命中内置脚本，因此协议用 generic。
  */
-const COMMON_BASE_URLS: readonly { value: string; label: string }[] = [
-    { value: "https://open.bigmodel.cn/api/paas/v4", label: "智谱 GLM（BigModel）" },
-    { value: "https://dashscope.aliyuncs.com/compatible-mode/v1", label: "阿里云百炼（通义千问）" },
-    { value: "https://api.deepseek.com/v1", label: "DeepSeek" },
-    { value: "https://api.moonshot.cn/v1", label: "Kimi（月之暗面）" },
-    { value: "https://ark.cn-beijing.volces.com/api/v3", label: "火山方舟（豆包 / Seedance）" },
-    { value: "https://api.302.ai/v1", label: "302.AI（聚合网关，海外节点）" },
-    { value: "https://api.openai.com/v1", label: "OpenAI" },
-    { value: "https://generativelanguage.googleapis.com/v1beta", label: "Google Gemini" },
-    { value: "https://api.anthropic.com/v1", label: "Anthropic Claude" },
-    { value: "https://www.runninghub.cn/proxy/", label: "RunningHub 云端 ComfyUI（末尾接 API Key）" },
+type ChannelPreset = {
+    id: string;
+    label: string;
+    baseUrl: string;
+    apiFormat: ApiCallFormat;
+    models?: readonly ChannelModel[];
+};
+
+const CHANNEL_PRESETS: readonly ChannelPreset[] = [
+    { id: "openai", label: "OpenAI · 文本/图片", baseUrl: "https://api.openai.com/v1", apiFormat: "openai" },
+    { id: "deepseek", label: "DeepSeek · 文本", baseUrl: "https://api.deepseek.com", apiFormat: "openai", models: [{ name: "deepseek-chat", capability: "text" }] },
+    { id: "kimi", label: "月之暗面 Kimi · 文本", baseUrl: "https://api.moonshot.cn/v1", apiFormat: "openai", models: [{ name: "moonshot-v1-8k", capability: "text" }] },
+    // 智谱的文本、图片、语音是同一个 Base URL：下拉里只保留一项并在 label 注明用途。
+    // 智谱语音的接口就是 OpenAI 兼容的 /audio/speech（与内置语音脚本同一个地址），协议仍是 openai。
+    {
+        id: "zhipu",
+        label: "智谱 GLM · 文本/图片/语音",
+        baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+        apiFormat: "openai",
+        models: [
+            { name: "glm-4.5", capability: "text" },
+            { name: "glm-4-flash", capability: "text" },
+            { name: "cogview-4", capability: "image" },
+            { name: "cogtts", capability: "audio" },
+        ],
+    },
+    { id: "siliconflow", label: "硅基流动 · 文本/图片/视频", baseUrl: "https://api.siliconflow.cn/v1", apiFormat: "openai" },
+    {
+        id: "ark",
+        label: "火山方舟（豆包）· 图片/视频",
+        baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+        apiFormat: "ark",
+        models: [
+            { name: "doubao-seedream-4-0-250828", capability: "image" },
+            { name: "doubao-seedance-1-0-pro-250528", capability: "video" },
+        ],
+    },
+    {
+        id: "dashscope",
+        label: "阿里云百炼（兼容模式）· 文本/图片",
+        baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        apiFormat: "openai",
+        models: [
+            { name: "qwen-plus", capability: "text" },
+            { name: "qwen-turbo", capability: "text" },
+            { name: "wanx2.1-t2i-turbo", capability: "image" },
+        ],
+    },
+    { id: "hunyuan", label: "腾讯混元 · 文本", baseUrl: "https://api.hunyuan.cloud.tencent.com/v1", apiFormat: "openai" },
+    { id: "ollama", label: "Ollama（本地）· 文本", baseUrl: "http://localhost:11434/v1", apiFormat: "openai" },
+    { id: "lmstudio", label: "LM Studio（本地）· 文本", baseUrl: "http://localhost:1234/v1", apiFormat: "openai" },
+    // 以下 3 项沿用改动前 COMMON_BASE_URLS 的原文，value 与 label 逐字符照抄，不要改写。
+    { id: "302ai", label: "302.AI（聚合网关，海外节点）", baseUrl: "https://api.302.ai/v1", apiFormat: "openai" },
+    { id: "anthropic", label: "Anthropic Claude", baseUrl: "https://api.anthropic.com/v1", apiFormat: "generic" },
+    { id: "runninghub", label: "RunningHub 云端 ComfyUI（末尾接 API Key）", baseUrl: "https://www.runninghub.cn/proxy/", apiFormat: "generic" },
+    { id: "ark-speech", label: "火山方舟语音（豆包）· 语音合成", baseUrl: "https://openspeech.bytedance.com", apiFormat: "generic" },
+    { id: "dashscope-speech", label: "阿里云百炼语音 · 语音合成", baseUrl: "https://dashscope.aliyuncs.com", apiFormat: "generic", models: [{ name: "qwen-tts", capability: "audio" }] },
+    { id: "openai-speech", label: "OpenAI 语音 · 语音合成", baseUrl: "https://api.openai.com", apiFormat: "generic" },
+    { id: "minimax-speech", label: "MiniMax 语音 · 语音合成", baseUrl: "https://api.minimax.chat", apiFormat: "generic" },
+    { id: "fish-speech", label: "Fish Audio · 语音合成", baseUrl: "https://api.fish.audio", apiFormat: "generic" },
+    { id: "gemini", label: "Google Gemini · 文本/图片", baseUrl: "https://generativelanguage.googleapis.com", apiFormat: "gemini" },
 ];
+
+// 下拉项：value 必须是 Base URL（选中后会填进输入框），presetId 用来精确找回对应的预设。
+const CHANNEL_PRESET_OPTIONS = CHANNEL_PRESETS.map((preset) => ({ presetId: preset.id, value: preset.baseUrl, label: `${preset.label} · ${preset.baseUrl}` }));
 
 type ScriptTarget = { name: string; capability: ModelCapability; value: string };
 
@@ -79,6 +134,14 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
         );
     };
 
+    /** 选中服务商预设：填入 Base URL 并联动调用协议；渠道还没有模型时才用预设模型填空，用户已有的模型与 API Key 都不动。 */
+    const applyPreset = (presetId: string) => {
+        const preset = CHANNEL_PRESETS.find((item) => item.id === presetId);
+        if (!preset) return;
+        const presetModels = preset.models || [];
+        patch({ baseUrl: preset.baseUrl, apiFormat: preset.apiFormat, ...(presetModels.length && !draft.models.length ? { models: [...presetModels] } : {}) });
+    };
+
     const setCapability = (name: string, capability: ModelCapability) => setModels(draft.models.map((model) => (model.name === name ? { ...model, capability } : model)));
     const setScript = (name: string, script: string) => setModels(draft.models.map((model) => (model.name === name ? { ...model, script: script || undefined } : model)));
     const removeModel = (name: string) => setModels(draft.models.filter((model) => model.name !== name));
@@ -120,8 +183,9 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                         className="w-full"
                         value={draft.baseUrl}
                         onChange={(value) => patch({ baseUrl: value })}
-                        placeholder="https://api.example.com/v1，也可从下拉里选常用地址"
-                        options={COMMON_BASE_URLS.map((item) => ({ value: item.value, label: `${item.label} · ${item.value}` }))}
+                        onSelect={(_value, option) => applyPreset(String(option?.presetId || ""))}
+                        placeholder="https://api.example.com/v1，也可从下拉里选常用服务商预设"
+                        options={CHANNEL_PRESET_OPTIONS}
                         filterOption={(input, option) =>
                             String(option?.label ?? "").toLowerCase().includes(input.toLowerCase()) || String(option?.value ?? "").toLowerCase().includes(input.toLowerCase())
                         }
@@ -139,8 +203,9 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                     <div className="mt-0.5 text-xs text-stone-500">{t("config.channelEditor.modelDescription", { count: draft.models.length })}</div>
                 </div>
                 {draft.apiFormat === "generic" ? (
+                    // tags 模式：既能从内置模型目录里选，也能直接输入模型名回车添加（预设填进来的目录外模型名删掉后可以再加回）。
                     <Select
-                        mode="multiple"
+                        mode="tags"
                         allowClear
                         showSearch
                         maxTagCount="responsive"

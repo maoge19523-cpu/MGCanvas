@@ -1,6 +1,8 @@
 import axios, { type AxiosRequestConfig } from "axios";
 
 import i18n from "@/i18n";
+import { IMAGE_LIST_PATHS, imageUrlFromItem, pickByPaths } from "@/services/api/response-path";
+import { buildUrlCandidates, isRetryableStatus } from "@/services/api/url-candidates";
 import { platformFetch } from "@/services/platform/desktop-runtime";
 import { buildApiUrl, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 
@@ -43,6 +45,12 @@ function pluginUrl(config: AiConfig, path: string) {
     return buildApiUrl(config.baseUrl, path.startsWith("/") ? path : `/${path}`);
 }
 
+/** 相对路径展开成候选地址：base 与路径都没带版本段时，先试补 /v1 再回退原样。 */
+function pluginUrls(config: AiConfig, path: string) {
+    if (/^https?:/i.test(path)) return [path];
+    return buildUrlCandidates(config.baseUrl, path.startsWith("/") ? path : `/${path}`);
+}
+
 /**
  * 通过 Tauri 原生 HTTP 发送脚本请求。
  *
@@ -50,7 +58,35 @@ function pluginUrl(config: AiConfig, path: string) {
  * 例如智谱 open.bigmodel.cn 不返回跨域许可头），因此桌面端统一走原生层。
  * 失败时抛出 axios 形状的错误，兼容脚本里对 error.response.status / data 的读取。
  */
+/**
+ * 带候选地址回退的脚本请求。
+ *
+ * base 与路径都没写版本段时会有两个候选（先补 /v1 再回退原样）。只有「路由不存在」
+ * 才换下一个候选；401/403/429 直接抛出——那类错误重试只会白打一次上游并可能触发风控。
+ */
 async function desktopScriptRequest(input: {
+    method?: string;
+    urls: string[];
+    headers?: Record<string, unknown>;
+    data?: unknown;
+    params?: Record<string, unknown>;
+    responseType?: string;
+    signal?: AbortSignal;
+}) {
+    const total = input.urls.length;
+    for (let index = 0; index < total; index += 1) {
+        try {
+            return await sendScriptRequest({ ...input, url: input.urls[index] });
+        } catch (error) {
+            const status = (error as { response?: { status?: number } } | undefined)?.response?.status;
+            const retryable = typeof status === "number" && isRetryableStatus(status);
+            if (index === total - 1 || !retryable) throw error;
+        }
+    }
+    throw new Error("请求失败：已尝试全部候选地址");
+}
+
+async function sendScriptRequest(input: {
     method?: string;
     url: string;
     headers?: Record<string, unknown>;
@@ -107,7 +143,7 @@ function createPluginHttp(config: AiConfig, options?: RequestOptions): PluginHtt
         const isForm = typeof FormData !== "undefined" && body instanceof FormData;
         return desktopScriptRequest({
             method,
-            url: pluginUrl(config, path),
+            urls: pluginUrls(config, path),
             data: method === "post" ? body : undefined,
             params: opts?.params,
             headers: pluginHeaders({ Authorization: `Bearer ${config.apiKey}`, ...opts?.headers }, method === "post" && !isForm && body !== undefined),
@@ -127,7 +163,7 @@ function createPluginRequest(config: AiConfig, options?: RequestOptions) {
     return async (requestConfig: AxiosRequestConfig & { url: string }) => {
         return desktopScriptRequest({
             method: requestConfig.method,
-            url: pluginUrl(config, requestConfig.url),
+            urls: pluginUrls(config, requestConfig.url),
             headers: requestConfig.headers as Record<string, unknown>,
             data: requestConfig.data,
             params: requestConfig.params,
@@ -440,19 +476,10 @@ return text;`,
 
 /** Normalize whatever an image script returns into the app's generated-image shape. */
 export function normalizePluginImages(result: unknown): string[] {
-    const items = Array.isArray(result) ? result : [result];
-    const urls = items
-        .map((item) => {
-            if (typeof item === "string") return item;
-            if (item && typeof item === "object") {
-                const record = item as Record<string, unknown>;
-                if (typeof record.dataUrl === "string") return record.dataUrl;
-                if (typeof record.url === "string") return record.url;
-                if (typeof record.b64_json === "string") return `data:image/png;base64,${record.b64_json}`;
-            }
-            return "";
-        })
-        .filter(Boolean);
+    // 各脚本返回的层级不一致：可能是数组、单个对象，或把数组包在 data / images / output.images 里。
+    const nested = pickByPaths(result, IMAGE_LIST_PATHS);
+    const items = Array.isArray(result) ? result : Array.isArray(nested) ? nested : [nested ?? result];
+    const urls = items.map(imageUrlFromItem).filter(Boolean);
     if (!urls.length) throw new Error(i18n.t("modelPlugin.noImages"));
     return urls;
 }

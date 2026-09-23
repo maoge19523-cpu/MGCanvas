@@ -437,7 +437,10 @@ export function CanvasCompositePanel({ node, segments: segmentsProp, music, voic
                 <div className="mx-3 mt-2 pb-2">
                     <div className="flex items-stretch gap-1" onPointerMove={handleTimelineMove} onPointerUp={endTimelineDrag} onPointerCancel={endTimelineDrag} onPointerLeave={endTimelineDrag}>
                         {segments.map((segment, index) => {
-                            const item = settings.segments?.[segment.node.id] || {};
+                            const base = settings.segments?.[segment.node.id] || {};
+                            // 拖动裁剪时用组件内预览秒数显示时长，仍然不写画布数据。
+                            const preview = previewTrim && previewTrim.id === segment.node.id ? previewTrim : null;
+                            const item = preview ? { ...base, ...(preview.start !== undefined ? { start: preview.start } : {}), ...(preview.end !== undefined ? { end: preview.end } : {}) } : base;
                             const source = (segment.node.metadata?.durationMs || 0) / 1000;
                             const length = Math.max(0, (item.end && source ? Math.min(item.end, source) : source) - (item.start || 0));
                             const share = totalSeconds > 0 ? length / totalSeconds : 1 / segments.length;

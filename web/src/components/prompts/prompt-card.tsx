@@ -34,19 +34,19 @@ export function PromptCard({
                 <button type="button" className="block w-full cursor-pointer overflow-hidden text-left" onClick={onOpen}>
                     {item.coverUrl ? <img src={item.coverUrl} alt={item.title} className={compact ? "aspect-square w-full object-cover transition-transform duration-300 group-hover:scale-[1.025]" : "aspect-[16/10] w-full object-cover transition-transform duration-300 group-hover:scale-[1.018]"} loading="lazy" /> : <span className={compact ? "grid aspect-square w-full place-items-center bg-black/[0.025] text-stone-400 dark:bg-white/[0.025] dark:text-zinc-600" : "grid aspect-[16/10] w-full place-items-center bg-black/[0.025] text-stone-400 dark:bg-white/[0.025] dark:text-zinc-600"}><FileText className="size-7" /></span>}
                 </button>
-                {/* 按钮放在封面按钮外层，避免 button 嵌套 button；悬停或已有封面常显，平时不干扰浏览。 */}
+                {/* 按钮放在封面按钮外层，避免 button 嵌套 button；常显，否则用户根本找不到设置封面的入口。 */}
                 {onSetCover ? (
                     <button
                         type="button"
                         title={item.coverUrl ? "换封面" : "设为封面"}
                         aria-label={item.coverUrl ? "换封面" : "设为封面"}
-                        className={`absolute right-1.5 top-1.5 grid size-6 cursor-pointer place-items-center rounded-full bg-black/45 text-white backdrop-blur transition hover:bg-black/65 ${item.coverUrl ? "" : "opacity-0 group-hover:opacity-100"}`}
+                        className="absolute right-1.5 top-1.5 grid size-7 cursor-pointer place-items-center rounded-full bg-black/50 text-white shadow-sm backdrop-blur transition hover:bg-black/70"
                         onClick={(event) => {
                             event.stopPropagation();
                             onSetCover();
                         }}
                     >
-                        <ImagePlus className="size-3.5" />
+                        <ImagePlus className="size-4" />
                     </button>
                 ) : null}
             </div>

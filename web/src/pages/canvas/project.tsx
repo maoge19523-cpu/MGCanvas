@@ -3863,6 +3863,9 @@ function MGCanvasProjectPage() {
                     ? await requestEdit(generationConfig, prompt, retryImages, undefined, { signal: controller.signal }).then((items) => items[0])
                     : await requestGeneration(generationConfig, prompt, { signal: controller.signal }).then((items) => items[0]);
                 const uploadedImage = await uploadImage(image.dataUrl);
+                // 这次生成如果来自风格馆的选择，就把这张图存成那个风格的封面。
+                // 动态引入：封面只是附带效果，不该让主流程多背一份依赖。
+                void import("@/services/api/style-covers").then((module) => module.captureStyleCover(image.dataUrl));
                 const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
                 const imageSize = fitNodeSize(uploadedImage.width, uploadedImage.height, imageConfig.width, imageConfig.height);
                 const generationMetadata = savedImageMetadata?.generationType

@@ -4,6 +4,7 @@ import { BookOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
+import { markPendingStyle } from "@/services/api/style-covers";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 
@@ -25,7 +26,15 @@ export function CanvasPromptLibrary({ onSelect }: { onSelect: (prompt: string) =
             >
                 {t("navigation.prompts")}
             </Button>
-            <PromptSelectDialog open={open} onOpenChange={setOpen} onSelect={onSelect} />
+            <PromptSelectDialog
+                open={open}
+                onOpenChange={setOpen}
+                onSelect={(prompt) => {
+                    // 记下选的是哪个风格，这次生成出图后会自动成为它的封面。
+                    markPendingStyle(prompt);
+                    onSelect(prompt);
+                }}
+            />
         </>
     );
 }

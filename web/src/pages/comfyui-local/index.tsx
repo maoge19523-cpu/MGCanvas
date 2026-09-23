@@ -13,6 +13,7 @@ import { useComfyWorkflowImport } from "@/integrations/comfyui-local/use-workflo
 import { openWorkflowInNewCanvas } from "@/integrations/comfyui-local/open-workflow-canvas";
 import { createComfyResultNodes } from "@/integrations/comfyui-local/result-nodes";
 import { ComfyWorkflowImportWizard } from "@/integrations/comfyui-local/workflow-import-wizard";
+import { ComfyRunHistorySection } from "@/integrations/comfyui-local/run-history-panel";
 import { comfyWorkflowPackName, importComfyWorkflowPack, parseComfyWorkflowPack, type ComfyWorkflowPackEntry } from "@/integrations/comfyui-local/workflow-pack";
 import { deleteComfyWorkflowDefinition, listComfyWorkflowDefinitions } from "@/integrations/comfyui-local/workflow-library";
 import { cn } from "@/lib/utils";
@@ -789,6 +790,8 @@ function EnvironmentRuntime({ profile, status, logs, busy, onStart, onStop, onRe
                     </div>
                 )}
             </section>
+
+            <ComfyRunHistorySection />
         </section>
     );
 }

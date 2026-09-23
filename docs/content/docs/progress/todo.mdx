@@ -5,21 +5,32 @@ description: Planned follow-up work
 
 # TODO
 
-## 风格馆：用过即封面（自动捕获）
+## 风格馆收尾
 
-**目标**：用户用某个风格生成出图后，那张图自动成为该风格卡片的封面，越用越好看。
+### 已完成（不用重做）
 
-**当前状态**：风格数据已内置（`web/src/services/api/builtin-prompt-styles.ts`，94 条、八类，`coverUrl` 全为空，卡片显示图标占位）；入口已放在生成节点提示词框左下角；选中风格会追加到提示词后面并保留用户已写内容。
+- 内置 94 条原创风格，分八类（真人写真、东方古风、现代影像、科幻幻想、自然氛围、暗黑废墟、巨物传说、二次元插画），数据在 `web/src/services/api/builtin-prompt-styles.ts`，离线可用。
+- 内置源注册在 `prompt-source-presets.ts`（`BUILTIN_STYLE_SOURCE_ID`），`prompt-source-runtime.ts` 的内置分支直接返回数据；`use-prompt-source-store.ts` 的 `merge` 每次按默认值补回内置源，老用户不会丢。
+- 入口在生成节点提示词框左下角，`canvas-prompt-library.tsx` 已改成与相邻按钮同规格的文字按钮；选中风格接在已有提示词后面，不覆盖用户已写内容（`canvas-node-prompt-panel.tsx` 第 111 行附近）。
+- 封面底座已完成：`web/src/services/api/style-covers.ts` 负责按风格 id 读写封面、用 canvas 把挑的图压到 320px webp（带体积上限），内置源读取时会合并封面。
 
-**已定位的改动点**（下次直接照做，不必重新搜索）：
+### 待做 1：给风格卡加「设为封面」按钮（就差这一步）
 
-1. **记录本次用的是哪个风格**
-   - `web/src/components/canvas/canvas-node-prompt-panel.tsx` 第 111 行附近，`CanvasPromptLibrary` 的 `onSelect` 现在只拼提示词；这里要顺便把风格 id 记到节点 metadata 上（需要给 `CanvasNodeData["metadata"]` 加一个字段，例如 `styleId`）。
-2. **在生成成功处取图**
-   - `web/src/pages/canvas/project.tsx` 的 `handleGenerateNode`（第 3279 行起）里有三到四处图片结果落点，都要处理：约第 3879 行（`...imageMetadata(uploadedImage), prompt, ...generationMetadata`）、约第 2357 行（`imagePatch` + `historyPatch`）、约第 3472 行（`imageMetadata(uploaded)`）。任一节点带着 `styleId` 成功出图时，取第一张图作为该风格封面。
-3. **存封面**
-   - 新建 `web/src/services/api/style-covers.ts`：用 `localforage` 存 `styleId → 压缩后的小图`。图片要先用 canvas 压到约 256px 的 webp/jpeg 再存，不要把原图或 base64 大图塞进本地存储。
-4. **读取时合并**
-   - `web/src/services/api/prompt-source-runtime.ts` 的内置源分支（`if (source.builtIn && !source.url.trim()) return BUILTIN_STYLE_PROMPTS;`）改成先读封面表再合并，这样卡片就能显示封面。
+现在封面能存也能显示，但**没有地方让用户把图配上去**。
 
-**说明**：只自动捕获第一张图；手动设封面的入口（卡片上直接换图）暂不做，等自动捕获跑通后再评估是否需要。已移除的历史条目（Claude Agent SDK 适配、代码签名、ComfyUI 环境隔离、内置调用脚本补充、方舟语音合成打通）都能在 Git 提交历史里找到当时的结论与线索。
+1. `web/src/components/prompts/prompt-card.tsx` 增加可选属性（例如 `onSetCover?: () => void`）。注意该卡片在管理后台也复用，必须是可选参数，不传时不渲染任何新东西。
+2. `compact` 模式没有底部操作栏，把入口做成**封面右上角的小按钮**（参考收藏星标的做法），点击后触发一个隐藏的 `<input type="file" accept="image/*">`。
+3. `web/src/components/prompts/prompt-select-dialog.tsx` 里把该回调接上：拿 `item.id`，用 `compressStyleCover(file)` 压缩，再 `saveStyleCover(item.id, dataUrl)`，最后让列表重新拉取（`query.refetch()`）就能看到封面。
+4. 只对内置风格源（`item.sourceId === BUILTIN_STYLE_SOURCE_ID`）显示这个按钮，远程提示词源不显示。
+
+### 待做 2：用过即封面（自动捕获）
+
+用户用某个风格出图后，那张图自动成为该风格卡的封面。改动点已定位：
+
+1. `canvas-node-prompt-panel.tsx` 选风格时把风格 id 记到节点 metadata（需要给 `CanvasNodeData["metadata"]` 加字段，例如 `styleId`）。
+2. `web/src/pages/canvas/project.tsx` 的 `handleGenerateNode`（第 3279 行起）里三到四处图片结果落点都要处理：约第 3879 行（`...imageMetadata(uploadedImage), prompt, ...generationMetadata`）、约第 2357 行（`imagePatch` + `historyPatch`）、约第 3472 行（`imageMetadata(uploaded)`）。节点带 `styleId` 且成功出图时取第一张图，调 `saveStyleCover`。
+3. 只捕获第一张图；不要覆盖用户手动设定的封面（手动优先），除非用户明确要求反过来。
+
+### 待做 3：同步到正式版
+
+风格馆（含可见入口与封面机制）目前只在测试版，正式版仍停在旧版本，确认测试版无误后打正式版。

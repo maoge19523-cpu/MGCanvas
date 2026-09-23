@@ -55,7 +55,7 @@
             }
         ],
         "security": {
-            "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost https: http://127.0.0.1:* http://localhost:*; img-src 'self' asset: http://asset.localhost blob: data: https: http://127.0.0.1:* http://localhost:*; media-src 'self' asset: http://asset.localhost blob: data: https: http://127.0.0.1:* http://localhost:*; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self' 'unsafe-eval'",
+            "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost https: http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* wss:; img-src 'self' asset: http://asset.localhost blob: data: https: http://127.0.0.1:* http://localhost:*; media-src 'self' asset: http://asset.localhost blob: data: https: http://127.0.0.1:* http://localhost:*; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self' 'unsafe-eval'",
             "devCsp": null,
             "assetProtocol": {
                 "enable": true,

@@ -2,6 +2,7 @@ import i18n from "@/i18n";
 import { platformFetch } from "@/services/platform/desktop-runtime";
 
 import type { PromptSource } from "./prompt-source-presets";
+import { BUILTIN_STYLE_PROMPTS } from "./builtin-prompt-styles";
 
 export type RawPrompt = {
     id: string;
@@ -32,6 +33,8 @@ async function fetchSource(source: PromptSource, options?: RunOptions) {
 }
 
 export async function runPromptSource(source: PromptSource, options?: RunOptions): Promise<RawPrompt[]> {
+    // 内置风格源没有地址，直接返回打包在程序里的数据，避免为了随开随用去联网。
+    if (source.builtIn && !source.url.trim()) return BUILTIN_STYLE_PROMPTS;
     if (!source.url.trim()) throw new Error(i18n.t("config.promptSources.runtime.urlRequired"));
     let data: unknown;
     try {

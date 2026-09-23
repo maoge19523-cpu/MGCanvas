@@ -48,7 +48,8 @@ export const usePromptSourceStore = create<PromptSourceStore>()(
                 const persistedState = (persisted || {}) as Partial<PromptSourceStore>;
                 const savedSources = Array.isArray(persistedState.sources) ? persistedState.sources : [];
                 const custom = savedSources.filter((source) => !source.builtIn).map((source) => createPromptSource(source));
-                return { ...current, sources: custom, schedule: { ...defaultSchedule, ...(persistedState.schedule || {}) } };
+                // 内置源不写进持久化，每次合并时按当前默认值重新补上；否则老用户会丢掉内置风格馆。
+                return { ...current, sources: [...DEFAULT_PROMPT_SOURCES, ...custom], schedule: { ...defaultSchedule, ...(persistedState.schedule || {}) } };
             },
         },
     ),

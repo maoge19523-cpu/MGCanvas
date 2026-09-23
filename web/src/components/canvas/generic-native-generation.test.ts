@@ -21,6 +21,7 @@ import {
     changeGenericNativeModelChoice,
     changeGenericNativeModel,
     createGenericNativePayload,
+    prepareGenericNativePromptAssets,
     prepareGenericNativeRun,
     readGenericNativePrompt,
     validateGenericNativePayload,
@@ -557,5 +558,47 @@ describe("native Generic payload adapter", () => {
         let payload = createGenericNativePayload("video.generate");
         payload = changeGenericNativeModel("video.generate", payload, modelId);
         expect(payload.model).toBe("seedance-2.0-standard-t2v");
+    });
+});
+
+describe("prompt asset mentions", () => {
+    const asset = (name: string) => ({ id: name, name, type: "image/png", dataUrl: `data:image/png;base64,${name}`, storageKey: `image:${name}` });
+    const payloadFor = (model: string, prompt: string, counts = EMPTY_GENERIC_NATIVE_REFERENCE_COUNTS) =>
+        writeGenericNativePrompt("image.generate", changeGenericNativeModel("image.generate", createGenericNativePayload("image.generate"), model, counts), prompt);
+
+    it("rewrites @素材名 into @Image N after the connected references and returns them in the same order", () => {
+        // qwen-image-3.0-i2i 的图片上限是 3：已连接 1 张，素材只能再补 2 张。
+        const counts = { ...EMPTY_GENERIC_NATIVE_REFERENCE_COUNTS, image: 1 };
+        const plan = prepareGenericNativePromptAssets("image.generate", payloadFor("qwen-image-3.0-i2i", "让 @小红 和 @小蓝 同框", counts), counts, [asset("小红"), asset("小蓝")]);
+
+        expect(plan?.adoptedCount).toBe(2);
+        expect(plan?.skippedCount).toBe(0);
+        expect(plan?.payload?.images).toEqual(["@Image 1", "@Image 2", "@Image 3"]);
+        expect(readGenericNativePrompt("image.generate", plan!.payload!)).toBe("让 @Image 2 和 @Image 3 同框");
+        expect(plan?.references.map((reference) => ({ kind: reference.kind, name: reference.name, storageKey: reference.storageKey }))).toEqual([
+            { kind: "image", name: "小红", storageKey: "image:小红" },
+            { kind: "image", name: "小蓝", storageKey: "image:小蓝" },
+        ]);
+    });
+
+    it("keeps the original @名字 text for assets the model cannot take", () => {
+        const plan = prepareGenericNativePromptAssets("image.generate", payloadFor("generic-image-gk-v15-edit", "让 @小红 和 @小蓝 同框"), EMPTY_GENERIC_NATIVE_REFERENCE_COUNTS, [asset("小红"), asset("小蓝")]);
+
+        expect(plan?.adoptedCount).toBe(1);
+        expect(plan?.skippedCount).toBe(1);
+        expect(plan?.payload?.images).toEqual(["@Image 1"]);
+        expect(readGenericNativePrompt("image.generate", plan!.payload!)).toBe("让 @Image 1 和 @小蓝 同框");
+        expect(plan?.references.map((reference) => reference.name)).toEqual(["小红"]);
+    });
+
+    it("does not rewrite anything when the connected references already use up the image slots", () => {
+        const counts = { ...EMPTY_GENERIC_NATIVE_REFERENCE_COUNTS, image: 1 };
+        const plan = prepareGenericNativePromptAssets("image.generate", payloadFor("generic-image-gk-v15-edit", "@小红 参考", counts), counts, [asset("小红")]);
+
+        expect(plan).toEqual({ payload: null, references: [], adoptedCount: 0, skippedCount: 1 });
+    });
+
+    it("returns no plan when the prompt mentions no asset", () => {
+        expect(prepareGenericNativePromptAssets("image.generate", payloadFor("qwen-image-3.0-i2i", "一只猫"), EMPTY_GENERIC_NATIVE_REFERENCE_COUNTS, [])).toBeNull();
     });
 });

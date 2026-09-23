@@ -9,11 +9,13 @@ import { CanvasResizableArea } from "@/components/canvas/canvas-resizable-area";
 import { CanvasObjectReferencePicker } from "@/components/canvas/canvas-object-reference-picker";
 import { CanvasAudioSettingsPopover, audioConfigPatch } from "./canvas-audio-settings-popover";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import { resolvePromptAssetReferences } from "@/lib/canvas/canvas-generation-helpers";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { getGenericOperation } from "@/services/api/generic-contract";
+import type { GenericReference } from "@/services/api/generic";
 import { getGenericModelProfile } from "@/services/api/generic-models";
 import { formatGenericPriceQuote, getCachedGenericPricingCatalog, loadGenericPricingCatalog, quoteGenericPrice, type GenericPriceQuote, type GenericPricingCatalog } from "@/services/api/generic-pricing";
-import { modelOptionLabel, resolveModelRequestConfig, selectableModelsByCapability, useConfigStore, defaultConfig, type ModelCapability } from "@/stores/use-config-store";
+import { modelOptionLabel, resolveModelRequestConfig, selectableModelsByCapability, isChannelModelValue, useConfigStore, defaultConfig, type ModelCapability } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { CanvasNodeData, CanvasNodeMetadata } from "@/types/canvas";
 import { GENERIC_SEEDREAM_VIRTUAL_RATIO_PATH, GENERIC_SEEDREAM_VIRTUAL_RESOLUTION_PATH, inferGenericSeedreamGeometry, isGenericSeedreamVirtualPath } from "./generic-aspect-dimensions";
@@ -34,6 +36,7 @@ import {
     createGenericNativePayload,
     getGenericNativeOperation,
     parseGenericNativePayload,
+    prepareGenericNativePromptAssets,
     readGenericNativeParameter,
     readGenericNativeModelChoice,
     readGenericNativePrompt,
@@ -56,7 +59,7 @@ export type GenericNativeGenerationPanelProps = {
     isRunning?: boolean;
     isPolling?: boolean;
     onChange: (nodeId: string, metadata: Partial<CanvasNodeMetadata>) => void;
-    onRun?: (node: CanvasNodeData, operationId: string, payload: Record<string, unknown>) => void | Promise<void>;
+    onRun?: (node: CanvasNodeData, operationId: string, payload: Record<string, unknown>, options?: { references?: GenericReference[]; persistPayload?: Record<string, unknown> }) => void | Promise<void>;
     onStartPolling?: (node: CanvasNodeData) => void | Promise<void>;
     onStopPolling?: (node: CanvasNodeData) => void;
     onFocusReference?: (nodeId: string) => void;
@@ -150,6 +153,26 @@ export function GenericNativeGenerationPanel({
     const visiblePrompt = prompt === "@Text 1" ? "" : prompt;
     const validationError = validateGenericNativePayload(kind, operation.id, effectivePayload, referenceCounts);
     const selectedModel = typeof effectivePayload.model === "string" ? effectivePayload.model : undefined;
+    // 渠道模型的参考图在 handleChannelModelRun 里直接拼，不走占位符；只有内置模型才需要算采纳名额并改写 `@素材名`。
+    const channelModelRun = isChannelModelValue(selectedModel || "");
+    const mentionedAssets = useMemo(() => resolvePromptAssetReferences(visiblePrompt), [visiblePrompt]);
+    // 本次请求与面板提示共用同一份采纳结果，避免显示的和真正发出去的不一致。
+    const promptAssets = useMemo(
+        () => (channelModelRun || !mentionedAssets.length ? null : prepareGenericNativePromptAssets(operation.id, effectivePayload, referenceCounts, mentionedAssets)),
+        [channelModelRun, effectivePayload, mentionedAssets, operation.id, referenceCounts],
+    );
+    const promptAssetWarning = Boolean(!channelModelRun && promptAssets?.skippedCount);
+    const promptAssetNotice = !mentionedAssets.length
+        ? null
+        : channelModelRun
+          ? `已把提示词里的 ${mentionedAssets.length} 张素材作为参考图`
+          : !promptAssets
+            ? null
+            : !promptAssets.adoptedCount
+              ? `当前模型没有可用的图片参考名额，提示词里的 ${promptAssets.skippedCount} 张素材未参与生成`
+              : promptAssets.skippedCount
+                ? `已采纳 ${promptAssets.adoptedCount} 张素材参考图，另有 ${promptAssets.skippedCount} 张超出当前模型上限`
+                : `已采纳 ${promptAssets.adoptedCount} 张素材参考图`;
     const modelProfile = selectedModel ? getGenericModelProfile(selectedModel) : undefined;
     const modelCapability = useMemo(() => genericNativeModelCapability(modelProfile), [modelProfile]);
     const usedReferenceCounts = useMemo(() => genericNativeReferencedInputCounts(effectivePayload), [effectivePayload]);
@@ -236,7 +259,10 @@ export function GenericNativeGenerationPanel({
             },
         };
         persist(effectivePayload);
-        await onRun(configuredNode, operation.id, effectivePayload);
+        // 本次请求用把 `@素材名` 改写成 `@Image N` 的那份 payload；节点上仍存原文（persistPayload），
+        // 否则下次打开面板会在提示词里看到跑不通的占位符。
+        const assetPayload = promptAssets?.payload;
+        await onRun(configuredNode, operation.id, assetPayload || effectivePayload, promptAssets?.references.length ? { references: promptAssets.references, persistPayload: effectivePayload } : undefined);
     };
 
     const icon = nativeKindIcon(kind, "size-4");
@@ -293,8 +319,8 @@ export function GenericNativeGenerationPanel({
                     <span className="shrink-0 rounded-full border px-1.5 py-0.5 text-[9px]" style={{ borderColor: theme.toolbar.border, color: theme.node.faint }}>
                         自动识别
                     </span>
-                    <span className="min-w-0 flex-1 truncate" title={referenceLimitNotice || connectedSummary || undefined} style={referenceLimitNotice ? { color: "#fbbf24" } : undefined}>
-                        {referenceLimitNotice || connectedSummary || "未连接素材"}
+                    <span className="min-w-0 flex-1 truncate" title={referenceLimitNotice || promptAssetNotice || connectedSummary || undefined} style={referenceLimitNotice || promptAssetWarning ? { color: "#fbbf24" } : undefined}>
+                        {referenceLimitNotice || promptAssetNotice || connectedSummary || "未连接素材"}
                     </span>
                     {elapsed ? (
                         <span className="shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] tabular-nums" style={{ borderColor: theme.toolbar.border, color: theme.node.muted }}>

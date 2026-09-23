@@ -61,7 +61,9 @@ import {
     createGenericNativePayload,
     isChannelModelValue,
     parseGenericNativePayload,
+    prepareGenericNativePromptAssets,
     prepareGenericNativeRun,
+    readGenericNativePrompt,
     writeGenericNativePrompt,
 } from "@/components/canvas/generic-native-generation";
 import { MGCanvasSurface } from "@/components/canvas/td-canvas-surface";
@@ -2095,7 +2097,9 @@ function MGCanvasProjectPage() {
         [config, message, openConfigDialog],
     );
 
-    const buildGenericReferences = useCallback((nodeId: string): GenericReference[] => {
+    // extraReferences 由面板给出（提示词里 @ 到的素材图片），必须追加在已连接的参考图之后：
+    // payload 里的 `@Image N` 下标就是按这个顺序算出来的。
+    const buildGenericReferences = useCallback((nodeId: string, extraReferences: GenericReference[] = []): GenericReference[] => {
         const resourceReferences = buildNodeGenerationInputs(nodeId, nodesRef.current, connectionsRef.current).flatMap((input): GenericReference[] => {
             if (input.type === "text") return [{ kind: "text", name: input.title, text: input.text || "" }];
             if (input.type === "image" && input.image) return [{ kind: "image", name: input.image.name, url: input.image.dataUrl, storageKey: input.image.storageKey, localPath: input.image.localPath, mimeType: input.image.type }];
@@ -2118,7 +2122,7 @@ function MGCanvasProjectPage() {
                 seenTaskReferences.add(referenceKey);
                 return [{ kind: "task", name: source.title, taskId, audioIndex: lineageOutput?.audioIndex, selectionIndex: lineageOutput?.selectionIndex }];
             });
-        return [...resourceReferences, ...taskReferences];
+        return [...resourceReferences, ...taskReferences, ...extraReferences];
     }, []);
 
     const updateGenericSubmission = useCallback((nodeId: string, submission: GenericSubmission) => {
@@ -2286,7 +2290,11 @@ function MGCanvasProjectPage() {
             });
             setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, model: modelValue, prompt, status: NODE_STATUS_LOADING, errorDetails: undefined, providerTask: channelRunningTask } } : item)));
             try {
-                const references = buildNodeGenerationInputs(node.id, nodesRef.current, connectionsRef.current).flatMap((input) => (input.type === "image" && input.image ? [input.image] : []));
+                // 提示词里 @ 到的素材图片一并作为参考图，按 storageKey / id 与已连接的参考图去重。
+                const references = mergeReferenceImages(
+                    buildNodeGenerationInputs(node.id, nodesRef.current, connectionsRef.current).flatMap((input) => (input.type === "image" && input.image ? [input.image] : [])),
+                    resolvePromptAssetReferences(prompt),
+                );
                 if (nativeKind === "video") {
                     const video = await requestVideoGeneration({ ...requestConfig, size, videoSeconds: seconds }, prompt, references, [], [], { signal: controller.signal });
                     const uploadedVideo = await storeProviderVideo(video);
@@ -2512,7 +2520,7 @@ function MGCanvasProjectPage() {
     );
 
     const handleRunGeneric = useCallback(
-        async (node: CanvasNodeData, payload: Record<string, unknown>) => {
+        async (node: CanvasNodeData, payload: Record<string, unknown>, options?: { references?: GenericReference[]; persistPayload?: Record<string, unknown> }) => {
             if (genericRequestLocksRef.current.has(node.id) || generationRequestsRef.current.has(node.id)) {
                 message.warning("该节点正在提交或查询任务，请勿重复发起，以免重复计费。");
                 return;
@@ -2535,6 +2543,10 @@ function MGCanvasProjectPage() {
             genericRequestLocksRef.current.add(node.id);
             const operationId = node.metadata?.genericOperation || "video.generate";
             const runPlan = prepareGenericNativeRun(payload);
+            // 提示词里 @ 到的素材参考图由面板追加；落盘仍用面板给的原文 payload，
+            // 否则节点上会留下 `@Image N` 这种只在本次请求里成立的占位符。
+            const extraReferences = options?.references || [];
+            const persistedPayload = JSON.stringify(options?.persistPayload || runPlan.payload, null, 2);
             let controller: AbortController | undefined;
             let remoteSubmitted = false;
             let journalWarningShown = false;
@@ -2551,7 +2563,7 @@ function MGCanvasProjectPage() {
                                       ...item.metadata,
                                       channelId: node.metadata?.channelId || resolved.channel.id,
                                       genericOperation: operationId,
-                                      genericPayload: JSON.stringify(payload, null, 2),
+                                      genericPayload: persistedPayload,
                                       status: NODE_STATUS_LOADING,
                                       errorDetails: undefined,
                                       providerTask: { provider: "generic", action: operationId, family: getGenericOperation(operationId).taskFamily, phase: "queued", status: "submitting", progress: 0 },
@@ -2563,7 +2575,7 @@ function MGCanvasProjectPage() {
                 );
                 const result = await runGenericOperationBatch(resolved.requestConfig, operationId, runPlan.payload, runPlan.batchCount, {
                     signal: controller.signal,
-                    references: buildGenericReferences(node.id),
+                    references: buildGenericReferences(node.id, extraReferences),
                     onSubmitted: (submission) => {
                         remoteSubmitted = true;
                         const journaled = journalGenericSubmission({
@@ -2574,7 +2586,7 @@ function MGCanvasProjectPage() {
                                     ...node.metadata,
                                     channelId: resolved.channel.id,
                                     genericOperation: operationId,
-                                    genericPayload: JSON.stringify(payload, null, 2),
+                                    genericPayload: persistedPayload,
                                 },
                             },
                             operationId,
@@ -3749,7 +3761,13 @@ function MGCanvasProjectPage() {
                     message.warning("请先在节点面板中确认生成参数。");
                     return;
                 }
-                await handleRunGeneric(genericNode, payload);
+                // 落盘的 payload 里提示词是 `@素材名` 原文，重试时要和面板一样换成参考图占位符；
+                // 渠道模型不走占位符（参考图在 handleChannelModelRun 里直接拼），所以不改写。
+                const retryOperationId = genericNode.metadata?.genericOperation || "video.generate";
+                const retryChannelModel = isChannelModelValue(typeof payload.model === "string" ? payload.model : "");
+                const retryMentions = retryChannelModel ? [] : resolvePromptAssetReferences(readGenericNativePrompt(retryOperationId, payload));
+                const retryAssets = prepareGenericNativePromptAssets(retryOperationId, payload, countGenericNativeReferences(buildGenericReferences(genericNode.id)), retryMentions);
+                await handleRunGeneric(genericNode, retryAssets?.payload || payload, retryAssets?.references.length ? { references: retryAssets.references, persistPayload: payload } : undefined);
                 return;
             }
             if (nativeRetryNode) {
@@ -4069,7 +4087,7 @@ function MGCanvasProjectPage() {
                         isRunning={runningGenericNodeIds.has(panelNode.id)}
                         isPolling={hasSubmittedTask && runningGenericNodeIds.has(panelNode.id)}
                         onChange={handleConfigNodeChange}
-                        onRun={(nativeNode, _operationId, payload) => handleRunGeneric(nativeNode, payload)}
+                        onRun={(nativeNode, _operationId, payload, options) => handleRunGeneric(nativeNode, payload, options)}
                         onStartPolling={handleResumeGeneric}
                         onStopPolling={confirmStopGenericPolling}
                         onFocusReference={focusNode}
@@ -4249,6 +4267,7 @@ function MGCanvasProjectPage() {
                             done={missingQueue.done}
                             failedCount={missingQueue.failedCount}
                             running={missingQueue.running}
+                            skipped={missingQueue.modelSkipped}
                             onRun={missingQueue.runMissing}
                             onStop={missingQueue.stop}
                             onRetryFailed={missingQueue.retryFailed}

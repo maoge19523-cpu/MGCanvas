@@ -468,6 +468,8 @@ export default {
             run: "缺图生成 {{count}}",
             runHint: "按顺序补齐画布上还没有图的图片节点，已成功的不再重复生成",
             progress: "生成中 {{done}}/{{total}}",
+            stopped: "已生成 {{done}}/{{total}}",
+            skippedHint: "有节点没进入生成流程（多半是没配模型），队列停在 {{done}}/{{total}}；在节点面板选好模型后再点一次",
             stopHint: "跑完当前节点后停止后续生成",
             retryFailed: "重试失败 {{count}}",
             retryHint: "只重新生成上次失败的节点",

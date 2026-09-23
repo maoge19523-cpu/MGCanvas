@@ -22,6 +22,8 @@ export function useMissingImageQueue({ projectId, ready, nodes, runNode }: Missi
     const [done, setDone] = useState(0);
     const [failedIds, setFailedIds] = useState<string[]>([]);
     const [running, setRunning] = useState(false);
+    // 因为「这次根本没进入生成流程」（例如没配模型）而提前停下：界面要说明原因，否则看着像卡住。
+    const [modelSkipped, setModelSkipped] = useState(false);
     // 停止用 ref：循环在下一个节点前 break，正在跑的那一个照常跑完。
     const stopRef = useRef(false);
     const nodesRef = useRef(nodes);
@@ -42,6 +44,7 @@ export function useMissingImageQueue({ projectId, ready, nodes, runNode }: Missi
         setTotal(0);
         setDone(0);
         setRunning(false);
+        setModelSkipped(false);
         stopRef.current = false;
     }, [projectId, ready]);
 
@@ -61,6 +64,7 @@ export function useMissingImageQueue({ projectId, ready, nodes, runNode }: Missi
             setTotal(pending.length);
             setDone(0);
             setFailedIds([]);
+            setModelSkipped(false);
             writeMissingImageQueue({ projectId, nodeIds: pending, failedIds: [] });
 
             const failed: string[] = [];
@@ -76,7 +80,10 @@ export function useMissingImageQueue({ projectId, ready, nodes, runNode }: Missi
                     result = false;
                 }
                 // undefined 表示这次生成根本没进入生成流程（例如没配模型），继续跑后面只会重复失败。
-                if (result === undefined) break;
+                if (result === undefined) {
+                    setModelSkipped(true);
+                    break;
+                }
                 finished += 1;
                 setDone(finished);
                 if (!result) failed.push(nodeId);
@@ -100,5 +107,5 @@ export function useMissingImageQueue({ projectId, ready, nodes, runNode }: Missi
         stopRef.current = true;
     }, []);
 
-    return { missingCount: missingIds.length, total, done, failedCount: failedIds.length, running, runMissing, retryFailed, stop };
+    return { missingCount: missingIds.length, total, done, failedCount: failedIds.length, running, modelSkipped, runMissing, retryFailed, stop };
 }

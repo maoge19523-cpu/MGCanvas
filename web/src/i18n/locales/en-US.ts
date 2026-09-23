@@ -474,6 +474,8 @@ export default {
             run: "Fill {{count}} missing",
             runHint: "Generate the image nodes that still have no image, one by one; already generated ones are skipped",
             progress: "Generating {{done}}/{{total}}",
+            stopped: "{{done}}/{{total}} generated",
+            skippedHint: "A node never started generating (usually no model is configured), so the queue stopped at {{done}}/{{total}}; pick a model in the node panel and run again",
             stopHint: "Stops after the current node finishes",
             retryFailed: "Retry {{count}} failed",
             retryHint: "Only regenerate the nodes that failed last time",

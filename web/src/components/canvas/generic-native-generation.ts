@@ -2,6 +2,7 @@ import { GENERIC_OPERATIONS, getGenericOperation, type GenericOperationDefinitio
 import { GENERIC_MODEL_PROFILES, getGenericModelProfile, type GenericModelInputKind, type GenericModelProfile } from "@/services/api/generic-models";
 import { validateGenericPayload, type GenericReference } from "@/services/api/generic";
 import { CanvasNodeType, type CanvasNodeTypeId } from "@/types/canvas";
+import type { ReferenceImage } from "@/types/image";
 
 import {
     GENERIC_SEEDREAM_ASPECT_RATIOS,
@@ -592,6 +593,36 @@ export function writeGenericNativePrompt(operationId: string, payload: Record<st
 
 export function genericNativeUsesPrompt(operationId: string): boolean {
     return usesPrompt(getGenericOperation(operationId));
+}
+
+/**
+ * 提示词里 `@素材名` 的采纳结果：素材参考图排在已连接的参考图之后，所以占位符下标从 connected + 1 开始。
+ *
+ * 模型会随参考图数量切换变体，图片上限不能按当前模型猜：先按「素材全部采纳」试算一次 payload，
+ * 读它里面真实存在的图片占位符数量，据此决定采纳几张。没被采纳的 `@名字` 保留原文，不改用户写的字。
+ */
+export function prepareGenericNativePromptAssets(operationId: string, payload: Record<string, unknown>, referenceCounts: GenericNativeReferenceCounts, mentions: ReferenceImage[]) {
+    if (!mentions.length) return null;
+    const prompt = readGenericNativePrompt(operationId, payload);
+    // 先满足已连接的参考图，剩下的名额按素材在提示词里出现的顺序给。
+    const connectedImages = referenceCounts.image;
+    const probe = createGenericNativePayload(operationId, payload, { ...referenceCounts, image: connectedImages + mentions.length });
+    const adopted = mentions.slice(0, Math.max(0, genericNativeReferencedInputCounts(probe).image - connectedImages));
+    const counts = { ...referenceCounts, image: connectedImages + adopted.length };
+    const runPayload = adopted.length ? createGenericNativePayload(operationId, payload, counts) : null;
+    // 变体二次切换后占位符仍要够用，否则改写出来的 `@Image N` 会变成跑不通的死占位符。
+    const usable = runPayload ? genericNativeReferencedInputCounts(runPayload).image >= counts.image : false;
+    return {
+        payload: usable && runPayload ? writeGenericNativePrompt(operationId, runPayload, rewriteAssetMentions(prompt, adopted, connectedImages + 1)) : null,
+        references: usable ? adopted.map((image): GenericReference => ({ kind: "image", name: image.name, url: image.dataUrl, storageKey: image.storageKey, mimeType: image.type })) : [],
+        adoptedCount: usable ? adopted.length : 0,
+        skippedCount: usable ? mentions.length - adopted.length : mentions.length,
+    };
+}
+
+/** 把已采纳的 `@素材名` 原地改写成 `@Image N`；startIndex 是第一张素材的占位符下标。 */
+function rewriteAssetMentions(prompt: string, mentions: ReferenceImage[], startIndex: number) {
+    return mentions.reduce((text, mention, index) => text.split(`@${mention.name}`).join(`@Image ${startIndex + index}`), prompt);
 }
 
 /**

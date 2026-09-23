@@ -12,8 +12,9 @@ import { getComfyWorkflowDefinition } from "./workflow-library";
 import { ensureComfyResultNodeOps, readComfyResultBinding } from "./result-nodes";
 import type { ComfyCanvasNodeSnapshot } from "./canvas-node";
 import { recordComfyRun } from "./run-history";
+import { watchComfyProgress } from "./live-progress";
 
-type ActiveRun = { promptId?: string; canceled: boolean };
+type ActiveRun = { promptId?: string; canceled: boolean; currentNode?: string; stopWatching?: () => void };
 const activeRuns = new Map<string, ActiveRun>();
 
 export function isComfyWorkflowRunning(node: CanvasNodeData) {
@@ -28,6 +29,7 @@ export async function runComfyWorkflowNode(ctx: CanvasNodeContext) {
     const active: ActiveRun = { canceled: false };
     activeRuns.set(ctx.node.id, active);
     const startedAt = Date.now();
+    let progressPercent: number | undefined;
     try {
         const definition = await getComfyWorkflowDefinition(snapshot.workflowId);
         if (!definition) throw new Error(i18n.t("comfyuiLocal.execution.workflowMissing"));
@@ -47,6 +49,18 @@ export async function runComfyWorkflowNode(ctx: CanvasNodeContext) {
         const queued = await comfyNativeClient.queueWorkflow(snapshot.environmentId, workflow);
         active.promptId = queued.promptId;
         markSourceAndResults(ctx, "loading", { phase: "running", promptId: queued.promptId, startedAt });
+        // 进度只影响界面上的一行提示，出问题也不能影响执行，因此失败时静默降级。
+        const stopWatching = watchComfyProgress({
+            status,
+            workflow: workflow as Record<string, unknown>,
+            onProgress: (progress) => {
+                if (active.canceled) return;
+                progressPercent = progress.percent ?? progressPercent;
+                markSourceAndResults(ctx, "loading", { phase: "running", promptId: active.promptId, startedAt, currentNode: progress.label ?? active.currentNode, progressPercent });
+                active.currentNode = progress.label ?? active.currentNode;
+            },
+        });
+        active.stopWatching = stopWatching;
 
         const result = await comfyNativeClient.waitForExecution(snapshot.environmentId, queued.promptId, definition.outputs);
         if (active.canceled) return;
@@ -65,6 +79,7 @@ export async function runComfyWorkflowNode(ctx: CanvasNodeContext) {
             recordComfyRun({ nodeId: ctx.node.id, workflowId: snapshot.workflowId, workflowName: ctx.node.title || snapshot.workflowId, environmentId: snapshot.environmentId, phase: "failed", startedAt, completedAt: failedAt, promptId: active.promptId, errorDetails: message, outputs: [] });
         }
     } finally {
+        active.stopWatching?.();
         if (activeRuns.get(ctx.node.id) === active) activeRuns.delete(ctx.node.id);
     }
 }

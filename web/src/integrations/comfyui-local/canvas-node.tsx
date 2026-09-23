@@ -125,6 +125,17 @@ function ComfyWorkflowNodeContent({ ctx }: { ctx: CanvasNodeContext }) {
     const visibleInputs = snapshot.inputs.slice(0, 4);
     const outputTypes = [...new Set(snapshot.outputs.map((output) => output.resourceType))];
     const runPhase = readComfyRunPhase(ctx.node.metadata);
+    // 实时进度来自执行期间推送的节点事件，只用于界面上的一行提示。
+    const runProgress = ((): { currentNode?: string; percent?: number } => {
+        const value = ctx.node.metadata?.comfyuiRun;
+        const record = value && typeof value === "object" ? (value as { currentNode?: unknown; progressPercent?: unknown }) : null;
+        return {
+            currentNode: typeof record?.currentNode === "string" && record.currentNode ? record.currentNode : undefined,
+            percent: typeof record?.progressPercent === "number" ? record.progressPercent : undefined,
+        };
+    })();
+    const currentNode = runProgress.currentNode;
+    const progressPercent = runProgress.percent;
     const elapsed = formatComfyRunDuration(ctx.node.metadata);
     const running = runPhase === "preparing" || runPhase === "queued" || runPhase === "running";
     return (
@@ -143,6 +154,8 @@ function ComfyWorkflowNodeContent({ ctx }: { ctx: CanvasNodeContext }) {
                         <span className={runPhase === "failed" ? "size-1.5 rounded-full bg-red-400" : snapshot.runnable ? "size-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.65)]" : "size-1.5 rounded-full bg-amber-400"} />
                     )}
                     {t(runPhase ? `comfyuiLocal.canvasNode.phase.${runPhase}` : snapshot.runnable ? "comfyuiLocal.canvasNode.ready" : "comfyuiLocal.canvasNode.missingDependencies")}
+                    {running && currentNode ? <span className="max-w-40 truncate opacity-90">· {currentNode}</span> : null}
+                    {running && typeof progressPercent === "number" ? <span className="font-medium tabular-nums opacity-90">· {progressPercent}%</span> : null}
                     {elapsed ? <span className="font-medium tabular-nums opacity-90">· {t("comfyuiLocal.canvasNode.elapsed", { duration: elapsed })}</span> : null}
                 </span>
             </div>

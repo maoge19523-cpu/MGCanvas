@@ -608,3 +608,119 @@ pub async fn compose_video(state: State<'_, MediaCacheState>, request: ComposeVi
         .await
         .map_err(|error| format!("合成任务执行失败：{error}"))?
 }
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConcatAudioRequest {
+    ffmpeg_path: Option<String>,
+    // 按数组顺序拼接，调用方负责给出顺序。
+    paths: Vec<String>,
+    title: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConcatAudioResult {
+    absolute_path: String,
+    filename: String,
+    mime_type: String,
+    bytes: u64,
+    duration_ms: u64,
+}
+
+fn probe_audio_duration(executable: &Path, path: &str) -> Result<f64, String> {
+    let missing = format!("音频文件不存在或已被移动：{path}");
+    if !Path::new(path).is_file() {
+        return Err(missing);
+    }
+    let output = run_captured(executable, &["-hide_banner", "-i", path])?;
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    if !stderr.contains(": Audio:") {
+        return Err(format!("不是可用的音频文件：{path}"));
+    }
+    parse_duration(&stderr).ok_or_else(|| format!("无法读取音频时长：{path}"))
+}
+
+fn concat_audio_blocking(cache_dir: &Path, request: ConcatAudioRequest) -> Result<ConcatAudioResult, String> {
+    let executable = detect_ffmpeg_path(request.ffmpeg_path.as_deref())
+        .ok_or_else(|| "未检测到 FFmpeg：请安装 FFmpeg 或加入 PATH，或在设置 → 本地 FFmpeg 中手动指定路径".to_owned())?;
+    if request.paths.len() < 2 {
+        return Err("至少需要 2 个音频才能合并".to_owned());
+    }
+    if request.paths.len() > 32 {
+        return Err("一次最多合并 32 个音频".to_owned());
+    }
+
+    let mut total = 0.0;
+    for (index, path) in request.paths.iter().enumerate() {
+        total += probe_audio_duration(&executable, path).map_err(|error| format!("第 {} 段：{error}", index + 1))?;
+    }
+
+    let mut arguments: Vec<String> = vec!["-hide_banner".to_owned(), "-y".to_owned()];
+    for path in &request.paths {
+        arguments.push("-i".to_owned());
+        arguments.push(path.clone());
+    }
+    // 各段采样率与声道可能不同，先统一再 concat，否则 FFmpeg 会直接报参数不一致。
+    let chains: Vec<String> = (0..request.paths.len())
+        .map(|index| format!("[{index}:a]aformat=sample_rates=44100:channel_layouts=stereo[a{index}]"))
+        .collect();
+    let labels = (0..request.paths.len()).map(|index| format!("[a{index}]")).collect::<Vec<String>>().join("");
+    arguments.extend([
+        "-filter_complex".to_owned(),
+        format!("{};{}concat=n={}:v=0:a=1[aout]", chains.join(";"), labels, request.paths.len()),
+        "-map".to_owned(),
+        "[aout]".to_owned(),
+        "-c:a".to_owned(),
+        "libmp3lame".to_owned(),
+        "-b:a".to_owned(),
+        "192k".to_owned(),
+        "-ar".to_owned(),
+        "44100".to_owned(),
+        "-ac".to_owned(),
+        "2".to_owned(),
+    ]);
+
+    let stem = sanitize_filename_stem(request.title.as_deref().unwrap_or("合并音频"));
+    let filename = format!("{stem}-{}.mp3", unix_timestamp_millis());
+    let output_path = cache_dir.join(&filename);
+    let output_text = output_path.to_string_lossy().into_owned();
+    arguments.push(output_text.clone());
+
+    let argument_refs: Vec<&str> = arguments.iter().map(String::as_str).collect();
+    let result = run_captured(&executable, &argument_refs)?;
+    if !result.status.success() {
+        let stderr = String::from_utf8_lossy(&result.stderr).into_owned();
+        let tail = stderr
+            .lines()
+            .rev()
+            .filter(|line| !line.trim().is_empty())
+            .take(6)
+            .collect::<Vec<_>>()
+            .join(" | ");
+        let _ = std::fs::remove_file(&output_path);
+        return Err(format!("FFmpeg 合并失败（退出码 {}）：{tail}", result.status.code().unwrap_or(-1)));
+    }
+
+    let bytes = std::fs::metadata(&output_path).map_err(|error| format!("无法读取合并结果：{error}"))?.len();
+    if bytes == 0 {
+        let _ = std::fs::remove_file(&output_path);
+        return Err("FFmpeg 返回了空文件".to_owned());
+    }
+    Ok(ConcatAudioResult {
+        absolute_path: output_text,
+        filename,
+        mime_type: "audio/mpeg".to_owned(),
+        bytes,
+        duration_ms: (total * 1000.0).round() as u64,
+    })
+}
+
+#[tauri::command]
+pub async fn concat_audio(state: State<'_, MediaCacheState>, request: ConcatAudioRequest) -> Result<ConcatAudioResult, String> {
+    let cache_dir = state.cache_dir();
+    tauri::async_runtime::spawn_blocking(move || concat_audio_blocking(&cache_dir, request))
+        .await
+        .map_err(|error| format!("合并任务执行失败：{error}"))?
+}
+

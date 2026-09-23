@@ -109,7 +109,8 @@ import {
 import { getNodeDefinition, isBuiltinNodeType as isBuiltinType, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
 import { registerBuiltinNodes, COMPOSITE_SEGMENTS_PORT_ID, COMPOSITE_MUSIC_PORT_ID, COMPOSITE_VOICE_PORT_ID, COMPOSITE_VIDEO_OUTPUT_PORT_ID } from "@/components/canvas/nodes/builtin-nodes";
 import { CanvasCompositePanel } from "@/components/canvas/canvas-composite-panel";
-import { composeVideo, readFfmpegPath, resolveCanvasMediaLocalPath } from "@/services/platform/desktop-ffmpeg";
+import { CanvasAudioMergeDialog } from "@/components/canvas/canvas-audio-merge-dialog";
+import { composeVideo, concatAudio, readFfmpegPath, resolveCanvasMediaLocalPath } from "@/services/platform/desktop-ffmpeg";
 import { open } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 
@@ -304,6 +305,8 @@ function MGCanvasProjectPage() {
     const [splitNodeId, setSplitNodeId] = useState<string | null>(null);
     const [collageNodeId, setCollageNodeId] = useState<string | null>(null);
     const [collageSaving, setCollageSaving] = useState(false);
+    const [audioMergeNodeId, setAudioMergeNodeId] = useState<string | null>(null);
+    const [audioMergeBusy, setAudioMergeBusy] = useState(false);
     const [upscaleNodeId, setUpscaleNodeId] = useState<string | null>(null);
     const [angleNodeId, setAngleNodeId] = useState<string | null>(null);
     const [previewNodeId, setPreviewNodeId] = useState<string | null>(null);
@@ -2528,6 +2531,55 @@ function MGCanvasProjectPage() {
         [collectCompositeSources, message],
     );
 
+    // 多角色配音合并：选中的音频节点按面板里的顺序交给本机 FFmpeg 拼成一个音频文件，结果生成新的音频节点。
+    const handleMergeAudio = useCallback(
+        async (sources: CanvasNodeData[]) => {
+            if (!isTauriRuntime()) {
+                message.warning("音频合并仅在桌面客户端可用");
+                return;
+            }
+            if (sources.length < 2) {
+                message.warning("请至少选择 2 个音频节点");
+                return;
+            }
+            setAudioMergeBusy(true);
+            try {
+                const paths = await Promise.all(sources.map((node) => resolveCanvasMediaLocalPath(node)));
+                const result = await concatAudio(paths, "合并配音");
+                const last = sources[sources.length - 1];
+                const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Audio];
+                const outputId = `audio-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+                const outputNode: CanvasNodeData = {
+                    id: outputId,
+                    type: CanvasNodeType.Audio,
+                    title: "合并配音",
+                    position: { x: last.position.x + last.width + 96, y: last.position.y },
+                    width: spec.width,
+                    height: spec.height,
+                    metadata: {
+                        content: desktopFileUrl(result.absolutePath),
+                        localPath: result.absolutePath,
+                        filename: result.filename,
+                        mimeType: result.mimeType,
+                        bytes: result.bytes,
+                        durationMs: result.durationMs,
+                        status: NODE_STATUS_SUCCESS,
+                        sourceOrigin: "generated",
+                    },
+                };
+                setNodes((prev) => [...prev, outputNode]);
+                setSelectedNodeIds(new Set([outputId]));
+                setAudioMergeNodeId(null);
+                message.success("配音合并完成，已生成新的音频节点");
+            } catch (error) {
+                message.error(error instanceof Error ? error.message : String(error));
+            } finally {
+                setAudioMergeBusy(false);
+            }
+        },
+        [message],
+    );
+
     const handleRunGeneric = useCallback(
         async (node: CanvasNodeData, payload: Record<string, unknown>, options?: { references?: GenericReference[]; persistPayload?: Record<string, unknown> }) => {
             if (genericRequestLocksRef.current.has(node.id) || generationRequestsRef.current.has(node.id)) {
@@ -4469,6 +4521,7 @@ function MGCanvasProjectPage() {
                     onToggleDialog={(node) => setDialogNodeId((current) => (current === node.id ? null : node.id))}
                     onGenerateImage={generateImageFromTextNode}
                     onUpload={(node) => handleUploadRequest(node.id)}
+                    onMergeAudio={(node) => setAudioMergeNodeId(node.id)}
                     onDownload={downloadNodeImage}
                     onSaveAsset={(node) => void saveNodeAsset(node)}
                     onCrop={(node) => setCropNodeId(node.id)}
@@ -4565,6 +4618,7 @@ function MGCanvasProjectPage() {
                 <input ref={imageInputRef} type="file" multiple accept={CANVAS_MATERIAL_ACCEPT} className="hidden" onChange={handleImageInputChange} />
 
                 <CanvasNodeInfoModal node={infoNode} open={Boolean(infoNode)} onClose={() => setInfoNodeId(null)} />
+                <CanvasAudioMergeDialog open={Boolean(audioMergeNodeId)} nodes={nodes} busy={audioMergeBusy} onClose={() => setAudioMergeNodeId(null)} onMerge={(sources) => void handleMergeAudio(sources)} />
                 {cropNode?.metadata?.content ? (
                     <CanvasNodeCropDialog dataUrl={imageEditorPreview.url || cropNode.metadata.content} open={Boolean(cropNode)} onClose={() => setCropNodeId(null)} onConfirm={(crop) => void cropImageNode(cropNode!, crop)} />
                 ) : null}

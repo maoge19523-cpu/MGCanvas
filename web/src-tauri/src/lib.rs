@@ -345,6 +345,7 @@ pub fn run() {
             export_canvas_media,
             ffmpeg_compose::detect_ffmpeg,
             ffmpeg_compose::compose_video,
+            ffmpeg_compose::concat_audio,
             media_cache::cache_remote_media,
             media_cache::import_legacy_cached_media
         ])

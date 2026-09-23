@@ -45,6 +45,13 @@ export function composeVideo(request: ComposeVideoRequest): Promise<ComposeVideo
     return invokeDesktop<ComposeVideoResult>("compose_video", { request });
 }
 
+export type ConcatAudioResult = { absolutePath: string; filename: string; mimeType: string; bytes: number; durationMs: number };
+
+// 多段音频按顺序拼接（多角色配音合并）：编解码交给本机 FFmpeg，前端不碰音频格式。
+export function concatAudio(paths: string[], title?: string): Promise<ConcatAudioResult> {
+    return invokeDesktop<ConcatAudioResult>("concat_audio", { request: { ffmpegPath: readFfmpegPath() || undefined, paths, title } });
+}
+
 const MEDIA_EXTENSION_BY_MIME: Record<string, string> = {
     "video/mp4": "mp4",
     "video/quicktime": "mov",

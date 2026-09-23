@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { App, Modal, Segmented, Tooltip } from "antd";
-import { Boxes, Copy, Download, Ellipsis, FolderPlus, Image as ImageIcon, Info, MessageSquare, Minus, Music2, Pencil, Plus, RefreshCw, Settings2, Trash2, Upload, Video } from "lucide-react";
+import { Boxes, Copy, Download, Ellipsis, FolderPlus, Image as ImageIcon, Info, Layers, MessageSquare, Minus, Music2, Pencil, Plus, RefreshCw, Settings2, Trash2, Upload, Video } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -26,6 +26,7 @@ type CanvasNodeHoverToolbarProps = {
     onToggleDialog: (node: CanvasNodeData) => void;
     onGenerateImage: (node: CanvasNodeData) => void;
     onUpload: (node: CanvasNodeData) => void;
+    onMergeAudio: (node: CanvasNodeData) => void;
     onDownload: (node: CanvasNodeData) => void;
     onSaveAsset: (node: CanvasNodeData) => void;
     onCrop: (node: CanvasNodeData) => void;
@@ -64,6 +65,7 @@ export function CanvasNodeHoverToolbar({
     onToggleDialog,
     onGenerateImage,
     onUpload,
+    onMergeAudio,
     onDownload,
     onSaveAsset,
     onCrop,
@@ -189,6 +191,7 @@ export function CanvasNodeHoverToolbar({
                   },
               ]
             : []),
+        ...(hasAudio ? [{ id: "mergeAudio", title: t("canvas.nodeToolbar.mergeAudioTitle"), label: t("canvas.nodeToolbar.mergeAudio"), icon: <Layers className="size-4" />, onClick: () => onMergeAudio(node) }] : []),
         ...(hasImage ? imageTools.map((tool) => ({ id: tool.id, title: tool.title, label: tool.label, icon: tool.icon, active: tool.active, onClick: tool.onClick })) : []),
     ];
     const toolbarTools = hasImage ? [...baseToolbarTools, ...nodeToolbarTools].filter((tool) => quickImageToolIdSet.has(tool.id as ImageQuickToolId)) : [...baseToolbarTools, ...nodeToolbarTools, ...extraTools];

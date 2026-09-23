@@ -111,16 +111,22 @@ function getOrStartRefresh(source: PromptSource) {
     return loading;
 }
 
+import { readStyleCovers } from "./style-covers";
+import { BUILTIN_STYLE_SOURCE_ID } from "./prompt-source-presets";
+
 async function getSourcePrompts(source: PromptSource): Promise<Prompt[]> {
+    // 封面合并在读取这一层做：源的缓存只存提示词本体，若只在刷新时合并，缓存没过期前会看不到封面。
+    const covers = source.id === BUILTIN_STYLE_SOURCE_ID ? await readStyleCovers() : null;
+    const applyCovers = (items: Prompt[]) => (covers ? items.map((item) => (covers[item.id] ? { ...item, coverUrl: covers[item.id] } : item)) : items);
     const cached = await readSourceCache(source.id);
     if (cached) {
         const stale = cached.signature !== sourceSignature(source) || Date.now() - cached.fetchedAt >= cacheTtlMs;
         if (stale) void getOrStartRefresh(source).catch(() => undefined);
-        return withSourceMeta(source, cached.items);
+        return withSourceMeta(source, applyCovers(cached.items));
     }
     const result = await getOrStartRefresh(source);
     if (!result.success) throw new Error(result.lastError);
-    return (await readSourceCache(source.id))?.items || [];
+    return applyCovers((await readSourceCache(source.id))?.items || []);
 }
 
 async function getAllPrompts(): Promise<Prompt[]> {

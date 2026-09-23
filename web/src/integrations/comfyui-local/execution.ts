@@ -11,6 +11,7 @@ import { comfyNativeClient, materializeComfyWorkflow, type ComfyExecutionOutput,
 import { getComfyWorkflowDefinition } from "./workflow-library";
 import { ensureComfyResultNodeOps, readComfyResultBinding } from "./result-nodes";
 import type { ComfyCanvasNodeSnapshot } from "./canvas-node";
+import { recordComfyRun } from "./run-history";
 
 type ActiveRun = { promptId?: string; canceled: boolean };
 const activeRuns = new Map<string, ActiveRun>();
@@ -50,13 +51,18 @@ export async function runComfyWorkflowNode(ctx: CanvasNodeContext) {
         const result = await comfyNativeClient.waitForExecution(snapshot.environmentId, queued.promptId, definition.outputs);
         if (active.canceled) return;
         applyExecutionResult(ctx, source, definition, result.outputs, result.promptId, result.completedAt, startedAt);
+        recordComfyRun({ nodeId: ctx.node.id, workflowId: snapshot.workflowId, workflowName: source.title || snapshot.workflowId, environmentId: snapshot.environmentId, phase: "succeeded", startedAt, completedAt: result.completedAt, promptId: result.promptId, outputs: describeRunOutputs(definition, result.outputs) });
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (active.canceled) {
-            markSourceAndResults(ctx, "idle", { phase: "canceled", promptId: active.promptId, startedAt, completedAt: Date.now() });
+            const canceledAt = Date.now();
+            markSourceAndResults(ctx, "idle", { phase: "canceled", promptId: active.promptId, startedAt, completedAt: canceledAt });
+            recordComfyRun({ nodeId: ctx.node.id, workflowId: snapshot.workflowId, workflowName: ctx.node.title || snapshot.workflowId, environmentId: snapshot.environmentId, phase: "canceled", startedAt, completedAt: canceledAt, promptId: active.promptId, outputs: [] });
         } else {
-            setSourceError(ctx, message, { phase: "failed", promptId: active.promptId, startedAt, completedAt: Date.now() });
+            const failedAt = Date.now();
+            setSourceError(ctx, message, { phase: "failed", promptId: active.promptId, startedAt, completedAt: failedAt });
             markResultNodes(ctx, "error", message);
+            recordComfyRun({ nodeId: ctx.node.id, workflowId: snapshot.workflowId, workflowName: ctx.node.title || snapshot.workflowId, environmentId: snapshot.environmentId, phase: "failed", startedAt, completedAt: failedAt, promptId: active.promptId, errorDetails: message, outputs: [] });
         }
     } finally {
         if (activeRuns.get(ctx.node.id) === active) activeRuns.delete(ctx.node.id);
@@ -165,6 +171,24 @@ function fitResultNodeToImage(ctx: CanvasNodeContext, node: CanvasNodeData, url:
     };
     image.src = url;
 }
+/** 把本次输出整理成历史记录用的简要信息；输出的显示名可能取不到，回落到 outputId。 */
+function describeRunOutputs(definition: ComfyWorkflowDefinition, outputs: ComfyExecutionOutput[]) {
+    const declared = definition.outputs as unknown as { id?: string; label?: string; name?: string }[];
+    return outputs.map((output) => {
+        const found = Array.isArray(declared) ? declared.find((item) => item.id === output.outputId) : undefined;
+        return {
+            outputId: output.outputId,
+            itemIndex: output.itemIndex,
+            label: found?.label || found?.name || output.outputId,
+            resourceType: output.resourceType,
+            content: output.absolutePath ? desktopFileUrl(output.absolutePath) : output.text,
+            localPath: output.absolutePath,
+            filename: output.filename,
+            mimeType: output.mimeType,
+        };
+    });
+}
+
 function resultMetadata(node: CanvasNodeData, output: ComfyExecutionOutput, promptId: string, completedAt: number): CanvasNodeMetadata {
     const content = output.absolutePath ? desktopFileUrl(output.absolutePath) : output.text || (output.raw === undefined ? "" : JSON.stringify(output.raw, null, 2));
     const common: CanvasNodeMetadata = {

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Boxes, ChevronRight, CircleAlert, Clapperboard, FileText, Group, History, Image as ImageIcon, LoaderCircle, Music2, Puzzle, RefreshCw, Scissors, Star, UploadCloud, Video } from "lucide-react";
+import { Boxes, ChevronRight, CircleAlert, Clapperboard, FileText, Group, History, Image as ImageIcon, LoaderCircle, Music2, Puzzle, RefreshCw, Star, UploadCloud, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes } from "@/lib/image-utils";
@@ -64,7 +64,6 @@ type CanvasNodeProps = {
     onShowErrorDetails?: (node: CanvasNodeData) => void;
     onGenerateImage?: (node: CanvasNodeData) => void;
     onViewImage?: (node: CanvasNodeData) => void;
-    onOpenEditor?: (node: CanvasNodeData) => void;
     onUpload?: (node: CanvasNodeData) => void;
     onContextMenu: (event: React.MouseEvent, nodeId: string) => void;
 };
@@ -87,7 +86,6 @@ type NodeContentRendererProps = {
     onRetry?: (node: CanvasNodeData) => void;
     onShowErrorDetails?: (node: CanvasNodeData) => void;
     onGenerateImage?: (node: CanvasNodeData) => void;
-    onOpenEditor?: (node: CanvasNodeData) => void;
     onUpload?: (node: CanvasNodeData) => void;
     onToggleBatch?: () => void;
     onSetBatchPrimary?: () => void;
@@ -137,7 +135,6 @@ export const CanvasNode = React.memo(function CanvasNode({
     onShowErrorDetails,
     onGenerateImage,
     onViewImage,
-    onOpenEditor,
     onUpload,
     onContextMenu,
 }: CanvasNodeProps) {
@@ -458,7 +455,6 @@ export const CanvasNode = React.memo(function CanvasNode({
                         onRetry={onRetry}
                         onShowErrorDetails={onShowErrorDetails}
                         onGenerateImage={onGenerateImage}
-                        onOpenEditor={onOpenEditor}
                         onUpload={onUpload}
                         onToggleBatch={() => onToggleBatch?.(data.id)}
                         onSetBatchPrimary={() => onSetBatchPrimary?.(data)}
@@ -968,7 +964,7 @@ function AudioNodeContent({ node, theme }: NodeContentRendererProps) {
     );
 }
 
-function CompositeNodeContent({ node, theme, onOpenEditor }: NodeContentRendererProps) {
+function CompositeNodeContent({ node, theme }: NodeContentRendererProps) {
     const { t } = useTranslation();
     const result = node.metadata?.compositeResult;
     return (
@@ -976,23 +972,6 @@ function CompositeNodeContent({ node, theme, onOpenEditor }: NodeContentRenderer
             <Clapperboard className="size-9 opacity-35" />
             <span className="text-sm">{result ? t("canvas.composite.nodeDone", { filename: result.filename }) : t("canvas.composite.nodeHint")}</span>
             {!result ? <span className="text-[11px] opacity-60">{t("canvas.composite.nodeOpenHint")}</span> : null}
-            {onOpenEditor ? (
-                // 扁平无底色，靠图标+文字表达，与画布其它入口保持一致。
-                <button
-                    type="button"
-                    className="mt-1 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-                    style={{ color: theme.node.text }}
-                    onMouseDown={(event) => event.stopPropagation()}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => {
-                        event.stopPropagation();
-                        onOpenEditor(node);
-                    }}
-                >
-                    <Scissors className="size-3.5" />
-                    {t("canvas.composite.openEditor")}
-                </button>
-            ) : null}
         </div>
     );
 }

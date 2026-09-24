@@ -1,8 +1,11 @@
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
+import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
-import { buildCompositePreviewClips, clipTotalSeconds, COMPOSITE_MUSIC_PORT_ID, COMPOSITE_SEGMENTS_PORT_ID, COMPOSITE_VOICE_PORT_ID, formatTimelineTime, resolveCompositePlayback, resolveCompositeSeek, resolveCompositeSources, timelineTickLabel, timelineTickStep, timelineTicks, type CompositeSegmentSource } from "./composite-editing";
+import { CanvasCompositePanel, buildCompositePreviewClips, formatTimelineTime, resolveCompositePlayback, resolveCompositeSeek, type CompositeSegmentSource } from "./canvas-composite-panel";
+
+const noop = () => undefined;
 
 function videoNode(id: string, seconds?: number): CanvasNodeData {
     return {
@@ -16,40 +19,11 @@ function videoNode(id: string, seconds?: number): CanvasNodeData {
     };
 }
 
-function audioNode(id: string): CanvasNodeData {
-    return { id, type: CanvasNodeType.Audio, title: `音频${id}`, position: { x: 0, y: 0 }, width: 320, height: 120, metadata: { content: `blob:${id}`, status: "success" } };
-}
-
 function segment(id: string, seconds?: number): CompositeSegmentSource {
     return { connectionId: `conn-${id}`, node: videoNode(id, seconds) };
 }
 
-function connection(id: string, fromNodeId: string, toPortId: string): CanvasConnection {
-    return { id, fromNodeId, toNodeId: "composite-1", toPortId };
-}
-
-describe("合成片段口径：按连线取源", () => {
-    it("片段取「视频节点 + 片段端口」，顺序就是连线顺序；配音与音乐各取 1 路", () => {
-        const nodes = [videoNode("a", 4), videoNode("b", 3), audioNode("v"), audioNode("m"), { ...videoNode("audio-on-segment"), type: CanvasNodeType.Audio }];
-        const connections = [connection("c1", "b", COMPOSITE_SEGMENTS_PORT_ID), connection("c2", "a", COMPOSITE_SEGMENTS_PORT_ID), connection("c3", "v", COMPOSITE_VOICE_PORT_ID), connection("c4", "m", COMPOSITE_MUSIC_PORT_ID), connection("c5", "audio-on-segment", COMPOSITE_SEGMENTS_PORT_ID)];
-
-        const sources = resolveCompositeSources(nodes, connections, "composite-1");
-
-        expect(sources.segments.map((item) => [item.node.id, item.connectionId])).toEqual([
-            ["b", "c1"],
-            ["a", "c2"],
-        ]);
-        expect(sources.voice?.node.id).toBe("v");
-        expect(sources.music?.node.id).toBe("m");
-    });
-
-    it("没有内容的节点不进时间线", () => {
-        const nodes: CanvasNodeData[] = [{ ...videoNode("a", 4), metadata: {} }];
-        expect(resolveCompositeSources(nodes, [connection("c1", "a", COMPOSITE_SEGMENTS_PORT_ID)], "composite-1").segments).toEqual([]);
-    });
-});
-
-describe("合成时间轴：时长与刻度", () => {
+describe("合成面板时间轴：时长与刻度", () => {
     it("按入出点算出每段净时长与在总时间轴上的起点，顺序即数组顺序", () => {
         const clips = buildCompositePreviewClips([segment("a", 6), segment("b", 5), segment("c", 4)], {
             segments: { a: { start: 1, end: 5 }, b: { volume: 2, fadeIn: 0.5 }, c: { start: 0.5, end: 3.5 } },
@@ -60,15 +34,13 @@ describe("合成时间轴：时长与刻度", () => {
             ["b", 4, 5],
             ["c", 9, 3],
         ]);
-        // 每段的音量/淡入淡出与参数一致，未设的取默认值。
+        // 每段的音量/淡入淡出与面板参数一致，未设的取默认值。
         expect(clips.map((clip) => [clip.volume, clip.fadeIn, clip.fadeOut])).toEqual([
             [1, 0, 0],
             [2, 0.5, 0],
             [1, 0, 0],
         ]);
-        expect(clipTotalSeconds(clips)).toBe(12);
-        // 源视频秒数留在快照里，供裁剪上限使用。
-        expect(clips.map((clip) => clip.source)).toEqual([6, 5, 4]);
+        expect(clips.reduce((sum, clip) => sum + clip.length, 0)).toBe(12);
     });
 
     it("源视频没有时长时该段长度记 0，不影响其它段起点", () => {
@@ -84,21 +56,12 @@ describe("合成时间轴：时长与刻度", () => {
         expect(formatTimelineTime(65.44)).toBe("1:05.4");
         expect(formatTimelineTime(-4)).toBe("0:00.0");
     });
-
-    it("标尺按总时长自适应：刻度不超过 8 个，末位刻度不贴右边", () => {
-        expect(timelineTickStep(12)).toBe(2);
-        expect(timelineTickStep(3)).toBe(0.5);
-        expect(timelineTicks(12, 2)).toEqual([0, 2, 4, 6, 8, 10]);
-        expect(timelineTicks(0, 1)).toEqual([]);
-        expect(timelineTickLabel(65, 10)).toBe("1:05");
-        expect(timelineTickLabel(2.5, 0.5)).toBe("2.5");
-    });
 });
 
-describe("合成时间轴：播放头跟随与连播切换", () => {
+describe("合成面板时间轴：播放头跟随与连播切换", () => {
     const clips = buildCompositePreviewClips([segment("a", 4), segment("b", 3), segment("c", 5)], { segments: { b: { start: 1, end: 3 }, c: { volume: 0.5 } } });
     // a: 0-4s，b: 4-6s（入点 1 出点 3），c: 6-11s。
-    const total = clipTotalSeconds(clips);
+    const total = clips.reduce((sum, clip) => sum + clip.length, 0);
 
     it("给段内媒体时间就能算出播放头的全局秒数", () => {
         expect(resolveCompositePlayback(clips, 0, 0)?.seconds).toBe(0);
@@ -166,5 +129,36 @@ describe("合成时间轴：播放头跟随与连播切换", () => {
         // 末段播完时播放头停在总时长上，且不越界。
         expect(seen[seen.length - 1]).toBeGreaterThan(total - 0.1);
         expect(Math.max(...seen)).toBeLessThanOrEqual(total);
+    });
+});
+
+describe("合成面板时间轴：标尺、播放头与预览按钮", () => {
+    const node: CanvasNodeData = {
+        id: "composite-1",
+        type: CanvasNodeType.Composite,
+        title: "合成",
+        position: { x: 0, y: 0 },
+        width: 520,
+        height: 600,
+        metadata: { compositeSettings: { fps: 30, longEdge: 1080 } },
+    };
+    const segments = [segment("a", 4), segment("b", 3), segment("c", 5)];
+    const render = () =>
+        renderToStaticMarkup(
+            <CanvasCompositePanel node={node} segments={segments} music={null} voice={null} isRunning={false} onChange={noop} onRun={noop} onReorderConnections={noop} onRemoveConnection={noop} onFocusReference={noop} />,
+        );
+
+    it("渲染时间标尺、总时长、播放头与 1 个预览播放器", () => {
+        const markup = render();
+
+        // 总时长 12s 走 2s 一档刻度，标尺上出现 0/2/4/6/8/10 与单位「秒」。
+        expect(markup).toContain(">秒<");
+        for (const tick of ["0", "2", "4", "6", "8", "10"]) expect(markup).toContain(`>${tick}</span>`);
+        expect(markup).toContain("0:12.0");
+        expect(markup).toContain("data-composite-playhead");
+        expect(markup).toContain('aria-label="顺序连播预览"');
+        expect(markup).toContain("预览仅用于对时");
+        // 3 个片段缩略图 + 1 个顺序预览用的隐藏播放器。
+        expect(markup.match(/<video/g)?.length).toBe(segments.length + 1);
     });
 });

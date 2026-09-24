@@ -7,8 +7,8 @@ import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { navigationTools } from "@/constant/navigation-tools";
 import { cn } from "@/lib/utils";
 
-/** 主导航按「资产 → 画布 → 提示词 → 剪辑台 → ComfyUI」排列，配置与系统操作放到底部。 */
-const PRIMARY_SLUGS = ["assets", "canvas", "prompts", "editor", "comfyui-cloud", "comfyui-local"] as const;
+/** 主导航按「资产 → 画布 → 提示词 → ComfyUI」排列，配置与系统操作放到底部。 */
+const PRIMARY_SLUGS = ["assets", "canvas", "prompts", "comfyui-cloud", "comfyui-local"] as const;
 const COLLAPSE_KEY = "mgcanvas:side-nav-collapsed";
 
 /**

@@ -107,12 +107,10 @@ import {
     sourceNodeReferenceImages,
 } from "@/lib/canvas/canvas-generation-helpers";
 import { getNodeDefinition, isBuiltinNodeType as isBuiltinType, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
-import { registerBuiltinNodes } from "@/components/canvas/nodes/builtin-nodes";
+import { registerBuiltinNodes, COMPOSITE_SEGMENTS_PORT_ID, COMPOSITE_MUSIC_PORT_ID, COMPOSITE_VOICE_PORT_ID, COMPOSITE_VIDEO_OUTPUT_PORT_ID } from "@/components/canvas/nodes/builtin-nodes";
+import { CanvasCompositePanel } from "@/components/canvas/canvas-composite-panel";
 import { CanvasAudioMergeDialog } from "@/components/canvas/canvas-audio-merge-dialog";
-import { concatAudio, resolveCanvasMediaLocalPath } from "@/services/platform/desktop-ffmpeg";
-import { buildCompositeOutputConnection, buildCompositeOutputNode, composeCompositeVideo, VIDEO_NODE_MAX_HEIGHT, VIDEO_NODE_MAX_WIDTH } from "@/lib/canvas/composite-run";
-import { COMPOSITE_SEGMENTS_PORT_ID, resolveCompositeSources } from "@/lib/canvas/composite-editing";
-import { rememberCurrentCanvas } from "@/lib/canvas/current-canvas";
+import { composeVideo, concatAudio, readFfmpegPath, resolveCanvasMediaLocalPath } from "@/services/platform/desktop-ffmpeg";
 import { open } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 
@@ -167,6 +165,8 @@ type CanvasGenerationRequest = {
     controller: AbortController;
 };
 
+const VIDEO_NODE_MAX_WIDTH = 660;
+const VIDEO_NODE_MAX_HEIGHT = 520;
 // Stable empty reference array prevents `... || []` from invalidating CanvasNode's React.memo on every render.
 const EMPTY_REFERENCES: CanvasResourceReference[] = [];
 const CONNECTION_HANDLE_HIT_RADIUS = 40;
@@ -399,8 +399,6 @@ function MGCanvasProjectPage() {
             navigate("/canvas", { replace: true });
             return;
         }
-        // 打开过的画布即「当前画布」：剪辑台从左侧导航进入时要落回同一块画布。
-        rememberCurrentCanvas(projectId);
 
         const restore = async () => {
             const restoredNodes = await hydrateCanvasImages(resetInterruptedGeneration(migrateLegacyGenerationNodes(mergeGenericTaskJournal(projectId, project.nodes))));
@@ -2406,8 +2404,22 @@ function MGCanvasProjectPage() {
         [effectiveConfig, finishGenerationRequest, message, openConfigDialog, startGenerationRequest],
     );
 
-    // 合成节点：片段、配音与背景音乐按连线读取，连线顺序即片段顺序（口径与剪辑台共用一份纯函数）。
-    const collectCompositeSources = useCallback((compositeNodeId: string) => resolveCompositeSources(nodesRef.current, connectionsRef.current, compositeNodeId), []);
+    // 合成节点：片段、配音与背景音乐按连线读取，连线顺序即片段顺序。
+    type CompositeSourceItem = { connectionId: string; node: CanvasNodeData };
+    const collectCompositeSources = useCallback((compositeNodeId: string): { segments: CompositeSourceItem[]; music: CompositeSourceItem | null; voice: CompositeSourceItem | null } => {
+        const segments: CompositeSourceItem[] = [];
+        let music: CompositeSourceItem | null = null;
+        let voice: CompositeSourceItem | null = null;
+        connectionsRef.current.forEach((connection) => {
+            if (connection.toNodeId !== compositeNodeId) return;
+            const source = nodesRef.current.find((item) => item.id === connection.fromNodeId);
+            if (!source || !source.metadata?.content) return;
+            if (connection.toPortId === COMPOSITE_SEGMENTS_PORT_ID && source.type === CanvasNodeType.Video) segments.push({ connectionId: connection.id, node: source });
+            if (!voice && connection.toPortId === COMPOSITE_VOICE_PORT_ID && source.type === CanvasNodeType.Audio) voice = { connectionId: connection.id, node: source };
+            if (!music && connection.toPortId === COMPOSITE_MUSIC_PORT_ID && source.type === CanvasNodeType.Audio) music = { connectionId: connection.id, node: source };
+        });
+        return { segments, music, voice };
+    }, []);
 
     // 对比节点：按连线顺序取前两张图片，连线顺序决定左右。
     const collectCompareSources = useCallback((compareNodeId: string) => resolveCompareSources(compareNodeId, nodesRef.current, connectionsRef.current), []);
@@ -2427,20 +2439,64 @@ function MGCanvasProjectPage() {
                 message.warning("该节点正在合成中，请等待完成。");
                 return;
             }
-            const { segments } = collectCompositeSources(node.id);
+            const { segments, music, voice } = collectCompositeSources(node.id);
             if (!segments.length) {
                 message.warning("请先连接至少 1 个视频节点作为片段");
+                setDialogNodeId(node.id);
                 return;
             }
             genericRequestLocksRef.current.add(node.id);
             setRunningGenericNodeIds((prev) => new Set(prev).add(node.id));
             setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined } } : item)));
             try {
-                // 合成请求与成片节点都由 composite-run 生成：剪辑台的「导出成片」走的是同一条链路。
-                const result = await composeCompositeVideo(current, nodesRef.current, connectionsRef.current);
+                const settings = current.metadata?.compositeSettings || {};
+                const requests = await Promise.all(
+                    segments.map(async (segment) => {
+                        const segmentSettings = settings.segments?.[segment.node.id] || {};
+                        return { path: await resolveCanvasMediaLocalPath(segment.node), start: segmentSettings.start, end: segmentSettings.end, volume: segmentSettings.volume, transition: segmentSettings.transition, transitionDuration: segmentSettings.transitionDuration, subtitle: segmentSettings.subtitle, fadeIn: segmentSettings.fadeIn, fadeOut: segmentSettings.fadeOut };
+                    }),
+                );
+                // 配音与背景音乐是两条独立音轨，各自音量与淡出都在合成面板里调。
+                const tracks: { path: string; volume?: number; fadeOut?: number; loop?: boolean }[] = [];
+                if (voice) tracks.push({ path: await resolveCanvasMediaLocalPath(voice.node), volume: settings.voiceVolume, fadeOut: settings.voiceFadeOut, loop: settings.voiceLoop });
+                if (music) tracks.push({ path: await resolveCanvasMediaLocalPath(music.node), volume: settings.musicVolume, fadeOut: settings.musicFadeOut, loop: settings.musicLoop });
+                const result = await composeVideo({
+                    ffmpegPath: readFfmpegPath() || undefined,
+                    segments: requests,
+                    tracks,
+                    longEdge: settings.longEdge,
+                    fps: settings.fps,
+                    fadeIn: settings.fadeIn,
+                    fadeOut: settings.fadeOut,
+                    title: current.title,
+                    subtitleStyle: settings.subtitleStyle,
+                    subtitleSize: settings.subtitleSize,
+                });
+                const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Video];
                 // 合成要跑很久，期间画布可能已经切走、节点也可能被删：这时不能再往当前画布追加成片节点。
                 if (!nodesRef.current.some((item) => item.id === node.id)) return;
-                const outputNode = buildCompositeOutputNode(current, result);
+                const videoSize = fitNodeSize(result.width || spec.width, result.height || spec.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
+                const outputId = `video-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+                const outputNode: CanvasNodeData = {
+                    id: outputId,
+                    type: CanvasNodeType.Video,
+                    title: `${current.title || "合成"} · 成片`,
+                    position: { x: current.position.x + current.width + 96, y: current.position.y + current.height / 2 - videoSize.height / 2 },
+                    width: videoSize.width,
+                    height: videoSize.height,
+                    metadata: {
+                        content: desktopFileUrl(result.absolutePath),
+                        localPath: result.absolutePath,
+                        filename: result.filename,
+                        mimeType: result.mimeType,
+                        bytes: result.bytes,
+                        naturalWidth: result.width,
+                        naturalHeight: result.height,
+                        durationMs: result.durationMs,
+                        status: NODE_STATUS_SUCCESS,
+                        sourceOrigin: "generated",
+                    },
+                };
                 setNodes((prev) => [
                     ...prev.map((item) =>
                         item.id === node.id
@@ -2456,8 +2512,8 @@ function MGCanvasProjectPage() {
                     ),
                     outputNode,
                 ]);
-                setConnections((prev) => [...prev, buildCompositeOutputConnection(node.id, outputNode.id)]);
-                setSelectedNodeIds(new Set([outputNode.id]));
+                setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: node.id, toNodeId: outputId, fromPortId: COMPOSITE_VIDEO_OUTPUT_PORT_ID }]);
+                setSelectedNodeIds(new Set([outputId]));
                 message.success("视频合成完成，成片已生成新的视频节点");
             } catch (error) {
                 const errorDetails = error instanceof Error ? error.message : String(error);
@@ -4058,8 +4114,6 @@ function MGCanvasProjectPage() {
         setHoveredNodeId((current) => (current === nodeId ? null : current));
     }, []);
     const handleNodeViewImage = useCallback((node: CanvasNodeData) => setPreviewNodeId(node.id), []);
-    // 合成节点的编辑入口已从浮动面板改为独立页面：带着节点 id 跳到剪辑台，落地即选中它。
-    const handleNodeOpenEditor = useCallback((node: CanvasNodeData) => navigate(`/editor/${projectId}?node=${node.id}`), [navigate, projectId]);
     const handleNodeRetry = useCallback((node: CanvasNodeData) => void handleRetryNode(node), [handleRetryNode]);
     const handleNodeContextMenu = useCallback((event: ReactMouseEvent, nodeId: string) => {
         event.preventDefault();
@@ -4071,6 +4125,23 @@ function MGCanvasProjectPage() {
         (panelNode: CanvasNodeData) => {
             const definition = getNodeDefinition(panelNode.type);
             if (definition?.Panel) return renderPluginPanel(panelNode);
+            if (panelNode.type === CanvasNodeType.Composite) {
+                const { segments, music, voice } = collectCompositeSources(panelNode.id);
+                return (
+                    <CanvasCompositePanel
+                        node={panelNode}
+                        segments={segments}
+                        music={music}
+                        voice={voice}
+                        isRunning={runningGenericNodeIds.has(panelNode.id)}
+                        onChange={handleConfigNodeChange}
+                        onRun={(compositeNode) => void handleRunComposite(compositeNode)}
+                        onReorderConnections={reorderReferenceConnections}
+                        onRemoveConnection={deleteConnection}
+                        onFocusReference={focusNode}
+                    />
+                );
+            }
             // 文本节点是「内容载体」：直接编辑文字并连线给下游当提示词，
             // 需要模型改写时用节点上的「编辑文字」，因此不提供模型选择与生成按钮。
             if (panelNode.type === CanvasNodeType.Text) {
@@ -4143,6 +4214,7 @@ function MGCanvasProjectPage() {
             connections,
             addObjectReference,
             buildGenericReferences,
+            collectCompositeSources,
             confirmStopGenericPolling,
             confirmStopGeneration,
             createReferenceMaterialForNode,
@@ -4389,7 +4461,6 @@ function MGCanvasProjectPage() {
                             onShowErrorDetails={(errorNode) => setInfoNodeId(errorNode.id)}
                             onGenerateImage={generateImageFromTextNode}
                             onViewImage={handleNodeViewImage}
-                            onOpenEditor={handleNodeOpenEditor}
                             onUpload={(node) => handleUploadRequest(node.id)}
                             onContextMenu={handleNodeContextMenu}
                         />

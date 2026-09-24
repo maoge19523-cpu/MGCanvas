@@ -4,7 +4,6 @@ import i18n from "@/i18n";
 
 import { COMPARE_IMAGE_PORT_ID } from "@/lib/canvas/compare-sources";
 import { COLLAGE_RESULT_PORT_ID, COLLAGE_SOURCE_PORT_ID } from "@/lib/canvas/collage-layout";
-import { COMPOSITE_MUSIC_PORT_ID, COMPOSITE_SEGMENTS_PORT_ID, COMPOSITE_VIDEO_OUTPUT_PORT_ID, COMPOSITE_VOICE_PORT_ID } from "@/lib/canvas/composite-editing";
 import { NODE_SPECS } from "@/constant/canvas";
 import { registerNodeDefinitions } from "@/lib/canvas/node-registry";
 import { CanvasNodeType, type CanvasNodeData, type CanvasNodePort } from "@/types/canvas";
@@ -22,8 +21,12 @@ function builtinResource(node: CanvasNodeData): CanvasNodeResource | null {
 
 const iconClass = "size-5";
 
-// 视频合成节点的连接端口：多个视频片段 + 配音 + 背景音乐，输出合成后的视频。
-// 端口 id 定义在 composite-editing（与剪辑台共用同一份），这里只组装成节点端口。
+// 视频合成节点的连接端口：多个视频片段 + 一路背景音乐，输出合成后的视频。
+export const COMPOSITE_SEGMENTS_PORT_ID = "segments";
+export const COMPOSITE_MUSIC_PORT_ID = "music";
+export const COMPOSITE_VOICE_PORT_ID = "voice";
+export const COMPOSITE_VIDEO_OUTPUT_PORT_ID = "video";
+
 const COMPOSITE_PORTS: CanvasNodePort[] = [
     { id: COMPOSITE_SEGMENTS_PORT_ID, label: "片段", direction: "input", dataType: "video", multiple: true, description: "连接多个视频节点作为片段，连线顺序即拼接顺序" },
     { id: COMPOSITE_VOICE_PORT_ID, label: "配音", direction: "input", dataType: "audio", description: "可连接 1 个音频节点作为人声/配音轨" },
@@ -45,8 +48,7 @@ const BUILTIN_DEFINITIONS: CanvasNodeDefinition[] = [
     { type: CanvasNodeType.Image, title: i18n.t("assets.kinds.image"), icon: <ImageIcon className={iconClass} />, minimapColor: "#10b981", keepAspectRatio: (node: CanvasNodeData) => !node.metadata?.freeResize, resource: builtinResource },
     { type: CanvasNodeType.Video, title: i18n.t("assets.kinds.video"), icon: <Video className={iconClass} />, minimapColor: "#f97316", keepAspectRatio: () => true, resource: builtinResource },
     { type: CanvasNodeType.Audio, title: i18n.t("assets.kinds.audio"), icon: <Music2 className={iconClass} />, minimapColor: "#a855f7", resource: builtinResource },
-    // 合成节点不再弹出浮动面板：参数与时间线都在「剪辑台」页面里改，节点上只留一个入口。
-    { type: CanvasNodeType.Composite, title: i18n.t("canvas.nodeTypes.composite"), icon: <Clapperboard className={iconClass} />, minimapColor: "#14b8a6", ports: COMPOSITE_PORTS, hidePanel: true, description: "用 FFmpeg 拼接多个视频片段并可叠加背景音乐" },
+    { type: CanvasNodeType.Composite, title: i18n.t("canvas.nodeTypes.composite"), icon: <Clapperboard className={iconClass} />, minimapColor: "#14b8a6", ports: COMPOSITE_PORTS, description: "用 FFmpeg 拼接多个视频片段并可叠加背景音乐" },
     { type: CanvasNodeType.Compare, title: i18n.t("canvas.nodeTypes.compare"), icon: <Columns2 className={iconClass} />, minimapColor: "#8b5cf6", ports: COMPARE_PORTS, hasSourceHandle: false, description: "连接 2 张图片左右滑动对比，双击可全屏比对" },
     { type: CanvasNodeType.Collage, title: i18n.t("canvas.nodeTypes.collage"), icon: <Layers className={iconClass} />, minimapColor: "#f97316", ports: COLLAGE_PORTS, description: "最多 10 张图片当图层自由摆放，双击进全屏编辑器" },
     { type: CanvasNodeType.Config, title: i18n.t("canvas.configNode.title"), icon: <Settings2 className={iconClass} />, minimapColor: "#60a5fa", hasSourceHandle: false, showInCreateMenu: false },

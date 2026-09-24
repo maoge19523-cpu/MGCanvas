@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { App, Modal, Segmented, Tooltip } from "antd";
-import { Boxes, Copy, Download, Ellipsis, FolderPlus, Image as ImageIcon, Info, Layers, MessageSquare, Minus, Music2, Pencil, Plus, RefreshCw, Settings2, Trash2, Upload, Video } from "lucide-react";
+import { Boxes, Clapperboard, Copy, Download, Ellipsis, FolderPlus, Image as ImageIcon, Info, Layers, MessageSquare, Minus, Music2, Pencil, Plus, RefreshCw, Settings2, Trash2, Upload, Video } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -29,6 +29,7 @@ type CanvasNodeHoverToolbarProps = {
     onMergeAudio: (node: CanvasNodeData) => void;
     onDownload: (node: CanvasNodeData) => void;
     onSaveAsset: (node: CanvasNodeData) => void;
+    onSendToEditor: (node: CanvasNodeData) => void;
     onCrop: (node: CanvasNodeData) => void;
     onSplit: (node: CanvasNodeData) => void;
     onUpscale: (node: CanvasNodeData) => void;
@@ -68,6 +69,7 @@ export function CanvasNodeHoverToolbar({
     onMergeAudio,
     onDownload,
     onSaveAsset,
+    onSendToEditor,
     onCrop,
     onSplit,
     onUpscale,
@@ -162,6 +164,18 @@ export function CanvasNodeHoverToolbar({
                   },
               ]
             : []),
+        // 画布产出的视频 / 音频可以直接送进独立剪辑台当素材：只复制媒体信息，不动这个节点。
+        ...(hasVideo || hasAudio
+            ? [
+                  {
+                      id: "sendEditor",
+                      title: t("canvas.nodeToolbar.sendToEditorTitle"),
+                      label: t("canvas.nodeToolbar.sendToEditor"),
+                      icon: <Clapperboard className="size-4" />,
+                      onClick: () => onSendToEditor(node),
+                  },
+              ]
+            : []),
         ...(canOpenDialog ? [{ id: "edit", title: t("common.edit"), label: t("common.edit"), icon: <MessageSquare className="size-4" />, onClick: () => onToggleDialog(node) }] : []),
         ...(isText ? [{ id: "editText", title: t("canvas.nodeToolbar.editTextTitle"), label: t("canvas.nodeToolbar.editText"), icon: <Pencil className="size-4" />, onClick: () => onEditText(node) }] : []),
         ...(isText ? [{ id: "generateImage", title: t("canvas.node.generateImage"), label: t("canvas.node.generate"), icon: <ImageIcon className="size-4" />, onClick: () => onGenerateImage(node) }] : []),
@@ -195,7 +209,7 @@ export function CanvasNodeHoverToolbar({
         ...(hasImage ? imageTools.map((tool) => ({ id: tool.id, title: tool.title, label: tool.label, icon: tool.icon, active: tool.active, onClick: tool.onClick })) : []),
     ];
     const toolbarTools = hasImage ? [...baseToolbarTools, ...nodeToolbarTools].filter((tool) => quickImageToolIdSet.has(tool.id as ImageQuickToolId)) : [...baseToolbarTools, ...nodeToolbarTools, ...extraTools];
-    const selectableImageToolbarTools = [...baseToolbarTools, ...nodeToolbarTools].filter((tool) => tool.id !== "retry") as ImageToolbarSettingsTool[];
+    const selectableImageToolbarTools = [...baseToolbarTools, ...nodeToolbarTools].filter((tool) => tool.id !== "retry" && tool.id !== "sendEditor") as ImageToolbarSettingsTool[];
 
     const closeImageToolSettings = () => {
         setImageToolSettingsOpen(false);

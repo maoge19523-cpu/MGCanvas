@@ -110,6 +110,8 @@ import { getNodeDefinition, isBuiltinNodeType as isBuiltinType, useNodeRegistryV
 import { registerBuiltinNodes, COMPOSITE_SEGMENTS_PORT_ID, COMPOSITE_MUSIC_PORT_ID, COMPOSITE_VOICE_PORT_ID, COMPOSITE_VIDEO_OUTPUT_PORT_ID } from "@/components/canvas/nodes/builtin-nodes";
 import { CanvasCompositePanel } from "@/components/canvas/canvas-composite-panel";
 import { CanvasAudioMergeDialog } from "@/components/canvas/canvas-audio-merge-dialog";
+import { canvasNodeToEditMedia } from "@/services/edit-media";
+import { useEditStore } from "@/stores/use-edit-store";
 import { composeVideo, concatAudio, readFfmpegPath, resolveCanvasMediaLocalPath } from "@/services/platform/desktop-ffmpeg";
 import { open } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
@@ -2943,6 +2945,34 @@ function MGCanvasProjectPage() {
         [addAsset, currentProject?.title, message, projectId, t],
     );
 
+    // 画布产物发送到独立剪辑台：只把节点上的媒体信息登记为剪辑台素材，
+    // 不改动画布数据（节点、连线、compositeSettings 全部原样保留）。
+    const sendNodeToEditor = useCallback(
+        (node: CanvasNodeData) => {
+            const media = canvasNodeToEditMedia(node);
+            if (!media) {
+                message.warning(t("editor.importUnsupported"));
+                return;
+            }
+            const store = useEditStore.getState();
+            const targetId = store.ensureProject(currentProject?.title || t("editor.untitled"));
+            store.addMedia(targetId, media);
+            const targetName = useEditStore.getState().projects.find((project) => project.id === targetId)?.name || "";
+            message.success({
+                content: (
+                    <span className="inline-flex items-center gap-2">
+                        {t("editor.sentToEditor", { name: targetName })}
+                        <button type="button" className="cursor-pointer rounded-[8px] px-2 py-0.5 text-[11px] font-medium text-[#756bff] transition-colors hover:bg-[#756bff]/10" onClick={() => navigate(`/editor/${targetId}`)}>
+                            {t("editor.openEditor")}
+                        </button>
+                    </span>
+                ),
+                duration: 5,
+            });
+        },
+        [currentProject?.title, message, navigate, t],
+    );
+
     const createImageReversePromptNodes = useCallback(
         (node: CanvasNodeData) => {
             if (node.type !== CanvasNodeType.Image || !node.metadata?.content) {
@@ -4524,6 +4554,7 @@ function MGCanvasProjectPage() {
                     onMergeAudio={(node) => setAudioMergeNodeId(node.id)}
                     onDownload={downloadNodeImage}
                     onSaveAsset={(node) => void saveNodeAsset(node)}
+                    onSendToEditor={sendNodeToEditor}
                     onCrop={(node) => setCropNodeId(node.id)}
                     onSplit={(node) => setSplitNodeId(node.id)}
                     onUpscale={(node) => setUpscaleNodeId(node.id)}

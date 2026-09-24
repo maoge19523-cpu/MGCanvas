@@ -1,4 +1,4 @@
-import { Cloud, Cpu, FileText, Images, Maximize2, Settings2 } from "lucide-react";
+import { Clapperboard, Cloud, Cpu, FileText, Images, Maximize2, Settings2 } from "lucide-react";
 
 export const navigationTools = [
     {
@@ -16,6 +16,10 @@ export const navigationTools = [
     {
         slug: "prompts",
         icon: FileText,
+    },
+    {
+        slug: "editor",
+        icon: Clapperboard,
     },
     {
         slug: "assets",

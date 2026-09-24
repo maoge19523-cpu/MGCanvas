@@ -36,6 +36,9 @@ export type ComposeVideoRequest = {
 };
 export type ComposeVideoResult = { absolutePath: string; filename: string; mimeType: string; bytes: number; width: number; height: number; durationMs: number };
 
+/** 剪辑台素材里与「能否交给 FFmpeg 读取」相关的字段，纯数据，不含画布节点语义。 */
+export type EditMediaPathInput = { id: string; kind: "video" | "audio"; name?: string; localPath?: string; storageKey?: string; url?: string; mimeType?: string };
+
 export function detectFfmpeg(manualPath = readFfmpegPath()): Promise<string | null> {
     if (!isTauriRuntime()) return Promise.resolve(null);
     return invokeDesktop<string | null>("detect_ffmpeg", { manualPath: manualPath || null });
@@ -95,4 +98,37 @@ export async function resolveCanvasMediaLocalPath(node: CanvasNodeData): Promise
         }
     }
     throw new Error("素材没有可用的本地文件，请重新上传该素材节点");
+}
+
+/**
+ * 剪辑台素材 → FFmpeg 能直接读取的本地绝对路径。
+ * 与 resolveCanvasMediaLocalPath 同一条链路，只是入参换成剪辑台自己的素材记录（纯数据，不依赖画布节点）。
+ */
+export async function resolveEditMediaLocalPath(media: EditMediaPathInput): Promise<string> {
+    if (!isTauriRuntime()) throw new Error("视频合成仅在桌面客户端可用");
+    if (media.localPath) return media.localPath;
+    const content = media.url || "";
+    if (/^https?:\/\//i.test(content) && !isDesktopAssetUrl(content)) {
+        const cached = await cacheRemoteMedia({ url: content, filename: media.name });
+        return cached.absolutePath;
+    }
+    if (media.storageKey) {
+        const blob = await getMediaBlob(media.storageKey);
+        if (blob) {
+            const extension = MEDIA_EXTENSION_BY_MIME[media.mimeType || ""] || (media.kind === "audio" ? "mp3" : "mp4");
+            const target = await join(await appLocalDataDir(), "media-cache", `${media.id}-${Date.now()}.${extension}`);
+            await writeFile(target, new Uint8Array(await blob.arrayBuffer()));
+            return target;
+        }
+    }
+    if (isDesktopAssetUrl(content)) {
+        try {
+            const decoded = decodeURIComponent(new URL(content).pathname);
+            const path = /^\/[A-Za-z]:/.test(decoded) ? decoded.slice(1) : decoded.replace(/^\/+/, "/");
+            if (path.length > 2) return path;
+        } catch {
+            // 不是可还原的本地素材地址，走统一报错。
+        }
+    }
+    throw new Error("素材没有可用的本地文件，请重新导入该素材");
 }

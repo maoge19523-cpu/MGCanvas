@@ -94,8 +94,12 @@ export const useAssetStore = create<AssetStore>()(
             cleanupImages: (extra) => {
                 window.setTimeout(async () => {
                     const { useCanvasStore } = await import("@/stores/canvas/use-canvas-store");
-                    await cleanupUnusedImages({ assets: get().assets, projects: useCanvasStore.getState().projects, extra });
-                    await cleanupUnusedMedia({ assets: get().assets, projects: useCanvasStore.getState().projects, extra });
+                    const { useEditStore } = await import("@/stores/use-edit-store");
+                    // 剪辑台素材存在同一个 media_files 仓库里，清理时必须一起算作「在用」，
+                    // 否则删一个资产就会把剪辑台引用的那段媒体一起删掉。
+                    const payload = { assets: get().assets, projects: useCanvasStore.getState().projects, editProjects: useEditStore.getState().projects, extra };
+                    await cleanupUnusedImages(payload);
+                    await cleanupUnusedMedia(payload);
                 }, 0);
             },
         }),

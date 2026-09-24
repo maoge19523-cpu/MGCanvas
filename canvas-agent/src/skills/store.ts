@@ -265,6 +265,23 @@ function validName(value: string | undefined): value is string {
     return Boolean(value && value.length <= MAX_NAME_LENGTH && NAME_PATTERN.test(value));
 }
 
+/**
+ * 读取任意「已被原生列表发现」的 Skill 正文（用户全局目录下的 Skill 也适用）。
+ * frontmatter 只承载元数据，注入模型时不要；路径必须来自原生 Skill 列表，不能来自请求体。
+ */
+export async function readSkillInstructions(filePath: string) {
+    try {
+        const raw = await fs.readFile(filePath, "utf8");
+        try {
+            return String(matter(raw).content || "").trim();
+        } catch {
+            return raw.trim();
+        }
+    } catch (error) {
+        throw new SkillStoreError(`读取 Skill 说明失败（${nodeErrorCode(error) || "无法读取文件"}）`, 404);
+    }
+}
+
 function skillName(value: unknown) {
     const name = typeof value === "string" ? value : "";
     if (!validName(name)) throw new SkillStoreError("Skill 名称只能包含小写字母、数字和连字符", 400);

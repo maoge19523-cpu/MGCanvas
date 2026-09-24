@@ -120,6 +120,7 @@ function conversationBootstrapView(conversation: AgentConversationState) {
 }
 
 const API_BACKEND_LABEL = "DeepSeek / 豆包";
+const API_MODE_MANUAL_KEY = "mgcanvas:agent-api-mode-manual";
 
 /** 是否启用 API 后端（DeepSeek / 豆包）。开关存在本地，接口配置存在 Agent 侧。 */
 export function isApiBackendEnabled() {
@@ -130,14 +131,30 @@ export function isApiBackendEnabled() {
     }
 }
 
-/** 切换 API 后端开关。 */
-export function setApiBackendEnabled(enabled: boolean) {
+/** 用户是否在连接设置里手动选过后端；手动选择优先于「配了 API 后端就自动切换」。 */
+export function hasManualApiBackendChoice() {
+    try {
+        return window.localStorage.getItem(API_MODE_MANUAL_KEY) === "1";
+    } catch {
+        return false;
+    }
+}
+
+/** 切换 API 后端开关。manual 表示这是用户显式选择，之后连接不再自动覆盖。 */
+export function setApiBackendEnabled(enabled: boolean, manual = false) {
     try {
         window.localStorage.setItem("mgcanvas:agent-api-mode", enabled ? "1" : "0");
+        if (manual) window.localStorage.setItem(API_MODE_MANUAL_KEY, "1");
     } catch {
         // 本地存储不可用时忽略，按本次会话使用。
     }
     return enabled;
+}
+
+/** 连接成功后决定走哪条后端：用户手动选过的以手动选择为准，否则按 Agent 侧是否配置了 API 后端自动切换。 */
+export function resolveApiBackendMode(configured: boolean) {
+    if (hasManualApiBackendChoice()) return isApiBackendEnabled();
+    return setApiBackendEnabled(configured);
 }
 
 export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?: boolean; headless?: boolean; autoConnect?: boolean }) {
@@ -200,6 +217,8 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     const attachmentUrlsRef = useRef(new Set<string>());
     const clientIdRef = useRef("");
     const [clientReady, setClientReady] = useState(false);
+    // 后端通路只在前端切换：API 模式走 /agent/api/turn，Codex 模式走 /agent/codex/turn。
+    const [apiMode, setApiMode] = useState(isApiBackendEnabled);
     const loadThreadsSequenceRef = useRef(0);
     const threadMessagesRef = useRef(new Map<string, AgentChatItem[]>());
     const authoritativeHistoryTurnsRef = useRef(new Set<string>());
@@ -406,10 +425,11 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             errorLoggedRef.current = false;
             connectedRef.current = true;
             // Agent 侧若已配置 API 后端（DeepSeek / 豆包），连接后自动切换到该通路，
-            // 这样没有安装 Codex 的用户也能直接用对话指挥画布。
+            // 这样没有安装 Codex 的用户也能直接用对话指挥画布；
+            // 用户在连接设置里手动选过模式时不覆盖，否则切回 Codex 会在下次连接被打回 API 模式。
             void fetchAgentJson<{ ok?: boolean; current?: { model?: string } | null }>(endpoint, token, "/agent/api/config")
-                .then((api) => setApiBackendEnabled(Boolean(api?.current?.model)))
-                .catch(() => setApiBackendEnabled(false));
+                .then((api) => setApiMode(resolveApiBackendMode(Boolean(api?.current?.model))))
+                .catch(() => setApiMode(resolveApiBackendMode(false)));
             setAgentState({
                 connected: true,
                 activity: pendingApprovals.length ? rt("awaitingApproval") : busy ? rt("codexRunning") : rt("connected"),
@@ -678,20 +698,22 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         const requestPrompt = promptWithAttachments(text, files);
         const currentState = useAgentStore.getState();
 
-        // API 后端（DeepSeek / 豆包）：不依赖 Codex 会话与技能，直接把任务交给 Agent 的 API 通路。
-        if (isApiBackendEnabled()) {
+        // API 后端（DeepSeek / 豆包）：不依赖 Codex 会话，直接把任务交给 Agent 的 API 通路。
+        // Skill 同样按需生效：Agent 侧读选中 Skill 的正文并注入本轮提示词。
+        if (apiMode) {
             if (!currentState.connected || !requestPrompt || currentState.sending) return;
             const apiMessageId = createId();
             const apiUserText = text || rt("imagesSent", { count: files.length });
             setAgentState({ prompt: "", attachments: [], activity: rt("sending"), sending: true, loadingThreads: false, activeTurnId: "" });
             addMessage({ id: apiMessageId, itemId: "synthetic:user", clientMessageId: apiMessageId, threadId: "", turnId: "", role: "user", text: apiUserText, historyText: requestPrompt, attachments: files });
-            addEventLog(rt("sendTask"), `${API_BACKEND_LABEL} · ${compactText(text) || rt("attachmentsOnly")}`);
+            addEventLog(rt("sendTask"), `${API_BACKEND_LABEL}${selectedSkill ? ` · Skill ${selectedSkill.name}` : ""} · ${compactText(text) || rt("attachmentsOnly")}`);
             try {
                 await fetchAgentJson(endpoint, token, "/agent/api/turn", {
                     method: "POST",
                     headers: { "content-type": "application/json" },
-                    body: JSON.stringify({ prompt: requestPrompt }),
+                    body: JSON.stringify({ prompt: requestPrompt, skill: selectedSkill ? { name: selectedSkill.name, path: selectedSkill.path } : undefined }),
                 });
+                if (selectedSkill) clearSkillSelection(selectedSkillRevision);
             } catch (error) {
                 addMessage({ role: "error", title: rt("sendFailed"), text: error instanceof Error ? error.message : String(error) });
             } finally {
@@ -1407,6 +1429,8 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                     connected={connected}
                     activity={activity}
                     connectError={connectError}
+                    apiMode={apiMode}
+                    onToggleApiMode={(enabled) => setApiMode(setApiBackendEnabled(enabled, true))}
                     onUrlChange={(url) => setAgentState({ url, connectError: "" })}
                     onTokenChange={(token) => setAgentState({ token, connectError: "" })}
                     onToggleEnabled={toggleAgentConnection}

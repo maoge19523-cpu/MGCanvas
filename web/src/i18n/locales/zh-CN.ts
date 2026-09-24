@@ -1616,6 +1616,12 @@ randomSeedHint: "关闭后写入固定种子；本地环境可精确复现，云
             urlPlaceholder: "例如 http://127.0.0.1:17371",
             token: "连接 Token",
             tokenPlaceholder: "自动发现，或手动填入 Connect token",
+            backend: "Agent 后端",
+            backendCodex: "Codex",
+            backendApi: "API 后端",
+            backendCodexHint: "走本地 Codex：Skill 完整生效（可读取 Skill 附带文件和脚本），历史对话也在这里；需要等待 Codex 会话就绪。",
+            backendApiHint: "走已配置的 API Key（DeepSeek / 豆包），不依赖 Codex 登录；选中 Skill 后会把它的执行说明注入本轮提示词，但 Skill 附带的文件和脚本读不到。",
+            backendSwitchLabel: "切换后端，当前为 {{backend}}",
         },
         history: {
             workspace: "工作空间",

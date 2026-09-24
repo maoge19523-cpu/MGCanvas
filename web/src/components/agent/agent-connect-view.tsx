@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import { App, Button, Input, Tooltip } from "antd";
+import { App, Button, Input, Switch, Tooltip } from "antd";
 import copyToClipboard from "copy-to-clipboard";
 import { Copy, KeyRound, Link2, PlugZap } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -17,6 +17,8 @@ export function AgentConnectView({
     connected,
     activity,
     connectError,
+    apiMode,
+    onToggleApiMode,
     onUrlChange,
     onTokenChange,
     onToggleEnabled,
@@ -28,6 +30,8 @@ export function AgentConnectView({
     connected: boolean;
     activity: string;
     connectError: string;
+    apiMode: boolean;
+    onToggleApiMode: (enabled: boolean) => void;
     onUrlChange: (value: string) => void;
     onTokenChange: (value: string) => void;
     onToggleEnabled: () => void;
@@ -147,6 +151,15 @@ export function AgentConnectView({
                                 {connectError}
                             </div>
                         ) : null}
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-start justify-between gap-3 border-t pt-3" style={{ borderColor: theme.node.stroke }}>
+                        <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium leading-5">{t("agent.connect.backend")}</div>
+                            <div className="mt-1 text-xs leading-5" style={{ color: theme.node.muted }}>
+                                {t(apiMode ? "agent.connect.backendApiHint" : "agent.connect.backendCodexHint")}
+                            </div>
+                        </div>
+                        <Switch size="small" checked={apiMode} onChange={onToggleApiMode} aria-label={t("agent.connect.backendSwitchLabel", { backend: t(apiMode ? "agent.connect.backendApi" : "agent.connect.backendCodex") })} />
                     </div>
                 </div>
             </div>

@@ -3,20 +3,21 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 
-import { API_BACKEND_PRESETS, runApiAgentTurn } from "../agent/api-agent.js";
+import { API_BACKEND_PRESETS, runApiAgentTurn, skillDirectoryPrompt, type ApiSkillContext } from "../agent/api-agent.js";
 import { runClaudeTurn } from "../agent/claude.js";
 import { archiveCodexThread, CodexSkillLookupError, configureCodexSkill, generateCodexSkillDraft, interruptCodexTurn, isRecoverableThreadError, listCodexModels, listCodexSkills, listCodexThreads, readCodexThread, resolveCodexApproval, resolveCodexSkill, resumeCodexThread, runCodexTurn, startCodexThread, summarizeCodexThread } from "../agent/codex.js";
-import type { CodexReasoningEffort, CodexSkillSelector } from "../agent/codex-protocol.js";
-import type { AgentAttachment, AgentPermissionMode } from "../agent/types.js";
+import type { CodexReasoningEffort, CodexSkillMetadata, CodexSkillSelector } from "../agent/codex-protocol.js";
+import type { AgentAttachment, AgentEmit, AgentPermissionMode } from "../agent/types.js";
 import { AGENT_PROTOCOL_VERSION, CanvasSession } from "../canvas/session.js";
 import {DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWorkspace, type MGCanvasAgentConfig, readApiBackendSettings, saveApiBackendSettings } from "../config.js";
 import { logger } from "../utils/logger.js";
+import { errorMessage } from "../utils/value.js";
 import { checkVersions } from "../version-check.js";
 import { fetchSkillDocument, skillSourceUrl } from "../skills/install.js";
 import { MAX_MEMORY_ENTRIES, MAX_MEMORY_ENTRY_CHARS, MAX_MEMORY_TOTAL_BYTES, MemoryStore } from "../memory/store.js";
 import { deleteSkillResource, listSkillResources, readSkillResource, writeSkillResource } from "../skills/files.js";
 import { resolveSkillDocumentUrl, searchSkills } from "../skills/search.js";
-import { SkillStore, SkillStoreError } from "../skills/store.js";
+import { SkillStore, SkillStoreError, readSkillInstructions } from "../skills/store.js";
 
 /** 启动仅监听本机的 MGCanvas Agent HTTP 服务。 */
 export function startHttpServer() {
@@ -495,7 +496,8 @@ export function startHttpServer() {
         if (!settings) return res.status(409).json({ ok: false, error: "还没有配置 API 后端，请先填写接口地址与模型名。" });
         if (!settings.apiKey) return res.status(409).json({ ok: false, error: "还没有填写 API Key。" });
         // 直接复用画布会话执行工具；写操作仍由网页侧边栏二次确认。
-        void runApiAgentTurn({ prompt, config: settings, runner: session, emit });
+        const skills = await apiSkillContext(emit, config, req.body, prompt);
+        void runApiAgentTurn({ prompt, config: settings, runner: session, emit, skills });
         res.json({ ok: true });
     });
     app.use((_req, res) => res.status(404).json({ ok: false, error: "not found" }));
@@ -566,6 +568,40 @@ function skillSelector(value: unknown): CodexSkillSelector {
     const skillPath = typeof selector.path === "string" ? selector.path : "";
     if (!name || !skillPath) throw new CodexSkillLookupError("Skill 选择无效", 400);
     return { name, path: skillPath };
+}
+
+/**
+ * 收集 API 模式本轮要注入的 Skill。
+ *
+ * 与 Codex 后端同一套粒度：目录（名称 + 用途）每轮都给，正文只给用户显式选中或用 $skill-name 点名的那一个，
+ * 不把本机全部 Skill 正文塞进提示词。列表读不到时按「无 Skill」继续执行，不让 Skill 拖垮普通对话。
+ */
+async function apiSkillContext(emit: AgentEmit, config: MGCanvasAgentConfig, body: unknown, prompt: string): Promise<ApiSkillContext> {
+    const workspace = ensureSiteWorkspace(config);
+    let skills: CodexSkillMetadata[];
+    try {
+        skills = (await listCodexSkills(emit, workspace.workspacePath)).skills.filter((skill) => skill.enabled);
+    } catch (error) {
+        logger.warn("API agent skills unavailable", { error: errorMessage(error) });
+        emit("agent_log", { text: `本轮没能读取本地 Skill，已按无 Skill 继续：${errorMessage(error)}` });
+        return {};
+    }
+    const requested = (body && typeof body === "object" ? body as Record<string, unknown> : {}).skill;
+    const selected = requested === undefined || requested === null ? undefined : await resolveCodexSkill(emit, workspace.workspacePath, skillSelector(requested), true);
+    const skill = selected || mentionedSkill(prompt, skills);
+    return {
+        ...(skills.length ? { directory: skillDirectoryPrompt(skills) } : {}),
+        ...(skill ? { active: { name: skill.name, instructions: await readSkillInstructions(skill.path) } } : {}),
+    };
+}
+
+/** 在提示词里找用户点名的 $skill-name；只认已发现且启用的 Skill 名称，路径一律取自原生列表。 */
+function mentionedSkill(prompt: string, skills: CodexSkillMetadata[]) {
+    for (const match of prompt.matchAll(/\$([a-z0-9]+(?:-[a-z0-9]+)*)/g)) {
+        const found = skills.find((skill) => skill.name === match[1]);
+        if (found) return found;
+    }
+    return undefined;
 }
 
 /** 使用当前操作系统的文件管理器定位本地文件。 */

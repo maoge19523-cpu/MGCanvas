@@ -1651,6 +1651,12 @@ randomSeedHint: "Turn off to keep a fixed seed; local runs reproduce exactly, cl
             urlPlaceholder: "For example http://127.0.0.1:17371",
             token: "Connection token",
             tokenPlaceholder: "Discover automatically or enter the Connect token",
+            backend: "Agent backend",
+            backendCodex: "Codex",
+            backendApi: "API backend",
+            backendCodexHint: "Runs the local Codex: Skills work in full (their files and scripts can be read), and conversation history lives here; the Codex session must be ready.",
+            backendApiHint: "Runs the configured API key (DeepSeek / Doubao) without a Codex login. A selected Skill has its instructions injected into the turn, but the files and scripts shipped with Skills cannot be read.",
+            backendSwitchLabel: "Switch backend, currently {{backend}}",
         },
         history: {
             workspace: "Workspace",

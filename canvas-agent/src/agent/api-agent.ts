@@ -25,6 +25,21 @@ export type ApiBackendConfig = {
 /** 后端需要的最小会话能力：执行画布工具。 */
 export type ToolRunner = { callTool: (name: unknown, input: unknown) => Promise<unknown> };
 
+/**
+ * 本轮要注入 system prompt 的 Skill 上下文。
+ *
+ * Codex 后端把选中的 Skill 交给 Codex CLI，由 CLI 自己读取 SKILL.md 并交给模型，
+ * 模型同时能在自己的 Skill 目录里看到有哪些能力。API 模式没有 CLI，这两件事都由这里代做：
+ * directory 是「名称 + 用途」的目录（每轮都注入，成本可控），
+ * active 只放用户显式选中或点名的那一个 Skill 的正文（按需读取，不注入全部 Skill）。
+ */
+export type ApiSkillContext = { directory?: string; active?: { name: string; instructions: string } };
+
+/** Skill 目录与正文的注入上限：本机实测 50 个 Skill、单个最大 38KB，必须截断以免撑爆上下文。 */
+export const MAX_SKILL_DIRECTORY_CHARS = 6000;
+export const MAX_SKILL_INSTRUCTIONS_CHARS = 16000;
+const MAX_SKILL_DESCRIPTION_CHARS = 160;
+
 type ChatMessage =
     | { role: "system" | "user"; content: string }
     | { role: "assistant"; content?: string | null; tool_calls?: ToolCall[] }
@@ -166,6 +181,40 @@ function summarizeToolResult(result: unknown) {
 }
 
 /**
+ * 把已安装的 Skill 整理成目录文本：只给名称和截断后的用途说明，
+ * 让模型知道本机有哪些能力，但不把正文塞进上下文。
+ */
+export function skillDirectoryPrompt(skills: Array<{ name: string; description: string }>) {
+    const lines: string[] = [];
+    let used = 0;
+    let dropped = 0;
+    for (const skill of skills) {
+        const description = String(skill.description || "").replace(/\s+/g, " ").trim();
+        const line = `- ${skill.name}：${description.length > MAX_SKILL_DESCRIPTION_CHARS ? `${description.slice(0, MAX_SKILL_DESCRIPTION_CHARS)}…` : description}`;
+        if (used + line.length > MAX_SKILL_DIRECTORY_CHARS) {
+            dropped += 1;
+            continue;
+        }
+        lines.push(line);
+        used += line.length + 1;
+    }
+    if (!lines.length) return "";
+    return [
+        "【可用 Skill】用户在本机安装了以下 Skill（这里只有名称和用途）：",
+        ...lines,
+        ...(dropped ? [`（另有 ${dropped} 个 Skill 未列出）`] : []),
+        "当用户从界面选中某个 Skill，或在消息里用 $skill-name 点名时，该 Skill 的完整说明会出现在本轮对话里；",
+        "看到说明就按它执行，不要只复述它的名字或做概述。没有说明的 Skill 不要凭名字猜测内容。",
+    ].join("\n");
+}
+
+/** 截断超长 Skill 正文，避免单个 Skill 独占上下文。 */
+function skillInstructions(name: string, instructions: string) {
+    const text = instructions.trim();
+    return text.length > MAX_SKILL_INSTRUCTIONS_CHARS ? `${text.slice(0, MAX_SKILL_INSTRUCTIONS_CHARS)}\n【Skill「${name}」说明过长，以上为前 ${MAX_SKILL_INSTRUCTIONS_CHARS} 字】` : text;
+}
+
+/**
  * 执行一次对话：模型决定调用哪些画布工具，由本进程代为执行并回填，直到模型给出最终回答。
  */
 export async function runApiAgentTurn(input: {
@@ -174,8 +223,9 @@ export async function runApiAgentTurn(input: {
     runner: ToolRunner;
     emit: AgentEmit;
     signal?: AbortSignal;
+    skills?: ApiSkillContext;
 }) {
-    const { prompt, config, runner, emit } = input;
+    const { prompt, config, runner, emit, skills } = input;
     const agent = config.label;
     if (!prompt.trim()) return;
     if (!config.apiKey.trim() || !config.model.trim()) {
@@ -192,6 +242,8 @@ export async function runApiAgentTurn(input: {
             content: [
                 AGENT_PROMPT,
                 ...(memory.prefix ? ["", memory.prefix] : []),
+                ...(skills?.directory ? ["", skills.directory] : []),
+                ...(skills?.active ? ["", `【本轮启用 Skill：${skills.active.name}】以下是这个 Skill 的完整执行说明，本轮必须按它执行：`, skillInstructions(skills.active.name, skills.active.instructions)] : []),
                 "",
                 "补充要求（API 模式）：",
                 "- 用户说的「画布」就是网页当前打开的那一个，直接用画布工具操作，不要去找项目列表。",
@@ -219,6 +271,15 @@ export async function runApiAgentTurn(input: {
     ];
     emit("agent_bootstrap", { type: `${agent}.preparing` });
     logger.info("API agent turn started", { label: agent, model: config.model, baseUrl: config.baseUrl, promptLength: prompt.length });
+    // 记录本轮实际注入的 Skill：排查「Skill 没生效」时先看这里，不要只看代码。
+    if (skills?.directory || skills?.active) {
+        logger.info("API agent skill injected", {
+            directoryChars: skills?.directory?.length || 0,
+            activeSkill: skills?.active?.name,
+            instructionsChars: skills?.active?.instructions.length,
+            excerpt: skills?.active?.instructions.replace(/\s+/g, " ").slice(0, 120),
+        });
+    }
 
     try {
         for (let round = 0; round < MAX_ROUNDS; round += 1) {

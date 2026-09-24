@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildComposeRequest, buildComposeSegments, buildComposeTracks, buildEditClips, editOutputSeconds, editPlaybackSeconds, editTickLabel, editTickStep, editTransitionSeconds, formatEditTime, resolveEditPlayback, resolveEditSeek } from "./timeline";
-import { EDIT_DEFAULT_OUTPUT, type EditClip, type EditMedia, type EditProject } from "@/types/edit";
+import { EDIT_DEFAULT_OUTPUT, EDIT_TRANSITIONS, normalizeEditTransition, type EditClip, type EditMedia, type EditProject } from "@/types/edit";
 
 function media(id: string, seconds: number | undefined, kind: "video" | "audio" = "video"): EditMedia {
     return { id, name: `素材${id.toUpperCase()}`, kind, source: "local", url: `blob:${id}`, durationMs: seconds === undefined ? undefined : Math.round(seconds * 1000), width: 1920, height: 1080, createdAt: "2024-01-01T00:00:00.000Z" };
@@ -210,5 +210,82 @@ describe("剪辑台导出：项目数据 → compose_video 入参", () => {
         const withTransition = project({ clips: [clip("c1", "a", { transition: "wipeleft", transitionDuration: 0.8, subtitle: "第一句" }), clip("c2", "b")] });
         const segments = buildComposeSegments({ project: withTransition, paths });
         expect(segments[0]).toMatchObject({ transition: "wipeleft", transitionDuration: 0.8, subtitle: "第一句" });
+    });
+
+    /**
+     * 空滤镜名事故的回归护栏：转场字段一旦是空串/未知值，FFmpeg 会把 `xfade=transition=:...`
+     * 里的滤镜名解析成空串并报 `No such filter: ""`（退出码 -1279870712），所以进参前必须归一成硬切。
+     */
+    const assertNoEmptyTransition = (request: ReturnType<typeof buildComposeRequest>) => {
+        expect(JSON.stringify(request)).not.toContain('"transition":""');
+        request.segments.forEach((segment) => {
+            expect(segment.transition === undefined || EDIT_TRANSITIONS.includes(segment.transition as (typeof EDIT_TRANSITIONS)[number])).toBe(true);
+        });
+    };
+
+    it("转场是空串时按硬切处理：不带 transition，也不带 transitionDuration", () => {
+        const empty = project({ clips: [clip("c1", "a", { transition: "", transitionDuration: 0.8 }), clip("c2", "b")] });
+        const request = buildComposeRequest({ project: empty, paths });
+
+        expect(request.segments[0]).toMatchObject({ transition: undefined, transitionDuration: undefined });
+        expect("transition" in request.segments[0]!).toBe(true);
+        expect(request.segments[0]!.transition).toBeUndefined();
+        assertNoEmptyTransition(request);
+    });
+
+    it("转场是未知字符串时按硬切处理，不会传给 compose_video", () => {
+        const unknown = project({ clips: [clip("c1", "a", { transition: "zoom", transitionDuration: 0.8 }), clip("c2", "b", { transition: "  fade  " })] });
+        const request = buildComposeRequest({ project: unknown, paths });
+
+        expect(request.segments.map((segment) => segment.transition)).toEqual([undefined, undefined]);
+        expect(request.segments.map((segment) => segment.transitionDuration)).toEqual([undefined, undefined]);
+        assertNoEmptyTransition(request);
+    });
+
+    it("转场是 undefined 时按硬切处理", () => {
+        const request = buildComposeRequest({ project: project(), paths });
+
+        expect(request.segments.map((segment) => segment.transition)).toEqual([undefined, undefined, undefined]);
+        assertNoEmptyTransition(request);
+    });
+
+    it("两个片段是同一个素材时两段都进合成，各自带自己的入出点", () => {
+        const same = project({ media: [media("a", 10)], clips: [clip("c1", "a", { start: 1, end: 5 }), clip("c2", "a", { start: 6, end: 9 })] });
+        const request = buildComposeRequest({ project: same, paths });
+
+        expect(request.segments.map((segment) => segment.path)).toEqual(["C:\\tmp\\a.mp4", "C:\\tmp\\a.mp4"]);
+        expect(request.segments.map((segment) => [segment.start, segment.end])).toEqual([
+            [1, 5],
+            [6, 9],
+        ]);
+        assertNoEmptyTransition(request);
+    });
+
+    it("片段短到放不下转场时，成片时长与转场秒数按较短者的八成收敛，请求本身仍然合法", () => {
+        const tiny = project({ media: [media("a", 0.2), media("b", 0.2)], clips: [clip("c1", "a", { start: 0, end: 0.2, transition: "fade", transitionDuration: 1 }), clip("c2", "b", { start: 0, end: 0.2 })] });
+        const views = buildEditClips(tiny.media, tiny.clips);
+
+        expect(editTransitionSeconds(views)[0]).toBeCloseTo(0.16, 5);
+        expect(editOutputSeconds(views)).toBeCloseTo(0.4 - 0.16, 5);
+        const request = buildComposeRequest({ project: tiny, paths });
+        expect(request.segments[0]).toMatchObject({ transition: "fade", transitionDuration: 1 });
+        assertNoEmptyTransition(request);
+    });
+});
+
+describe("剪辑台转场白名单：归一化", () => {
+    it("白名单里的转场原样保留，其他值一律变成硬切", () => {
+        expect(normalizeEditTransition("fade")).toBe("fade");
+        expect(normalizeEditTransition("circleopen")).toBe("circleopen");
+        expect(normalizeEditTransition("")).toBeUndefined();
+        expect(normalizeEditTransition(undefined)).toBeUndefined();
+        expect(normalizeEditTransition("dissolve2")).toBeUndefined();
+        expect(normalizeEditTransition("FADE")).toBeUndefined();
+    });
+
+    it("同一份白名单用于时间线视图与属性区下拉框", () => {
+        expect([...EDIT_TRANSITIONS]).toEqual(["fade", "dissolve", "wipeleft", "wiperight", "slideleft", "slideup", "circleopen"]);
+        const views = buildEditClips(project().media, [clip("c1", "a", { transition: "加个转场" })]);
+        expect(views[0]!.transition).toBeUndefined();
     });
 });

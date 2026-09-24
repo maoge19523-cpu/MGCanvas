@@ -41,6 +41,17 @@ export type EditClip = {
     subtitle?: string;
 };
 
+/** 片段转场白名单：与 Rust 侧 compose_video 认识的转场一一对应，属性区下拉框也只从这里取。 */
+export const EDIT_TRANSITIONS = ["fade", "dissolve", "wipeleft", "wiperight", "slideleft", "slideup", "circleopen"] as const;
+
+/**
+ * 归一化片段转场：空串、未知字符串、undefined 一律当成硬切。
+ * 空转场名会被 FFmpeg 拼成 `xfade=transition=:...` 而直接拒绝出片，所以无效值绝不往下传。
+ */
+export function normalizeEditTransition(value?: string): string | undefined {
+    return EDIT_TRANSITIONS.find((kind) => kind === value);
+}
+
 /**
  * 音频素材不参与画面拼接（compose_video 的片段必须有视频流），统一作为附加音轨混进成片。
  * 与画布合成节点的「配音 / 背景音乐」是同一套 FFmpeg 语义。

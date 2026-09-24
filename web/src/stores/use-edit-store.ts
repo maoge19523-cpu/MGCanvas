@@ -57,7 +57,8 @@ export function useEditState() {
 }
 
 export function createEditClip(mediaId: string): Omit<EditClip, "id"> {
-    return { mediaId, start: 0, end: 0, volume: 1, fadeIn: 0, fadeOut: 0, transitionDuration: 0.5 };
+    // 不设转场就是硬切：新建片段绝不能带空串转场，否则会被 FFmpeg 拼成空滤镜名而拒绝出片。
+    return { mediaId, start: 0, end: 0, volume: 1, fadeIn: 0, fadeOut: 0, transition: undefined, transitionDuration: 0.5 };
 }
 
 function newProject(name: string): EditProject {

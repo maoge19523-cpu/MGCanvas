@@ -1,5 +1,5 @@
 import type { ComposeAudioTrackInput, ComposeSegmentInput, ComposeVideoRequest } from "@/services/platform/desktop-ffmpeg";
-import type { EditClip, EditMedia, EditProject } from "@/types/edit";
+import { normalizeEditTransition, type EditClip, type EditMedia, type EditProject } from "@/types/edit";
 
 /** 时间线上的一段：时长与起点都由素材真实时长与入出点算出，顺序即数组顺序。 */
 export type EditClipView = {
@@ -55,7 +55,8 @@ export function buildEditClips(media: EditMedia[], clips: EditClip[], urls: Reco
             volume: clip.volume,
             fadeIn: clip.fadeIn,
             fadeOut: clip.fadeOut,
-            transition: clip.transition,
+            // 旧项目里可能存着空串或已经改名的转场，读进来就归一成硬切，避免一路传到 FFmpeg。
+            transition: normalizeEditTransition(clip.transition),
             transitionDuration: clip.transitionDuration ?? 0.5,
             subtitle: clip.subtitle,
             sourceSeconds,
@@ -143,14 +144,16 @@ export function buildComposeSegments({ project, paths }: EditComposeInput): Comp
         .flatMap((clip) => {
             const path = paths[clip.mediaId];
             if (!path) return [];
+            // 交给 compose_video 的转场必须落在白名单里：空串与未知值一律变成硬切（不带 transition 字段）。
+            const transition = normalizeEditTransition(clip.transition);
             return [
                 {
                     path,
                     start: clip.start,
                     end: clip.end || undefined,
                     volume: clip.volume,
-                    transition: clip.transition || undefined,
-                    transitionDuration: clip.transition ? clip.transitionDuration ?? 0.5 : undefined,
+                    transition,
+                    transitionDuration: transition ? clip.transitionDuration ?? 0.5 : undefined,
                     subtitle: clip.subtitle?.trim() || undefined,
                     fadeIn: clip.fadeIn,
                     fadeOut: clip.fadeOut,

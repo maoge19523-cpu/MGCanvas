@@ -6,9 +6,8 @@ import { useTranslation } from "react-i18next";
 import { buildEditClips, editOutputSeconds, formatEditTime } from "@/lib/edit/timeline";
 import { isTauriRuntime } from "@/services/platform/desktop-runtime";
 import { useEditState } from "@/stores/use-edit-store";
+import { EDIT_TRANSITIONS } from "@/types/edit";
 import { exportEditProject, openOutputDirectory, pickOutputDirectory, type EditExportResult } from "../export";
-
-const TRANSITIONS = ["fade", "dissolve", "wipeleft", "wiperight", "slideleft", "slideup", "circleopen"] as const;
 
 function clampNumber(value: number | null, minimum: number, maximum: number, fallback: number) {
     const parsed = Number(value);
@@ -80,7 +79,7 @@ export function EditInspector({ projectId, clipId }: { projectId: string; clipId
                             className="w-[108px]"
                             value={clip.transition || "none"}
                            
-                            options={[{ value: "none", label: t("editor.transitionNone") }, ...TRANSITIONS.map((value) => ({ value, label: t(`editor.transitions.${value}`) }))]}
+                            options={[{ value: "none", label: t("editor.transitionNone") }, ...EDIT_TRANSITIONS.map((value) => ({ value, label: t(`editor.transitions.${value}`) }))]}
                             onChange={(value) => updateClip(projectId, clip.id, { transition: value === "none" ? undefined : value })}
                         />
                     </Field>

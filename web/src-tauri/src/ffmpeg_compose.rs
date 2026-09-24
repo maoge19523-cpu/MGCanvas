@@ -269,6 +269,38 @@ fn clamp(value: f64, minimum: f64, maximum: f64) -> f64 {
     value.clamp(minimum, maximum)
 }
 
+/// 成片整体淡入淡出的滤镜串；没有任何整体淡入淡出时返回 None。
+/// 逐条滤镜之间只能用逗号连接，**末尾绝不能留逗号**：留了就等于给 FFmpeg 一个空滤镜名，
+/// 它会直接报 `No such filter: ""` 并拒绝出片，退出码还会变成一个巨大的负数（见 describe_exit_code）。
+fn global_fade_chain(video_label: &str, fade_in: f64, fade_out: f64, total: f64) -> Option<String> {
+    let mut steps: Vec<String> = Vec::new();
+    if fade_in > 0.0 {
+        steps.push(format!("fade=t=in:st=0:d={}", seconds(fade_in)));
+    }
+    if fade_out > 0.0 {
+        steps.push(format!("fade=t=out:st={}:d={}", seconds((total - fade_out).max(0.0)), seconds(fade_out)));
+    }
+    if steps.is_empty() {
+        return None;
+    }
+    Some(format!("[{video_label}]{}[vout]", steps.join(",")))
+}
+
+/// 把 FFmpeg 的退出码翻成人能读懂的说明。新版 FFmpeg 会把内部错误码（AVERROR）直接当退出码，
+/// 例如滤镜图里出现空滤镜名时是 -1279870712，原样丢给用户只是一串看不懂的数字。
+fn describe_exit_code(code: i32) -> String {
+    match code as u32 {
+        // 滤镜图里有 FFmpeg 不认识的滤镜名（空滤镜名也走这里）：ffmpeg 8.0.1 实测报到这个码。
+        0xB3B6_B908 => "滤镜图里有 FFmpeg 不认识的滤镜，常见原因是转场或滤镜名为空".to_owned(),
+        // 滤镜选项不受支持（实测未知转场类型报这个码）。
+        0xBAA8_BEB0 => "FFmpeg 不支持该滤镜选项，请检查转场类型".to_owned(),
+        // Windows 上的进程崩溃码：访问冲突、栈溢出、非法指令。
+        0xC000_0005 | 0xC000_0409 | 0xC000_001D => "FFmpeg 进程崩溃".to_owned(),
+        other if code < 0 => format!("FFmpeg 内部错误 0x{other:08X}"),
+        other => other.to_string(),
+    }
+}
+
 fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<ComposeVideoResult, String> {
     let executable = detect_ffmpeg_path(request.ffmpeg_path.as_deref())
         .ok_or_else(|| "未检测到 FFmpeg：请安装 FFmpeg 或加入 PATH，或在设置 → 本地 FFmpeg 中手动指定路径".to_owned())?;
@@ -411,7 +443,7 @@ fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<Co
             let (kind, transition) = &transitions[index - 1];
             let next_video = format!("xv{index}");
             let next_audio = format!("xa{index}");
-            if *transition > 0.0 {
+            if *transition > 0.0 && !kind.is_empty() {
                 filters.push(format!(
                     "[{video}][v{index}]xfade=transition={kind}:duration={}:offset={}[{next_video}]",
                     seconds(*transition),
@@ -482,15 +514,7 @@ fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<Co
 
     let fade_in = clamp(request.fade_in.unwrap_or(0.0), 0.0, 5.0);
     let fade_out = clamp(request.fade_out.unwrap_or(0.0), 0.0, 10.0);
-    if fade_in > 0.0 || fade_out > 0.0 {
-        let mut chain = format!("[{video_label}]");
-        if fade_in > 0.0 {
-            chain.push_str(&format!("fade=t=in:st=0:d={},", seconds(fade_in)));
-        }
-        if fade_out > 0.0 {
-            chain.push_str(&format!("fade=t=out:st={}:d={},", seconds((total - fade_out).max(0.0)), seconds(fade_out)));
-        }
-        chain.push_str("[vout]");
+    if let Some(chain) = global_fade_chain(&video_label, fade_in, fade_out, total) {
         filters.push(chain);
         video_label = "vout".to_string();
     }
@@ -570,7 +594,7 @@ fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<Co
             .collect::<Vec<_>>()
             .join(" | ");
         let _ = std::fs::remove_file(&output_path);
-        return Err(format!("FFmpeg 合成失败（退出码 {}）：{tail}", result.status.code().unwrap_or(-1)));
+        return Err(format!("FFmpeg 合成失败（{}）：{tail}", describe_exit_code(result.status.code().unwrap_or(-1))));
     }
 
     let bytes = std::fs::metadata(&output_path).map_err(|error| format!("无法读取合成结果：{error}"))?.len();
@@ -722,5 +746,47 @@ pub async fn concat_audio(state: State<'_, MediaCacheState>, request: ConcatAudi
     tauri::async_runtime::spawn_blocking(move || concat_audio_blocking(&cache_dir, request))
         .await
         .map_err(|error| format!("合并任务执行失败：{error}"))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 输出标签前不能紧跟逗号：那段空滤镜名会让 FFmpeg 报 `No such filter: ""` 并拒绝出片。
+    fn assert_no_empty_filter(chain: &str) {
+        assert!(!chain.contains(",["), "输出标签前多了逗号，会产生空滤镜名：{chain}");
+        assert!(!chain.contains("[]["), "出现了空滤镜：{chain}");
+    }
+
+    #[test]
+    fn fade_chain_never_ends_with_a_comma() {
+        // 用户报告的那次失败：整体淡入淡出都是 0.5s，成片 25.099s。
+        let both = global_fade_chain("cv", 0.5, 0.5, 25.099_002).expect("应当生成淡入淡出滤镜");
+        assert_eq!(both, "[cv]fade=t=in:st=0:d=0.5,fade=t=out:st=24.599:d=0.5[vout]");
+        assert_no_empty_filter(&both);
+
+        // 只有单边淡入淡出时同样不能留尾逗号。
+        let only_in = global_fade_chain("cv", 0.5, 0.0, 10.0).expect("应当生成淡入滤镜");
+        assert_eq!(only_in, "[cv]fade=t=in:st=0:d=0.5[vout]");
+        assert_no_empty_filter(&only_in);
+
+        let only_out = global_fade_chain("vsub", 0.0, 0.5, 10.0).expect("应当生成淡出滤镜");
+        assert_eq!(only_out, "[vsub]fade=t=out:st=9.5:d=0.5[vout]");
+        assert_no_empty_filter(&only_out);
+    }
+
+    #[test]
+    fn fade_chain_is_skipped_without_any_fade() {
+        assert!(global_fade_chain("cv", 0.0, 0.0, 10.0).is_none());
+    }
+
+    #[test]
+    fn exit_code_is_translated_for_users() {
+        assert_eq!(describe_exit_code(-1_279_870_712), "滤镜图里有 FFmpeg 不认识的滤镜，常见原因是转场或滤镜名为空");
+        assert_eq!(describe_exit_code(-1_163_346_256), "FFmpeg 不支持该滤镜选项，请检查转场类型");
+        assert_eq!(describe_exit_code(0xC000_0005_u32 as i32), "FFmpeg 进程崩溃");
+        assert_eq!(describe_exit_code(1), "1");
+        assert_eq!(describe_exit_code(-12_345), "FFmpeg 内部错误 0xFFFFCFC7");
+    }
 }
 

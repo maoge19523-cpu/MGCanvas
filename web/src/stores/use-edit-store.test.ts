@@ -16,7 +16,7 @@ vi.hoisted(() => {
 
 import { EMPTY_EDIT_HISTORY } from "@/lib/edit/history";
 import { EDIT_DEFAULT_OUTPUT, type EditProject } from "@/types/edit";
-import { useEditStore } from "./use-edit-store";
+import { useEditStore, createEditClip } from "./use-edit-store";
 
 const PROJECT_ID = "edit-1";
 
@@ -161,5 +161,18 @@ describe("剪辑台 store：拆分 / 删除 / 涟漪删除", () => {
         useEditStore.getState().deleteProject(PROJECT_ID);
         expect(useEditStore.getState().history[PROJECT_ID]).toBeUndefined();
         expect(useEditStore.getState().projects.length).toBe(0);
+    });
+});
+
+describe("剪辑台 store：新建片段的数据入口", () => {
+    beforeEach(() => seed());
+
+    it("新建片段默认硬切，落盘数据里不会出现空串转场", () => {
+        const fresh = createEditClip("m1");
+
+        expect(fresh.transition).toBeUndefined();
+        expect(fresh.transitionDuration).toBe(0.5);
+        useEditStore.getState().addClip(PROJECT_ID, fresh);
+        expect(JSON.stringify(project().clips.at(-1))).not.toContain('"transition"');
     });
 });

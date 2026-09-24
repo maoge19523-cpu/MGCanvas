@@ -9,6 +9,7 @@ import CanvasProjectPage from "@/pages/canvas/project";
 import ComfyUiCloudPage from "@/pages/comfyui-cloud";
 import ComfyUiLocalPage from "@/pages/comfyui-local";
 import ConfigPage from "@/pages/config";
+import EditorPage from "@/pages/editor";
 import NotFound from "@/pages/not-found";
 import PromptsPage from "@/pages/prompts";
 import { isTauriRuntime } from "@/services/platform/desktop-runtime";
@@ -31,6 +32,8 @@ export const router = createAppRouter([
             { path: "/prompts", element: <PromptsPage /> },
             { path: "/canvas", element: <CanvasPage /> },
             { path: "/canvas/:id", element: <CanvasProjectPage /> },
+            { path: "/editor", element: <EditorPage /> },
+            { path: "/editor/:id", element: <EditorPage /> },
             { path: "/comfyui-cloud", element: <ComfyUiCloudPage /> },
         { path: "/comfyui-local", element: <ComfyUiLocalPage /> },
             { path: "/config", element: <ConfigPage /> },

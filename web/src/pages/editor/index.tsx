@@ -75,7 +75,7 @@ export default function EditProjectsPage() {
                                     <PencilLine className="size-3.5" />
                                     {t("editor.rename")}
                                 </button>
-                                <button type="button" className="ml-auto inline-flex h-7 cursor-pointer items-center gap-1 rounded-[8px] px-2 text-[11px] text-red-500 transition-colors hover:bg-red-500/10" onClick={() => confirmDelete(project.id, project.name)}>
+                                <button type="button" className="ml-auto inline-flex h-7 cursor-pointer items-center gap-1 rounded-[8px] px-2 text-[11px] text-red-500 transition-colors hover:bg-red-500/10 dark:text-red-400" onClick={() => confirmDelete(project.id, project.name)}>
                                     <Trash2 className="size-3.5" />
                                     {t("common.delete")}
                                 </button>

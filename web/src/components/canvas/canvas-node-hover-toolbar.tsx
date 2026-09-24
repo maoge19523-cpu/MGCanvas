@@ -358,17 +358,17 @@ export function CanvasNodeInfoModal({ node, open, onClose }: { node: CanvasNodeD
                             {node.metadata?.errorDetails ? (
                                 <div className="overflow-hidden rounded-xl border" style={{ borderColor: "rgba(248,113,113,.3)", background: "rgba(127,29,29,.08)" }}>
                                     <div className="flex items-center justify-between gap-3 border-b px-3 py-2" style={{ borderColor: "rgba(248,113,113,.18)" }}>
-                                        <span className="font-medium text-red-400">{t("canvas.node.errorDetails")}</span>
+                                        <span className="font-medium text-red-600 dark:text-red-400">{t("canvas.node.errorDetails")}</span>
                                         <button
                                             type="button"
-                                            className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-red-300 transition hover:bg-red-400/10"
+                                            className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-red-600 transition hover:bg-red-400/10 dark:text-red-400"
                                             onClick={() => copyText(node.metadata!.errorDetails!, t("canvas.node.errorCopied"))}
                                         >
                                             <Copy className="size-3.5" />
                                             {t("canvas.node.copyError")}
                                         </button>
                                     </div>
-                                    <pre className="thin-scrollbar max-h-[300px] overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs leading-5 text-red-300">{node.metadata.errorDetails}</pre>
+                                    <pre className="thin-scrollbar max-h-[300px] overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs leading-5 text-red-600 dark:text-red-300">{node.metadata.errorDetails}</pre>
                                 </div>
                             ) : null}
                         </div>

@@ -1248,17 +1248,19 @@ html[data-mgcanvas-image-history-open] [data-canvas-node-hover-toolbar] {
     color: rgb(244 244 245);
 }
 
+/* 主按钮取语义 token：浅色近黑底 + 近白字，深色近白底 + 近黑字，
+   与 antd ConfigProvider 的 colorPrimary / colorTextLightSolid 同一套中性色，两套主题都够对比度。 */
 .td-workspace-action.is-primary {
-    border-color: #756bff;
-    background: #756bff;
-    color: white;
-    box-shadow: 0 8px 24px rgb(117 107 255 / 0.18);
+    border-color: var(--primary);
+    background: var(--primary);
+    color: var(--primary-foreground);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .td-workspace-action.is-primary:hover {
-    border-color: #8278ff;
-    background: #8278ff;
-    color: white;
+    border-color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 86%, var(--primary-foreground));
+    color: var(--primary-foreground);
 }
 
 .td-workspace-toolbar {
@@ -2254,12 +2256,13 @@ html:not(.dark) .ant-drawer-mask {
 }
 
 /* —— 工作区按钮 / 工具条 —— */
-html:not(.dark) .td-workspace-action {
+/* 只给普通按钮加玻璃底；主按钮有自己的实底，不能被这里的 !important 冲掉（否则浅色下会变成白底白字）。 */
+html:not(.dark) .td-workspace-action:not(.is-primary) {
     background-color: rgba(255, 255, 255, .42) !important;
     border-color: rgba(255, 255, 255, .75) !important;
     -webkit-backdrop-filter: blur(18px) saturate(1.8);
     backdrop-filter: blur(18px) saturate(1.8);
 }
-html:not(.dark) .td-workspace-action:hover {
+html:not(.dark) .td-workspace-action:not(.is-primary):hover {
     background-color: rgba(255, 255, 255, .62) !important;
 }

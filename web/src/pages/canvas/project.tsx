@@ -2962,7 +2962,7 @@ function MGCanvasProjectPage() {
                 content: (
                     <span className="inline-flex items-center gap-2">
                         {t("editor.sentToEditor", { name: targetName })}
-                        <button type="button" className="cursor-pointer rounded-[8px] px-2 py-0.5 text-[11px] font-medium text-[#756bff] transition-colors hover:bg-[#756bff]/10" onClick={() => navigate(`/editor/${targetId}`)}>
+                        <button type="button" className="cursor-pointer rounded-[8px] px-2 py-0.5 text-[11px] font-medium text-stone-600 transition-colors hover:bg-black/[0.05] hover:text-stone-950 dark:text-zinc-400 dark:hover:bg-white/[0.06] dark:hover:text-zinc-100" onClick={() => navigate(`/editor/${targetId}`)}>
                             {t("editor.openEditor")}
                         </button>
                     </span>

@@ -346,6 +346,7 @@ pub fn run() {
             ffmpeg_compose::detect_ffmpeg,
             ffmpeg_compose::compose_video,
             ffmpeg_compose::concat_audio,
+            ffmpeg_compose::audio_waveform,
             media_cache::cache_remote_media,
             media_cache::import_legacy_cached_media
         ])

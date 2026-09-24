@@ -30,6 +30,7 @@ import { buildEditClips, editPlaybackSeconds, editTickLabel, editTickStep, forma
 import { createEditClip, useEditState } from "@/stores/use-edit-store";
 import type { EditClip, EditMedia } from "@/types/edit";
 import { useEditMediaUrls } from "../use-edit-media-urls";
+import { EditAudioTrackRow } from "./edit-audio-track";
 
 type EditStageProps = {
     projectId: string;
@@ -842,7 +843,7 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
                 </div>
             </div>
 
-            <div data-edit-area="timeline" aria-label={t("editor.timeline")} className="flex h-[196px] shrink-0 flex-col px-4 pt-2.5">
+            <div data-edit-area="timeline" aria-label={t("editor.timeline")} className="flex h-[236px] shrink-0 flex-col px-4 pt-2.5">
                 <div className="flex h-6 shrink-0 items-center gap-2">
                     <span className="text-[11px] font-medium text-stone-700 dark:text-zinc-300">{t("editor.timeline")}</span>
                     <span className="text-[10px] tabular-nums text-stone-400 dark:text-zinc-600">{t("editor.clipCount", { count: views.length })}</span>
@@ -914,6 +915,10 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
                                 </div>
                             ))}
                         </div>
+
+                        {/* 音轨行：音频只出现在右侧属性区的「音轨」列表里，看不到波形就没法做音画对齐，
+                            所以在这里按同一条时间轴给每条音轨铺一行波形（位置与宽度都用百分比，与标尺、播放头同一套换算）。 */}
+                        <EditAudioTrackRow projectId={projectId} totalSeconds={totalSeconds} />
 
                         {/* 吸附导引线：吸附到哪就画到哪，位置只由 paintGuide 直写 style.left（不弹时间气泡）。 */}
                         <div ref={guideRef} data-edit-snap-guide className="pointer-events-none absolute inset-y-0 z-10 w-px" style={{ left: "0%", opacity: 0, background: token.colorPrimary }} />

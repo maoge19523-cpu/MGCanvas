@@ -1,6 +1,7 @@
 use std::{
+    io::{BufReader, Read},
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
 };
 
 use serde::{Deserialize, Serialize};
@@ -748,6 +749,243 @@ pub async fn concat_audio(state: State<'_, MediaCacheState>, request: ConcatAudi
         .map_err(|error| format!("合并任务执行失败：{error}"))?
 }
 
+// ── 音频波形包络 ────────────────────────────────────────────────────────────────
+// 剪辑台时间线要画波形（音画对齐用），峰值必须由本机 FFmpeg 解码后统计：
+// 浏览器里解码整段音频会吃掉大量内存与主线程时间，这里统一交给本机进程。
+
+/// 波形解码参数：单声道 8kHz 的 16 位小端 PCM 足够画出包络，
+/// 每秒只有 16KB，一小时音频也才 57MB 的读入量，而且是边读边算、不驻留内存。
+const WAVEFORM_SAMPLE_RATE: u32 = 8_000;
+/// 每个采样点用 16 位有符号归一化，除以 32768 后正好落在 -1..1。
+const WAVEFORM_PCM_SCALE: f32 = 32_768.0;
+const WAVEFORM_DEFAULT_BUCKETS: usize = 1_024;
+const WAVEFORM_MIN_BUCKETS: usize = 64;
+const WAVEFORM_MAX_BUCKETS: usize = 8_192;
+/// 读管道用的定长缓冲（见 audio_waveform_blocking 的流式读取）。
+const WAVEFORM_READ_CHUNK: usize = 64 * 1024;
+
+/// 第 `index` 段的起始样本下标：`floor(index * total / buckets)`。
+/// 不能整除时多出来的样本自然分给最后几段，边界只由这个式子决定，整段喂与分块喂结果一致。
+fn bucket_start(index: usize, total: usize, buckets: usize) -> usize {
+    index * total / buckets
+}
+
+/// PCM 字节流 → 峰值包络的累积器：按 `buckets` 段均分样本，逐段记最大 / 最小幅度。
+/// 分块读取时 s16 可能被切断，所以留一个 carry 字节等到下一块再配对。
+struct PeakAccumulator {
+    total: usize,
+    buckets: usize,
+    samples: usize,
+    current: usize,
+    carry: Option<u8>,
+    peaks: Vec<f32>,
+    troughs: Vec<f32>,
+}
+
+impl PeakAccumulator {
+    fn new(total: usize, buckets: usize) -> Self {
+        let buckets = if total == 0 { 0 } else { buckets };
+        Self {
+            total,
+            buckets,
+            samples: 0,
+            current: 0,
+            carry: None,
+            // 先放哨兵值，结束后把「这一段的样本还没来过」的段补成 0（静音）。
+            peaks: vec![f32::MIN; buckets],
+            troughs: vec![f32::MAX; buckets],
+        }
+    }
+
+    /// 已经吃进来的样本数：用它算真实音频时长（探测出来的时长可能有零点几秒出入）。
+    fn samples(&self) -> usize {
+        self.samples
+    }
+
+    fn push_sample(&mut self, value: i16) {
+        if self.buckets == 0 {
+            return;
+        }
+        // 真实样本可能比预估多：多出来的一律并进最后一段，绝不下标越界。
+        while self.current + 1 < self.buckets && self.samples >= bucket_start(self.current + 1, self.total, self.buckets) {
+            self.current += 1;
+        }
+        let normalized = f32::from(value) / WAVEFORM_PCM_SCALE;
+        if normalized > self.peaks[self.current] {
+            self.peaks[self.current] = normalized;
+        }
+        if normalized < self.troughs[self.current] {
+            self.troughs[self.current] = normalized;
+        }
+        self.samples += 1;
+    }
+
+    fn push_bytes(&mut self, bytes: &[u8]) {
+        let mut index = 0;
+        if let Some(high) = self.carry.take() {
+            let Some(&low) = bytes.first() else {
+                self.carry = Some(high);
+                return;
+            };
+            self.push_sample(i16::from_le_bytes([high, low]));
+            index = 1;
+        }
+        while index + 1 < bytes.len() {
+            self.push_sample(i16::from_le_bytes([bytes[index], bytes[index + 1]]));
+            index += 2;
+        }
+        // 末尾落单的半个样本留到下一块（最后一块落单则丢弃：半个 s16 没有意义）。
+        if index < bytes.len() {
+            self.carry = Some(bytes[index]);
+        }
+    }
+
+    fn finish(mut self) -> (Vec<f32>, Vec<f32>) {
+        for index in 0..self.buckets {
+            if self.peaks[index] == f32::MIN {
+                self.peaks[index] = 0.0;
+            }
+            if self.troughs[index] == f32::MAX {
+                self.troughs[index] = 0.0;
+            }
+        }
+        (self.peaks, self.troughs)
+    }
+}
+
+/// PCM（16 位小端、单声道）字节流 → 峰值包络：均分 `buckets` 段，逐段取最大 / 最小幅度并归一化到 -1..1。
+/// 只被单元测试直接调用，生产路径走同一个累积器的流式喂法（见 audio_waveform_blocking）。
+#[allow(dead_code)]
+fn pcm_envelope(bytes: &[u8], buckets: usize) -> (Vec<f32>, Vec<f32>) {
+    let mut accumulator = PeakAccumulator::new(bytes.len() / 2, buckets);
+    accumulator.push_bytes(bytes);
+    accumulator.finish()
+}
+
+/// 把任意长度的峰值包络重采样到正好 `buckets` 段：每段取覆盖范围内的极值，缩放不会削掉尖峰；
+/// 源比目标短时按最近点重复（放大只会变粗，不会出现空洞）。空输入返回空。
+fn resample_envelope(peaks: &[f32], troughs: &[f32], buckets: usize) -> (Vec<f32>, Vec<f32>) {
+    if peaks.is_empty() || buckets == 0 {
+        return (Vec::new(), Vec::new());
+    }
+    if peaks.len() == buckets {
+        return (peaks.to_vec(), troughs.to_vec());
+    }
+    let mut out_peaks = Vec::with_capacity(buckets);
+    let mut out_troughs = Vec::with_capacity(buckets);
+    for index in 0..buckets {
+        let from = bucket_start(index, peaks.len(), buckets);
+        let to = bucket_start(index + 1, peaks.len(), buckets).max(from + 1).min(peaks.len());
+        let mut peak = f32::MIN;
+        let mut trough = f32::MAX;
+        for point in from..to {
+            peak = peak.max(peaks[point]);
+            trough = trough.min(troughs.get(point).copied().unwrap_or(0.0));
+        }
+        out_peaks.push(if peak == f32::MIN { 0.0 } else { peak });
+        out_troughs.push(if trough == f32::MAX { 0.0 } else { trough });
+    }
+    (out_peaks, out_troughs)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioWaveformRequest {
+    ffmpeg_path: Option<String>,
+    /// 音频（或带音轨的视频）文件的本地绝对路径。
+    path: String,
+    /// 目标采样点数：前端按时间线像素列数的档位给，越大越细。
+    samples: Option<usize>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioWaveformResult {
+    /// 每个采样点的最大幅度，0..1。
+    peaks: Vec<f32>,
+    /// 每个采样点的最小幅度，-1..0。
+    troughs: Vec<f32>,
+    /// 真实解码出的音频时长（毫秒）：前端按它把波形铺到时间线上。
+    duration_ms: u64,
+    /// 解码用的采样率，供排查用。
+    sample_rate: u32,
+}
+
+fn audio_waveform_blocking(request: AudioWaveformRequest) -> Result<AudioWaveformResult, String> {
+    let executable = detect_ffmpeg_path(request.ffmpeg_path.as_deref())
+        .ok_or_else(|| "未检测到 FFmpeg：请安装 FFmpeg 或加入 PATH，或在设置 → 本地 FFmpeg 中手动指定路径".to_owned())?;
+    // 复用音频探测：文件不存在、没有音频流都在这里给出可读的中文错误，不用另写一套判断。
+    let duration = probe_audio_duration(&executable, &request.path)?;
+    let buckets = request.samples.unwrap_or(WAVEFORM_DEFAULT_BUCKETS).clamp(WAVEFORM_MIN_BUCKETS, WAVEFORM_MAX_BUCKETS);
+    // 先按时长估总样本数来定分桶粒度（管道流没有总长度，无法事后分段）；
+    // 真实样本数与估算值有出入时，最后会按真实包络重采样到正好 buckets 段。
+    let estimated = ((duration * f64::from(WAVEFORM_SAMPLE_RATE)).round() as usize).max(1);
+    let mut accumulator = PeakAccumulator::new(estimated, buckets);
+
+    let rate = WAVEFORM_SAMPLE_RATE.to_string();
+    let mut command = Command::new(&executable);
+    command.args(["-hide_banner", "-v", "error", "-i", &request.path, "-vn", "-ac", "1", "-ar", rate.as_str(), "-f", "s16le", "pipe:1"]);
+    configure(&mut command);
+    command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn().map_err(|error| format!("无法启动 FFmpeg：{error}"))?;
+
+    // stderr 交给独立线程读干：PCM 数据量大，主线程忙着读 stdout 时没人读 stderr 会把它堵死。
+    let stderr_reader = child
+        .stderr
+        .take()
+        .map(|stream| std::thread::spawn(move || {
+            let mut text = String::new();
+            let _ = BufReader::new(stream).read_to_string(&mut text);
+            text
+        }));
+
+    // 流式读取：定长缓冲边读边算，绝不把整个音频的 PCM 读进内存。
+    if let Some(stdout) = child.stdout.take() {
+        let mut reader = BufReader::new(stdout);
+        let mut buffer = vec![0_u8; WAVEFORM_READ_CHUNK];
+        loop {
+            let read = reader.read(&mut buffer).map_err(|error| format!("读取 FFmpeg 解码输出失败：{error}"))?;
+            if read == 0 {
+                break;
+            }
+            accumulator.push_bytes(&buffer[..read]);
+        }
+    }
+
+    let status = child.wait().map_err(|error| format!("FFmpeg 解码进程异常结束：{error}"))?;
+    let stderr = stderr_reader.map(|handle| handle.join().unwrap_or_default()).unwrap_or_default();
+    if !status.success() {
+        let tail = stderr
+            .lines()
+            .rev()
+            .filter(|line| !line.trim().is_empty())
+            .take(6)
+            .collect::<Vec<_>>()
+            .join(" | ");
+        return Err(format!("FFmpeg 解码音频失败（{}）：{tail}", describe_exit_code(status.code().unwrap_or(-1))));
+    }
+
+    let decoded = accumulator.samples();
+    let (peaks, troughs) = accumulator.finish();
+    if decoded == 0 || peaks.is_empty() {
+        return Err(format!("音频里没有可用的采样数据：{}", request.path));
+    }
+    let (peaks, troughs) = resample_envelope(&peaks, &troughs, buckets);
+    Ok(AudioWaveformResult {
+        peaks,
+        troughs,
+        duration_ms: decoded as u64 * 1000 / u64::from(WAVEFORM_SAMPLE_RATE),
+        sample_rate: WAVEFORM_SAMPLE_RATE,
+    })
+}
+
+#[tauri::command]
+pub async fn audio_waveform(request: AudioWaveformRequest) -> Result<AudioWaveformResult, String> {
+    tauri::async_runtime::spawn_blocking(move || audio_waveform_blocking(request))
+        .await
+        .map_err(|error| format!("波形任务执行失败：{error}"))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -787,6 +1025,186 @@ mod tests {
         assert_eq!(describe_exit_code(0xC000_0005_u32 as i32), "FFmpeg 进程崩溃");
         assert_eq!(describe_exit_code(1), "1");
         assert_eq!(describe_exit_code(-12_345), "FFmpeg 内部错误 0xFFFFCFC7");
+    }
+
+    // ── 波形峰值包络 ──────────────────────────────────────────────────────────
+    // i16 / 32768 的商是二进制有限小数，能被 f32 精确表示，所以这些断言可以直接比相等。
+
+    /// 构造一段 16 位小端、单声道的 PCM 字节流。
+    fn pcm(samples: &[i16]) -> Vec<u8> {
+        samples.iter().flat_map(|value| value.to_le_bytes()).collect()
+    }
+
+    #[test]
+    fn envelope_of_empty_input_is_empty() {
+        assert_eq!(pcm_envelope(&[], 4), (Vec::new(), Vec::new()));
+        // 只有一个字节：凑不出一个 s16 样本，同样按「没有数据」处理。
+        assert_eq!(pcm_envelope(&[0x7F], 4), (Vec::new(), Vec::new()));
+        // 采样点数给 0 也不该 panic。
+        assert_eq!(pcm_envelope(&pcm(&[1, 2]), 0), (Vec::new(), Vec::new()));
+    }
+
+    #[test]
+    fn envelope_of_single_sample_is_that_sample() {
+        let (peaks, troughs) = pcm_envelope(&pcm(&[32_767]), 1);
+        assert_eq!(peaks.len(), 1);
+        assert_eq!(troughs.len(), 1);
+        assert!((peaks[0] - 1.0).abs() < 1e-4, "满幅值应归一化到 1 附近：{}", peaks[0]);
+        assert_eq!(peaks[0], troughs[0]);
+
+        let (peaks, troughs) = pcm_envelope(&pcm(&[-32_768]), 1);
+        assert_eq!(peaks[0], -1.0);
+        assert_eq!(troughs[0], -1.0);
+
+        // 采样点比样本多：空出来的段按静音补 0，长度仍然等于请求的段数。
+        let (peaks, troughs) = pcm_envelope(&pcm(&[1_000]), 3);
+        assert_eq!(peaks.len(), 3);
+        assert_eq!(troughs.len(), 3);
+        assert_eq!(peaks.iter().filter(|value| **value != 0.0).count(), 1);
+    }
+
+    #[test]
+    fn envelope_splits_samples_evenly() {
+        // 8 个样本分 4 段：正好每段 2 个。
+        let (peaks, troughs) = pcm_envelope(&pcm(&[1_000, 2_000, -3_000, 4_000, 5_000, -6_000, 7_000, 8_000]), 4);
+        assert_eq!(peaks, vec![2_000.0 / 32_768.0, 4_000.0 / 32_768.0, 5_000.0 / 32_768.0, 8_000.0 / 32_768.0]);
+        assert_eq!(troughs, vec![1_000.0 / 32_768.0, -3_000.0 / 32_768.0, -6_000.0 / 32_768.0, 7_000.0 / 32_768.0]);
+    }
+
+    #[test]
+    fn envelope_distributes_the_remainder_to_the_last_buckets() {
+        // 10 个样本分 3 段：边界是 floor(i*10/3) = 0 / 3 / 6 / 10，所以是 3 + 3 + 4。
+        let samples = [100, -200, 300, -400, 500, -600, 700, -800, 900, -1_000];
+        let (peaks, troughs) = pcm_envelope(&pcm(&samples), 3);
+        assert_eq!(peaks.len(), 3);
+        assert_eq!(peaks, vec![300.0 / 32_768.0, 500.0 / 32_768.0, 900.0 / 32_768.0]);
+        assert_eq!(troughs, vec![-200.0 / 32_768.0, -600.0 / 32_768.0, -1_000.0 / 32_768.0]);
+    }
+
+    #[test]
+    fn envelope_of_silence_is_zero() {
+        let (peaks, troughs) = pcm_envelope(&pcm(&[0; 8]), 4);
+        assert_eq!(peaks, vec![0.0; 4]);
+        assert_eq!(troughs, vec![0.0; 4]);
+    }
+
+    #[test]
+    fn envelope_keeps_full_scale_extremes() {
+        // 交替满幅：整流后的包络每一段都应该顶到 ±1。
+        let samples: Vec<i16> = (0..16).map(|index| if index % 2 == 0 { 32_767 } else { -32_768 }).collect();
+        let (peaks, troughs) = pcm_envelope(&pcm(&samples), 4);
+        assert!(peaks.iter().all(|value| (*value - 1.0).abs() < 1e-4), "峰值应全部接近 1：{peaks:?}");
+        // -32768 / 32768 正好是 -1.0。
+        assert!(troughs.iter().all(|value| *value == -1.0), "谷值应全部是 -1：{troughs:?}");
+    }
+
+    #[test]
+    fn envelope_is_identical_when_the_stream_is_split_into_chunks() {
+        let samples: Vec<i16> = (0..101).map(|index| ((index * 37) % 3_000 - 1_500) as i16).collect();
+        let bytes = pcm(&samples);
+        let expected = pcm_envelope(&bytes, 8);
+        // 分块大小故意取奇数：s16 会被切断，必须靠 carry 字节接回来。
+        for chunk in [1_usize, 3, 7, 64, 4_097] {
+            let mut accumulator = PeakAccumulator::new(samples.len(), 8);
+            for piece in bytes.chunks(chunk) {
+                accumulator.push_bytes(piece);
+            }
+            assert_eq!(accumulator.samples(), samples.len());
+            assert_eq!(accumulator.finish(), expected, "分块 {chunk} 字节时结果应与整段喂一致");
+        }
+        // 末尾落单的半个样本直接丢弃，不影响统计。
+        let mut accumulator = PeakAccumulator::new(samples.len(), 8);
+        let mut padded = bytes.clone();
+        padded.push(0x7F);
+        accumulator.push_bytes(&padded);
+        assert_eq!(accumulator.finish(), expected);
+    }
+
+    #[test]
+    fn envelope_is_clamped_to_the_target_bucket_count() {
+        // 真实样本比预估多：多出来的一律并进最后一段，不下标越界也不丢样本。
+        let mut accumulator = PeakAccumulator::new(2, 4);
+        accumulator.push_bytes(&pcm(&[1_000, -2_000, 30_000, -40]));
+        let (peaks, troughs) = accumulator.finish();
+        assert_eq!(peaks.len(), 4);
+        assert_eq!(troughs.len(), 4);
+        assert_eq!(peaks[3], 30_000.0 / 32_768.0);
+        assert_eq!(troughs[3], -2_000.0 / 32_768.0);
+    }
+
+    #[test]
+    fn resample_normalizes_the_point_count_without_losing_peaks() {
+        let peaks = [0.1, 0.9, 0.2, 0.3];
+        let troughs = [-0.1, -0.9, -0.2, -0.3];
+
+        // 降采样：每段取覆盖范围内的极值，尖峰不能被平均掉。
+        let (down_peaks, down_troughs) = resample_envelope(&peaks, &troughs, 2);
+        assert_eq!(down_peaks, vec![0.9, 0.3]);
+        assert_eq!(down_troughs, vec![-0.9, -0.3]);
+
+        // 升采样：按最近点重复，长度必须正好等于目标段数。
+        let (up_peaks, up_troughs) = resample_envelope(&peaks, &troughs, 8);
+        assert_eq!(up_peaks, vec![0.1, 0.1, 0.9, 0.9, 0.2, 0.2, 0.3, 0.3]);
+        assert_eq!(up_troughs, vec![-0.1, -0.1, -0.9, -0.9, -0.2, -0.2, -0.3, -0.3]);
+
+        // 段数一致时原样返回。
+        assert_eq!(resample_envelope(&peaks, &troughs, 4), (peaks.to_vec(), troughs.to_vec()));
+
+        // 空输入与 0 段都返回空，不 panic。
+        assert_eq!(resample_envelope(&[], &[], 4), (Vec::new(), Vec::new()));
+        assert_eq!(resample_envelope(&peaks, &troughs, 0), (Vec::new(), Vec::new()));
+    }
+
+    /// 真实解码路径的冒烟测试：造一段「前 2 秒静音 + 后 2 秒满幅 440Hz 正弦」的音频再走完整链路。
+    /// 默认忽略（需要本机有 FFmpeg 与临时目录），用 `cargo test --offline --lib -- --ignored` 显式执行。
+    #[test]
+    #[ignore]
+    fn waveform_of_a_generated_tone_keeps_the_silence_boundary() {
+        let Some(executable) = detect_ffmpeg_path(None) else {
+            return;
+        };
+        let path = std::env::temp_dir().join(format!("mgcanvas-waveform-{}.wav", std::process::id()));
+        let path_text = path.to_string_lossy().into_owned();
+        let generated = run_captured(
+            &executable,
+            &[
+                "-hide_banner",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "anullsrc=channel_layout=mono:sample_rate=44100:d=2",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=2:sample_rate=44100",
+                // sine 滤镜的默认幅度很小（实测约 1/8 满幅），拉满再拼，响段才是真的满幅。
+                "-filter_complex",
+                "[1:a]volume=8[amp];[0:a][amp]concat=n=2:v=0:a=1[a]",                "-map",
+                "[a]",
+                "-c:a",
+                "pcm_s16le",
+                &path_text,
+            ],
+        )
+        .expect("应当能生成测试音频");
+        assert!(generated.status.success(), "生成测试音频失败：{}", String::from_utf8_lossy(&generated.stderr));
+
+        let result = audio_waveform_blocking(AudioWaveformRequest { ffmpeg_path: None, path: path_text, samples: Some(256) }).expect("应当算得出波形");
+        let _ = std::fs::remove_file(&path);
+
+        // 4 秒音频 → 正好 256 个采样点，每个点 15.625ms；真实播放时长按解码出的样本数算。
+        assert_eq!(result.peaks.len(), 256);
+        assert_eq!(result.peaks.len(), result.troughs.len());
+        assert!((result.duration_ms as i64 - 4_000).abs() <= 20, "时长应按真实解码样本数算：{}", result.duration_ms);
+        assert_eq!(result.sample_rate, WAVEFORM_SAMPLE_RATE);
+
+        // 前 2 秒静音、后 2 秒满幅：分界正好落在第 128 个点上，这就是「波形与时间对齐」的前提。
+        assert!(result.peaks[..120].iter().all(|value| *value < 0.02), "静音段不该有幅度：{:?}", &result.peaks[..8]);
+        assert!(result.peaks[135..].iter().all(|value| *value > 0.5), "响段应接近满幅：{:?}", &result.peaks[248..]);
+        assert!(result.troughs[135..].iter().all(|value| *value < -0.5), "响段的谷值应接近 -1");
+        assert!(result.peaks[126] < 0.02, "分界前的点仍是静音：{}", result.peaks[126]);
+        assert!(result.peaks[129] > 0.5, "分界后的点已经是满幅正弦：{}", result.peaks[129]);
     }
 }
 

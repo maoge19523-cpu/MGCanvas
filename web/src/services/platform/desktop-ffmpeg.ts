@@ -55,6 +55,13 @@ export function concatAudio(paths: string[], title?: string): Promise<ConcatAudi
     return invokeDesktop<ConcatAudioResult>("concat_audio", { request: { ffmpegPath: readFfmpegPath() || undefined, paths, title } });
 }
 
+/** 音频峰值包络：本机 FFmpeg 解码成单声道 8kHz PCM 后统计，前端只拿两个小数组。 */
+export type AudioWaveformResult = { peaks: number[]; troughs: number[]; durationMs: number; sampleRate: number };
+
+export function audioWaveform(path: string, samples: number): Promise<AudioWaveformResult> {
+    return invokeDesktop<AudioWaveformResult>("audio_waveform", { request: { ffmpegPath: readFfmpegPath() || undefined, path, samples } });
+}
+
 const MEDIA_EXTENSION_BY_MIME: Record<string, string> = {
     "video/mp4": "mp4",
     "video/quicktime": "mov",

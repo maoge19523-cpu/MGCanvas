@@ -120,4 +120,16 @@ describe("剪辑台时间线：新增交互元素真的渲染出来了", () => {
         expect(markup).toContain("片段 1 · 4.0s · 开场.mp4");
         expect(markup).toContain("片段 2 · 5.0s · 画布成片.mp4");
     });
+
+    it("预览区的取帧载体（<video>）真的渲染出来了，且带着暂停态取帧需要的 preload", () => {
+        const markup = render();
+
+        expect(markup).toContain("data-edit-preview-video");
+        // 暂停态要显示画面就必须拿到首帧数据：preload="metadata" 只取元数据，暂停时画不出这一帧。
+        expect(markup).toContain('preload="auto"');
+        expect(markup).toContain("playsInline");
+        // 画面的 src 与 currentTime 只由取帧路径直写 DOM，静态产物里不应有 src 属性。
+        const video = markup.slice(markup.indexOf("data-edit-preview-video") - 120, markup.indexOf("data-edit-preview-video") + 160);
+        expect(video).not.toContain("src=");
+    });
 });

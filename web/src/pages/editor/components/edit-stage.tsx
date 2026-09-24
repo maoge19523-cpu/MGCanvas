@@ -53,6 +53,10 @@ const EMPTY_CLIPS: EditClip[] = [];
  *
  * 播放由**主时钟**主导（EditPlaybackClock）：只有它是播放时间的真相，
  * 各段 <video>.currentTime 只是被定期对齐的对象，偏差超过一帧就丢帧追赶 / 补帧等待。
+ *
+ * 暂停态另有一条**取帧**路径（requestPausedFrame / paintPausedFrame）：播放路径只在起播与播放心跳里
+ * 设过 src 与 currentTime，暂停后没人再管这个 <video>，所以暂停态必须自己把播放头那一帧取回来，
+ * 否则预览区只能是黑屏。取帧同样遵循上面的纪律：只写 ref 与 <video> 属性，一次都不写 store / setState。
  */
 export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditStageProps) {
     const { t } = useTranslation();
@@ -93,6 +97,13 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
     const waitingRef = useRef(false);
     const lastCorrectionRef = useRef(0);
     const velocityRef = useRef({ x: 0, at: 0 });
+    // 暂停态取帧（scrub 预览）的过程量：与播放循环的 frameRef 分开，互不干扰。
+    const scrubFrameRef = useRef(0);
+    const scrubTargetRef = useRef<number | null>(null);
+    const frameWaitingRef = useRef<number | null>(null);
+    const frameAppliedRef = useRef(-1);
+    const frameFlushRef = useRef<() => void>(() => undefined);
+    const brokenSrcRef = useRef("");
 
     const flags = historyFlags(projectId);
     const labels = historyLabels(projectId);
@@ -128,7 +139,92 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
         handlersRef.current = null;
     };
 
+    // ── 暂停态取帧（scrub 预览）：暂停时也要显示播放头所在的那一帧 ──────────────────────
+    // 换算只用现成的 resolveEditSeek：播放头是时间线全局秒数，落点要用该段自己的入点
+    // （view.start + 播放头 - view.offset），换段、段边界、片尾都由它统一处理。
+    // 这一组函数只写 ref 与 <video>（src / currentTime），不写 store、不 setState。
+
+    /**
+     * 发一次暂停态 seek。只有「手上还有目标 + 上一次 seek 已经落地」时才赋值：
+     * 上一次还没走完就只把最新目标留在手上，等 seeked 再发，因此不会把 seek 堆积成一串。
+     */
+    const flushPausedFrameSeek = () => {
+        const video = videoRef.current;
+        const target = frameWaitingRef.current;
+        if (!video || target === null) return;
+        // 还在 seek，或元数据还没到（这时赋 currentTime 会被忽略）：留着等 seeked / loadedmetadata。
+        if (video.seeking || video.readyState < 1) return;
+        frameWaitingRef.current = null;
+        frameAppliedRef.current = target;
+        video.currentTime = target;
+    };
+
+    /** 暂停态取一帧：由 requestPausedFrame 合并到一帧一次执行，永远只用最新目标。 */
+    const paintPausedFrame = () => {
+        scrubFrameRef.current = 0;
+        if (playingRef.current) return; // 播放中由主时钟主导，这里一律不插手
+        const video = videoRef.current;
+        const seconds = scrubTargetRef.current;
+        scrubTargetRef.current = null;
+        if (!video || seconds === null || totalRef.current <= 0) return;
+        const target = resolveEditSeek(viewsRef.current, seconds);
+        const view = target ? viewsRef.current[target.index] : null;
+        // 素材缺失 / 素材没探测到时长：维持空状态——把已经挂上的源放掉，
+        // 免得上一段的画面停在这里冒充「这一段」的画面。
+        if (!target || !view || !view.src || view.length <= 0) {
+            if (video.hasAttribute("src")) releaseVideo(video);
+            return;
+        }
+        indexRef.current = target.index;
+        if (srcRef.current === view.src) {
+            // 画面已经落在目标位置附近就不再 seek：指针停住时的重复请求到此为止。
+            const settled = Math.abs(target.currentTime - frameAppliedRef.current) < frameSecondsRef.current / 2 && Math.abs(target.currentTime - video.currentTime) < frameSecondsRef.current / 2;
+            if (settled) return;
+            frameWaitingRef.current = target.currentTime;
+            flushPausedFrameSeek();
+            return;
+        }
+        if (brokenSrcRef.current === view.src) return; // 这个地址刚加载失败过，拖动时不再反复重试
+        // 换段 / 首次挂源：先设 src，等元数据到位再定位——没有元数据时赋 currentTime 会被忽略，
+        // 新源在 loadeddata 之前绘制出来就是黑的，等帧这一步就落在这里。
+        detachHandlers(video);
+        frameAppliedRef.current = target.currentTime;
+        frameWaitingRef.current = target.currentTime;
+        srcRef.current = view.src;
+        const loaded = () => {
+            detachHandlers(video);
+            brokenSrcRef.current = "";
+            // 加载期间播放头可能已经动了：取手上最新的目标，赋完就清掉，避免 seeked 再补发一次。
+            frameAppliedRef.current = frameWaitingRef.current ?? target.currentTime;
+            frameWaitingRef.current = null;
+            video.currentTime = frameAppliedRef.current;
+        };
+        const failed = () => {
+            // 暂停态加载失败不弹提示（可播放地址可能只是还没解析好），留在空状态即可。
+            detachHandlers(video);
+            brokenSrcRef.current = view.src;
+            srcRef.current = "";
+            frameWaitingRef.current = null;
+        };
+        handlersRef.current = { loaded, failed };
+        video.addEventListener("loadedmetadata", loaded);
+        video.addEventListener("error", failed);
+        video.src = view.src;
+        video.load();
+    };
+
+    /**
+     * 暂停态取帧的调度：拖播放头 / 点标尺 / 逐帧快捷键都会高频调用它，
+     * 但同一帧内只排一次 rAF，并且永远只取最新目标——过程量只进 ref，不写 store。
+     */
+    const requestPausedFrame = (seconds: number) => {
+        scrubTargetRef.current = seconds;
+        if (scrubFrameRef.current) return;
+        scrubFrameRef.current = requestAnimationFrame(paintPausedFrame);
+    };
+
     // 清干净一个 <video>：pause + 移除 src + load()，否则元素被卸载后仍会在后台继续出声。
+    // 只在元素被卸载 / 切项目时调用：暂停**不**释放源，否则暂停后画面立刻变黑。
     const releaseVideo = (video: HTMLVideoElement) => {
         detachHandlers(video);
         video.pause();
@@ -136,6 +232,7 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
         video.load();
         video.volume = 1;
         srcRef.current = "";
+        brokenSrcRef.current = "";
     };
 
     const stopPreview = () => {
@@ -145,17 +242,30 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
         awaitingRef.current = false;
         waitingRef.current = false;
         clockRef.current?.pause();
-        if (videoRef.current) releaseVideo(videoRef.current);
+        if (videoRef.current) videoRef.current.pause();
         setPlaying(false);
+        // 主时钟与 <video> 之间允许有一帧以内的偏差，停表后按播放头精确对齐一次再取帧。
+        frameAppliedRef.current = -1;
+        requestPausedFrame(secondsRef.current);
     };
 
     // 用稳定的 callback ref 接管 <video>：元素被移除（切项目、关闭页面）时 React 会先回调 null 再摘 DOM，
     // 正好在这里停播；普通 useEffect 清理拿到的 ref 那时已经是 null，拦不住后台播放。
-    const attachVideo = useCallback((element: HTMLVideoElement | null) => {
-        const previous = videoRef.current;
-        if (previous && previous !== element) releaseVideo(previous);
-        videoRef.current = element;
-    }, []);
+    const onFrameSeeked = useCallback(() => frameFlushRef.current(), []);
+
+    const attachVideo = useCallback(
+        (element: HTMLVideoElement | null) => {
+            const previous = videoRef.current;
+            if (previous && previous !== element) {
+                previous.removeEventListener("seeked", onFrameSeeked);
+                releaseVideo(previous);
+            }
+            videoRef.current = element;
+            // seeked 表示这一帧已经解码到位：这时才补发下一个目标，拖动再快也不会叠出多个在途 seek。
+            element?.addEventListener("seeked", onFrameSeeked);
+        },
+        [onFrameSeeked],
+    );
 
     // 逐段播放：切 src → 等元数据 → 按主时钟对齐到入点 → play()。
     // 段序与段尾都由主时钟判定，视频落后/超前只做校正，不参与决定时间。
@@ -182,6 +292,7 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
             awaitingRef.current = false;
             waitingRef.current = false;
             video.currentTime = landing;
+            frameAppliedRef.current = -1;
             if (playingRef.current && video.paused) void video.play().catch(() => undefined);
             return;
         }
@@ -193,9 +304,16 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
         const loaded = () => {
             detachHandlers(video);
             awaitingRef.current = false;
+            // 加载期间用户按了暂停：不要把播放重新拉起来（暂停后还在后台出声是最难察觉的一类问题），
+            // 交给暂停态取帧把画面停在播放头位置。
+            if (!playingRef.current) {
+                frameAppliedRef.current = -1;
+                requestPausedFrame(secondsRef.current);
+                return;
+            }
             // 元数据就绪后再按主时钟对齐一次：加载期间主时钟一直在走，起播点必须重算。
             const clock = clockRef.current;
-            const target = clock && playingRef.current ? editDesiredMediaSeconds(view, clock.currentTime) : landing;
+            const target = clock ? editDesiredMediaSeconds(view, clock.currentTime) : landing;
             if (target > 0) video.currentTime = target;
             void video.play().catch(() => {
                 message.warning(t("editor.previewBlocked"));
@@ -297,13 +415,19 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
         if (target) startClip(target.index, target.currentTime);
     };
 
-    /** 播放头定位（暂停时只画 DOM；播放中连主时钟与视频一起重新对齐）。 */
+    /** 播放头定位提交（点标尺 / 松手 / 快捷键）：播放中重新基准主时钟并重建视频，暂停态只把画面取到播放头位置。 */
+    const commitPlayhead = (seconds: number) => {
+        if (playingRef.current) seekPreview(seconds);
+        else requestPausedFrame(seconds);
+    };
+
+    /** 播放头定位（暂停时只画 DOM 与取帧；播放中连主时钟与视频一起重新对齐）。 */
     const seekTo = (seconds: number) => {
         const total = totalRef.current;
         const clamped = Math.min(total, Math.max(0, seconds));
         secondsRef.current = clamped;
         paintPlayhead(clamped, total);
-        if (playingRef.current) seekPreview(clamped);
+        commitPlayhead(clamped);
     };
 
     const togglePreview = async () => {
@@ -341,7 +465,17 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
         if (!frameRef.current) frameRef.current = requestAnimationFrame(tick);
     };
 
-    // 时间线数据变化（改入出点、增删片段、撤销重做）后同步过程量并重新对齐读数——只写 DOM。
+    // 切项目：停播、放掉上一个项目的源、播放头归零。必须排在下面的时间线同步 effect 之前，
+    // 这样紧接着的同步逻辑就是拿「新项目 + 播放头 0」去取第一帧。
+    useEffect(() => {
+        stopPreview();
+        secondsRef.current = 0;
+        paintGuide(null);
+        const video = videoRef.current;
+        if (video) releaseVideo(video);
+    }, [projectId]);
+
+    // 时间线数据变化（改入出点、增删片段、撤销重做、可播放地址解析完成）后同步过程量并重新对齐读数——只写 DOM。
     useEffect(() => {
         viewsRef.current = views;
         totalRef.current = totalSeconds;
@@ -349,20 +483,27 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
         const clamped = Math.min(secondsRef.current, totalSeconds);
         secondsRef.current = clamped;
         paintPlayhead(clamped, totalSeconds);
+        // 暂停态补一帧：刚进页面、地址刚解析出来、刚改完片段时，预览区都该是播放头这一帧的画面。
+        if (!playingRef.current) requestPausedFrame(clamped);
     }, [views, totalSeconds, project?.output.fps]);
 
     useEffect(
         () => () => {
             stopPreview();
             if (frameRef.current) cancelAnimationFrame(frameRef.current);
+            if (scrubFrameRef.current) cancelAnimationFrame(scrubFrameRef.current);
+            // 两个句柄都要归零：开发模式的 StrictMode 会先跑一遍清理再重挂，
+            // 句柄不归零的话下一次取帧会以为「已经排上了 rAF」，从此再也不更新画面。
+            frameRef.current = 0;
+            scrubFrameRef.current = 0;
         },
         [],
     );
+
+    // seeked 监听只绑一次（见 attachVideo），实现体每次渲染用 ref 刷新：与快捷键表同一写法。
     useEffect(() => {
-        stopPreview();
-        secondsRef.current = 0;
-        paintGuide(null);
-    }, [projectId]);
+        frameFlushRef.current = flushPausedFrameSeek;
+    });
 
     useEffect(() => {
         snapEnabledRef.current = snapEnabled;
@@ -527,7 +668,13 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
         const seconds = Math.min(totalSeconds, Math.max(0, ((clientX - box.left) / box.width) * totalSeconds));
         secondsRef.current = seconds;
         paintPlayhead(seconds, totalSeconds);
-        if (commit) seekPreview(seconds);
+        // 播放中沿用「松手才重新对齐主时钟」；暂停态边拖边取帧，节流交给 requestPausedFrame
+        //（同一帧只跑一次 + 最新目标胜出 + 在途最多一个 seek），拖动过程一次都不写 store。
+        if (playingRef.current) {
+            if (commit) seekPreview(seconds);
+            return;
+        }
+        requestPausedFrame(seconds);
     };
 
     // ── 拆分 / 删除 / 撤销重做：都由快捷键与按钮触发，一次操作一次 store 写入 ─────────────
@@ -690,7 +837,7 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
                             <span className="text-[12px] text-white/60">{hasMedia ? t("editor.emptyClips") : t("editor.emptyMedia")}</span>
                         </div>
                     ) : (
-                        <video ref={attachVideo} onTimeUpdate={stepPreview} playsInline preload="metadata" className="max-h-full max-w-full" />
+                        <video ref={attachVideo} data-edit-preview-video onTimeUpdate={stepPreview} playsInline preload="auto" className="max-h-full max-w-full" />
                     )}
                 </div>
             </div>
@@ -738,7 +885,7 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
                     </div>
                 ) : (
                     <div className="relative mt-2" ref={timelineRef}>
-                        <div className="relative h-6 cursor-pointer touch-none select-none" title={t("editor.seekHint")} onPointerDown={(event) => { seekingRef.current = true; movePlayheadFromClientX(event.clientX, false); }} onPointerMove={(event) => { if (seekingRef.current) movePlayheadFromClientX(event.clientX, false); }} onPointerUp={() => { seekingRef.current = false; seekPreview(secondsRef.current); }} onPointerCancel={() => { seekingRef.current = false; }} onPointerLeave={() => { seekingRef.current = false; }}>
+                        <div className="relative h-6 cursor-pointer touch-none select-none" title={t("editor.seekHint")} onPointerDown={(event) => { seekingRef.current = true; movePlayheadFromClientX(event.clientX, false); }} onPointerMove={(event) => { if (seekingRef.current) movePlayheadFromClientX(event.clientX, false); }} onPointerUp={() => { seekingRef.current = false; commitPlayhead(secondsRef.current); }} onPointerCancel={() => { seekingRef.current = false; }} onPointerLeave={() => { seekingRef.current = false; }}>
                             {ticks.map((tickValue) => (
                                 <span key={tickValue} className="absolute top-0 flex flex-col items-center" style={{ left: `${(tickValue / totalSeconds) * 100}%`, transform: tickValue === 0 ? "none" : "translateX(-50%)" }}>
                                     <span className="h-1.5 w-px bg-stone-300 dark:bg-zinc-700" />

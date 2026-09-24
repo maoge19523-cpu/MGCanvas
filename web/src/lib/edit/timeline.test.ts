@@ -121,6 +121,57 @@ describe("剪辑台时间线：播放头与顺序连播", () => {
         expect(resolveEditSeek(views, 99)).toEqual({ index: 2, currentTime: 3.5 });
     });
 
+    // 暂停态取帧（scrub 预览）用的就是 resolveEditSeek：播放头秒数 → 该显示哪一段 + 该段素材内的时间。
+    // 下面这几条覆盖第 0 秒、段内任意点、段边界、片尾、单段与多段、以及素材入点非零的情况。
+    it("暂停态取帧：第 0 秒、段内任意点、段边界、片尾都落在正确的那一段与素材内时间", () => {
+        // 第 0 秒显示的是第一段**自己的入点**（素材内 1s），不是素材的 0s。
+        expect(resolveEditSeek(views, 0)).toEqual({ index: 0, currentTime: 1 });
+        // 段内任意点：素材内时间 = 该段入点 + (播放头 − 该段在时间线上的起点)。
+        expect(resolveEditSeek(views, 2.5)).toEqual({ index: 0, currentTime: 3.5 });
+        expect(resolveEditSeek(views, 7.25)).toEqual({ index: 1, currentTime: 3.25 });
+        expect(resolveEditSeek(views, 11.5)).toEqual({ index: 2, currentTime: 3 });
+        // 段边界属于后一段（判定用严格小于），落点是后一段的入点。
+        expect(resolveEditSeek(views, 4)).toEqual({ index: 1, currentTime: 0 });
+        expect(resolveEditSeek(views, 9)).toEqual({ index: 2, currentTime: 0.5 });
+        // 片尾：总时长 12s 落在最后一段的出点上，而不是跳回开头或没有落点。
+        expect(views.reduce((sum, view) => sum + view.length, 0)).toBe(12);
+        expect(resolveEditSeek(views, 12)).toEqual({ index: 2, currentTime: 3.5 });
+        // 负数（播放头理论上不会为负）也按 0 处理。
+        expect(resolveEditSeek(views, -1)).toEqual({ index: 0, currentTime: 1 });
+    });
+
+    it("暂停态取帧：单段项目全程都落在这一段，超过片尾夹在该段出点", () => {
+        const single = buildEditClips([media("a", 10)], [clip("c1", "a", { start: 2, end: 6 })]);
+        expect(single[0]!.length).toBe(4);
+
+        for (const seconds of [0, 1.25, 3.999, 4]) {
+            const target = resolveEditSeek(single, seconds);
+            expect(target?.index).toBe(0);
+            expect(target?.currentTime).toBeCloseTo(2 + Math.min(Math.max(seconds, 0), 4), 5);
+        }
+        expect(resolveEditSeek(single, 99)).toEqual({ index: 0, currentTime: 6 });
+    });
+
+    it("暂停态取帧：多段且各段入点不同时，每一段都用它自己的入点换算", () => {
+        const two = buildEditClips([media("a", 8), media("b", 8)], [clip("c1", "a", { start: 3, end: 6 }), clip("c2", "b", { start: 1.5, end: 5.5 })]);
+        // c1：时间线 0–3s（素材 3–6s）；c2：时间线 3–7s（素材 1.5–5.5s）。
+        expect(two.map((view) => [view.offset, view.length])).toEqual([
+            [0, 3],
+            [3, 4],
+        ]);
+        expect(resolveEditSeek(two, 0)).toEqual({ index: 0, currentTime: 3 });
+        expect(resolveEditSeek(two, 2.5)).toEqual({ index: 0, currentTime: 5.5 });
+        // 换段点：第 3 秒已经属于第二段，用第二段的入点 1.5s。
+        expect(resolveEditSeek(two, 3)).toEqual({ index: 1, currentTime: 1.5 });
+        expect(resolveEditSeek(two, 3.5)).toEqual({ index: 1, currentTime: 2 });
+        expect(resolveEditSeek(two, 7)).toEqual({ index: 1, currentTime: 5.5 });
+    });
+
+    it("暂停态取帧：没有片段时没有可显示的帧（保持空状态，不抛错）", () => {
+        expect(resolveEditSeek([], 0)).toBeNull();
+        expect(resolveEditSeek([], 12)).toBeNull();
+    });
+
     it("按 30fps 假时钟走完整条时间轴：播放头单调、切换点正确、末段停表", () => {
         const step = 1 / 30;
         const switches: number[] = [];

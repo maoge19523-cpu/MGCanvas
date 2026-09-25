@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode, type RefObject } from "rea
 import { useTranslation } from "react-i18next";
 
 import { buildEditClips, editOutputSeconds, formatEditTime } from "@/lib/edit/timeline";
+import { editTrackAudibility } from "@/lib/edit/audio-mix";
 import { editTrackStartLimit } from "@/lib/edit/timeline-edit";
 import { isTauriRuntime } from "@/services/platform/desktop-runtime";
 import { useEditState } from "@/stores/use-edit-store";
@@ -76,6 +77,9 @@ export function EditInspector({ projectId, clipId, subtitleId = null }: { projec
     const selectedOutsideList = selectedIndex >= SUBTITLE_LIST_LIMIT ? subtitles[selectedIndex] : undefined;
     // 落在成片末尾之后的字幕导出里一个字都不会出现：在这里常驻提示，别让用户以为它没生效。
     const beyondEnd = outputSeconds > 0 ? subtitles.filter((cue) => cue.start >= outputSeconds).length : 0;
+    // 「这条音轨到底出不出声」只有 editTrackAudibility 这一个判定：时间线轨道头与这里的静音 / 独奏
+    // 开关都只读它（不在这里另写一套 muted / solo 的优先级），两处显示与导出请求因此不可能漂移。
+    const audibility = editTrackAudibility(project.audioTracks);
 
     /** 锁定（片段或音轨）的编辑一律拒绝，并给出同一句可理解的反馈，绝不静默失效。 */
     const refuseLocked = (locked: boolean) => {
@@ -239,13 +243,38 @@ export function EditInspector({ projectId, clipId, subtitleId = null }: { projec
                             <li key={track.id} data-edit-track-locked={track.locked ? track.id : undefined} className="rounded-[10px] bg-black/[0.025] p-2 dark:bg-white/[0.03]">
                                 <div className="flex items-center gap-2">
                                     <span className="min-w-0 flex-1 truncate text-[11px] text-stone-700 dark:text-zinc-300">{project.media.find((item) => item.id === track.mediaId)?.name || t("editor.mediaRemoved")}</span>
-                                    {track.muted ? <VolumeX className="size-3.5 shrink-0 text-stone-400 dark:text-zinc-600" /> : null}
+                                    {audibility[track.id] === "muted" ? <VolumeX data-edit-track-muted={track.id} className="size-3.5 shrink-0 text-stone-400 dark:text-zinc-600" /> : null}
+                                    {audibility[track.id] === "solo" ? (
+                                        <Tooltip title={t("editor.trackSoloHint")}>
+                                            <span data-edit-track-solo-excluded={track.id} className="shrink-0 text-[10px] text-stone-400 dark:text-zinc-600">{t("editor.trackSoloExcluded")}</span>
+                                        </Tooltip>
+                                    ) : null}
                                     {track.locked ? (
                                         <Tooltip title={t("editor.trackLockHint")}>
                                             <Lock className="size-3.5 shrink-0 text-amber-600 dark:text-amber-500/90" />
                                         </Tooltip>
                                     ) : null}
                                     <Button type="text" size="small" danger icon={<Trash2 className="size-3.5" />} aria-label={t("editor.removeAudioTrack")} onClick={() => { if (!refuseLocked(Boolean(track.locked))) removeAudioTrack(projectId, track.id); }} />
+                                </div>
+                                {/* 静音 / 独奏的第二入口：与时间线轨道头上那两个开关是**同一份状态、同一个判定**
+                                    （都写 updateAudioTrack 的 muted / solo，都读 editTrackAudibility）。
+                                    轨道头按钮万一失效、或者用户根本不知道该去点轨道头时，这里始终有路可走——
+                                    曾经因为「静音键点不动」且属性区没有开关，用户完全没有别的办法取消静音。
+                                    锁定不拦这两个开关：静音 / 独奏是监听与混音状态（不是被锁保护的那类参数编辑），
+                                    轨道头上的静音、独奏、解锁按钮在锁定时同样可用，两个入口的可用性必须一致。 */}
+                                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-stone-400 dark:text-zinc-600">
+                                    <span data-edit-track-mute-switch={track.id} className="inline-flex items-center gap-1">
+                                        <Tooltip title={t("editor.trackMuteHint")}>
+                                            <span className="cursor-help">{t("editor.trackMute")}</span>
+                                        </Tooltip>
+                                        <Switch size="small" checked={track.muted === true} aria-label={t("editor.trackMuteHint")} onChange={(checked) => updateAudioTrack(projectId, track.id, { muted: checked })} />
+                                    </span>
+                                    <span data-edit-track-solo-switch={track.id} className="inline-flex items-center gap-1">
+                                        <Tooltip title={t("editor.trackSoloHint")}>
+                                            <span className="cursor-help">{t("editor.trackSolo")}</span>
+                                        </Tooltip>
+                                        <Switch size="small" checked={track.solo === true} aria-label={t("editor.trackSoloHint")} onChange={(checked) => updateAudioTrack(projectId, track.id, { solo: checked })} />
+                                    </span>
                                 </div>
                                 {/* 锁定的轨参数不可改：控件直接禁用（锁定的语义是「只读」），删除与解锁仍可用，所以不会把自己锁死。 */}
                                 <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-stone-400 dark:text-zinc-600">

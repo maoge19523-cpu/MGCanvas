@@ -467,7 +467,11 @@ function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility, d
                         title={t("editor.trackMuteHint")}
                         aria-label={track.muted ? t("editor.trackUnmute") : t("editor.trackMute")}
                         aria-pressed={track.muted === true}
-                        icon={<VolumeX className="size-3" style={{ color: track.muted ? token.colorError : token.colorTextTertiary }} />}
+                        // 图标本身必须跟着状态换：只换颜色时，未静音的按钮仍画着一只「打了叉的喇叭」，
+                        // 用户点完看到的还是同一只叉喇叭，于是判定「静音键打不开、一直在静音」——
+                        // 现象是「按钮失效」，其实是这个开关从来没有「未静音」的样子。
+                        // 与视频轨轨道头（edit-stage 的关闭原声）逐字同一写法：静音 VolumeX、正常 Volume2。
+                        icon={track.muted ? <VolumeX className="size-3" style={{ color: token.colorError }} /> : <Volume2 className="size-3" style={{ color: token.colorTextTertiary }} />}
                         onClick={() => toggle({ muted: !track.muted })}
                     />
                 </Tooltip>
@@ -535,6 +539,13 @@ function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility, d
                     viewBox="0 0 100 100"
                     preserveAspectRatio="none"
                     className={`pointer-events-none absolute inset-0 z-[2] ${audible ? "" : "opacity-50"}`}
+                    // 宽高都钉成**行盒**的 100%，缺一不可：SVG 是替换元素，只有 inset-0（top/right/bottom/left=0）
+                    // 时浏览器不会把它拉伸成行盒，而是按 viewBox 的 1:1 比例给它一个「与行等宽的正方形」——
+                    // 实测行高 36px、行宽 860px 时覆盖层是 860×860，折线落在行顶下方 227.9px、面积铺到 834.2px，
+                    // 全都在行外、被这一行的 overflow-hidden 整块裁掉：画了等于没画（用户只看得见音量基准线）。
+                    // 另外那 824px 的溢出只是「恰好」被 overflow-hidden 挡着：一旦有人去掉它或去掉 pointer-events-none，
+                    // 这个层就会盖住它下面的行。把它约束在行盒里，从根上避免这两件事。
+                    style={{ width: "100%", height: "100%" }}
                 >
                     {/* 折线下方那块面积：把「被淡变压下去多少」也画出来，光一条线看不出削掉了多少。 */}
                     <polygon ref={gainAreaRef} data-edit-track-gain-area={track.id} points={gainArea} style={{ fill: token.colorPrimaryBg }} />

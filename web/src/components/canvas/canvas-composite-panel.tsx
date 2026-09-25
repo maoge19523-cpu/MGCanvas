@@ -3,6 +3,7 @@ import { Button, Input, InputNumber, Select, Switch, Tooltip, message } from "an
 import { ChevronDown, ChevronUp, Clapperboard, Info, LoaderCircle, Mic, Music2, Pause, Play, Video, X } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
+import { timelinePlacements, timeToPercent } from "@/lib/timeline-scale";
 import { detectFfmpeg } from "@/services/platform/desktop-ffmpeg";
 import { isTauriRuntime } from "@/services/platform/desktop-runtime";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -264,8 +265,9 @@ export function CanvasCompositePanel({ node, segments: segmentsProp, music, voic
 
     // 播放头与读数一律直接改 DOM：这两个节点的 style/textContent 不参与 React 渲染，
     // 因此其它原因引起的重渲染也不会把播放中的位置冲掉。
+    // 位置与标尺刻度、片段条共用 timeToPercent：同一秒在标尺与片段行上的 x 相同。
     const paintPlayhead = (seconds: number, total = totalSeconds) => {
-        if (playheadRef.current) playheadRef.current.style.left = `${total > 0 ? Math.min(100, Math.max(0, (seconds / total) * 100)) : 0}%`;
+        if (playheadRef.current) playheadRef.current.style.left = `${Math.min(100, Math.max(0, timeToPercent(seconds, total)))}%`;
         if (previewTimeRef.current) previewTimeRef.current.textContent = formatTimelineTime(seconds);
         const index = previewClipsRef.current.findIndex((clip) => seconds < clip.offset + clip.length);
         const active = previewPlayingRef.current && index >= 0 ? previewClipsRef.current[index] : null;
@@ -476,6 +478,21 @@ export function CanvasCompositePanel({ node, segments: segmentsProp, music, voic
     const tickStep = timelineTickStep(totalSeconds);
     const ticks: number[] = [];
     for (let tick = 0; totalSeconds > 0 && tick < totalSeconds; tick += tickStep) ticks.push(Number(tick.toFixed(3)));
+
+    // 展示顺序（拖动中按预览重排）下每段的净时长：位置与宽度都由这一份时长列表按同一套换算算出。
+    // 抽成函数是为了让「时长」只有一个口径，标尺、播放头与片段条不会各算各的。
+    const segmentLength = (segment: CompositeSegmentSource) => {
+        const base = settings.segments?.[segment.node.id] || {};
+        // 拖动裁剪时用组件内预览秒数显示时长，仍然不写画布数据。
+        const preview = previewTrim && previewTrim.id === segment.node.id ? previewTrim : null;
+        const item = preview ? { ...base, ...(preview.start !== undefined ? { start: preview.start } : {}), ...(preview.end !== undefined ? { end: preview.end } : {}) } : base;
+        const source = (segment.node.metadata?.durationMs || 0) / 1000;
+        return Math.max(0, (item.end && source ? Math.min(item.end, source) : source) - (item.start || 0));
+    };
+    const displayLengths = segments.map(segmentLength);
+    // 片段条位置：left / width 都是「秒数 / 总秒数」的百分比，与标尺刻度、播放头同一套换算，
+    // 片段之间不再有 gap 吃掉像素（原先的 gap-1 与中间的「│」都会让片段条与标尺逐渐错开）。
+    const placements = timelinePlacements(displayLengths, totalSeconds);
 
     return (
         <div
@@ -772,7 +789,7 @@ export function CanvasCompositePanel({ node, segments: segmentsProp, music, voic
                                 onPointerLeave={endSeek}
                             >
                                 {ticks.map((tick) => (
-                                    <span key={tick} className="absolute top-0 flex flex-col items-center" style={{ left: `${(tick / totalSeconds) * 100}%`, transform: tick === 0 ? "none" : "translateX(-50%)" }}>
+                                    <span key={tick} className="absolute top-0 flex flex-col items-center" style={{ left: `${timeToPercent(tick, totalSeconds)}%`, transform: tick === 0 ? "none" : "translateX(-50%)" }}>
                                         <span className="h-1.5 w-px" style={{ background: theme.node.faint }} />
                                         <span className="text-[9px] leading-none tabular-nums" style={{ color: theme.node.faint }}>
                                             {timelineTickLabel(tick, tickStep)}
@@ -784,37 +801,37 @@ export function CanvasCompositePanel({ node, segments: segmentsProp, music, voic
                                 </span>
                             </div>
                         ) : null}
-                        <div className="flex items-stretch gap-1" onPointerMove={handleTimelineMove} onPointerUp={endTimelineDrag} onPointerCancel={endTimelineDrag} onPointerLeave={endTimelineDrag}>
+                        <div className="relative h-8" onPointerMove={handleTimelineMove} onPointerUp={endTimelineDrag} onPointerCancel={endTimelineDrag} onPointerLeave={endTimelineDrag}>
                             {segments.map((segment, index) => {
-                                const base = settings.segments?.[segment.node.id] || {};
-                                // 拖动裁剪时用组件内预览秒数显示时长，仍然不写画布数据。
-                                const preview = previewTrim && previewTrim.id === segment.node.id ? previewTrim : null;
-                                const item = preview ? { ...base, ...(preview.start !== undefined ? { start: preview.start } : {}), ...(preview.end !== undefined ? { end: preview.end } : {}) } : base;
-                                const source = (segment.node.metadata?.durationMs || 0) / 1000;
-                                const length = Math.max(0, (item.end && source ? Math.min(item.end, source) : source) - (item.start || 0));
-                                const share = totalSeconds > 0 ? length / totalSeconds : 1 / segments.length;
+                                const item = settings.segments?.[segment.node.id] || {};
+                                const length = displayLengths[index]!;
+                                const trimmed = Boolean(previewTrim && previewTrim.id === segment.node.id);
                                 return (
-                                    <div key={segment.node.id} className="flex min-w-0 flex-[1_1_0%] items-center gap-1" style={{ flexGrow: Math.max(0.35, share * 10) }}>
-                                        <div
-                                            className="relative h-8 min-w-0 flex-1 cursor-grab select-none rounded-md border transition-colors hover:bg-black/5 active:cursor-grabbing dark:hover:bg-white/10"
-                                            style={{ borderColor: theme.toolbar.border }}
-                                            title={`${segmentLabel(index)} · ${length.toFixed(1)} 秒（拖动换序，拖两端裁剪）`}
-                                            onPointerDown={(event) => startDrag(event, index)}
-                                            onClick={(event) => {
-                                                if (draggedRef.current) return;
-                                                // 点击片段条也是一次性事件：定位播放头到点击位置，再按原逻辑聚焦节点。
-                                                movePlayheadFromClientX(event.clientX, true);
-                                                onFocusReference(segment.node.id);
-                                            }}
-                                        >
-                                            <span className="pointer-events-none absolute inset-0 flex items-center justify-center truncate px-2 text-[10px]" style={{ color: theme.node.muted }}>
-                                                {segmentLabel(index)} · {length.toFixed(1)}s
-                                            </span>
-                                            <span className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize rounded-l-md hover:bg-black/10 dark:hover:bg-white/15" title="拖动裁剪入点" onPointerDown={(event) => startTrim(event, index, "start")} />
-                                            <span className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize rounded-r-md hover:bg-black/10 dark:hover:bg-white/15" title="拖动裁剪出点" onPointerDown={(event) => startTrim(event, index, "end")} />
-                                        </div>
+                                    <div
+                                        key={segment.node.id}
+                                        data-composite-clip={segment.node.id}
+                                        className="absolute inset-y-0 cursor-grab select-none rounded-md border transition-colors hover:bg-black/5 active:cursor-grabbing dark:hover:bg-white/10"
+                                        // 位置与宽度按时间百分比占位（与标尺、播放头同一套换算）；裁剪预览时这一段会临时压到
+                                        // 邻居上面，抬高它才看得出在变长（松手才写入画布，其余片段保持原位置）。
+                                        style={{ left: `${placements[index]!.left}%`, width: `${placements[index]!.width}%`, borderColor: theme.toolbar.border, zIndex: trimmed ? 5 : undefined }}
+                                        title={`${segmentLabel(index)} · ${length.toFixed(1)} 秒（拖动换序，拖两端裁剪）`}
+                                        onPointerDown={(event) => startDrag(event, index)}
+                                        onClick={(event) => {
+                                            if (draggedRef.current) return;
+                                            // 点击片段条也是一次性事件：定位播放头到点击位置，再按原逻辑聚焦节点。
+                                            movePlayheadFromClientX(event.clientX, true);
+                                            onFocusReference(segment.node.id);
+                                        }}
+                                    >
+                                        <span className="pointer-events-none absolute inset-0 flex items-center justify-center truncate px-2 text-[10px]" style={{ color: theme.node.muted }}>
+                                            {segmentLabel(index)} · {length.toFixed(1)}s
+                                        </span>
+                                        <span className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize rounded-l-md hover:bg-black/10 dark:hover:bg-white/15" title="拖动裁剪入点" onPointerDown={(event) => startTrim(event, index, "start")} />
+                                        <span className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize rounded-r-md hover:bg-black/10 dark:hover:bg-white/15" title="拖动裁剪出点" onPointerDown={(event) => startTrim(event, index, "end")} />
+                                        {/* 接缝标记（转场 / 硬切）画在片段内部贴着右边缘，居中压在两条片段的分界线上：
+                                            它因此不占轨道像素，去掉原来那条 gap 也不会让片段条错开。 */}
                                         {index < segments.length - 1 ? (
-                                            <span className="shrink-0 text-[10px]" style={{ color: item.transition ? theme.node.text : theme.node.faint }} title={item.transition ? "已设转场" : "硬切"}>
+                                            <span className="pointer-events-none absolute inset-y-0 right-0 z-10 flex translate-x-1/2 items-center text-[10px]" style={{ color: item.transition ? theme.node.text : theme.node.faint }} title={item.transition ? "已设转场" : "硬切"}>
                                                 {item.transition ? "◆" : "│"}
                                             </span>
                                         ) : null}

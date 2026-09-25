@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
+import { timelinePlacements } from "@/lib/timeline-scale";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
 import { CanvasCompositePanel, buildCompositePreviewClips, formatTimelineTime, resolveCompositePlayback, resolveCompositeSeek, type CompositeSegmentSource } from "./canvas-composite-panel";
@@ -160,5 +161,24 @@ describe("合成面板时间轴：标尺、播放头与预览按钮", () => {
         expect(markup).toContain("预览仅用于对时");
         // 3 个片段缩略图 + 1 个顺序预览用的隐藏播放器。
         expect(markup.match(/<video/g)?.length).toBe(segments.length + 1);
+    });
+
+    it("片段条按时间百分比占位，与标尺刻度是同一套换算（不再被 gap-1 与中间的「│」吃掉像素）", () => {
+        const markup = render();
+        const clips = [...markup.matchAll(/data-composite-clip="([^"]+)"[^>]*style="left:([-\d.eE+]+)%;width:([-\d.eE+]+)%/g)].map((match) => ({ id: match[1]!, left: Number(match[2]), width: Number(match[3]) }));
+        const ticks = [...markup.matchAll(/style="left:([-\d.eE+]+)%;transform:(?:none|translateX\(-50%\))"[\s\S]{0,200}?tabular-nums/g)].map((match) => Number(match[1]));
+        // 三段 4s / 3s / 5s，总时长 12s。
+        const expected = timelinePlacements([4, 3, 5], 12);
+
+        expect(clips.map((clip) => clip.id)).toEqual(["a", "b", "c"]);
+        clips.forEach((clip, index) => {
+            expect(clip.left).toBeCloseTo(expected[index]!.left, 12);
+            expect(clip.width).toBeCloseTo(expected[index]!.width, 12);
+        });
+        expect(clips[2]!.left + clips[2]!.width).toBeCloseTo(100, 12);
+        // 标尺刻度依次是 0/2/4/6/8/10：「4」这条刻度必须与第一段的右边缘重合。
+        expect(ticks[2]).toBeCloseTo(clips[0]!.left + clips[0]!.width, 12);
+        // 片段行不再用 flex + gap 分配宽度（那正是偏移的来源），接缝标记画在片段内部。
+        expect(markup).not.toContain("flex items-stretch gap-1");
     });
 });

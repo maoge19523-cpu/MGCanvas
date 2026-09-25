@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { editWaveformBuckets, waveformColumns, waveformHasSignal, waveformStripSeconds, waveformY } from "@/lib/edit/waveform";
 import { formatEditTime } from "@/lib/edit/timeline";
+import { timeToPercent } from "@/lib/timeline-scale";
 import { ensureEditWaveform, type EditWaveform } from "@/services/edit-waveform";
 import { useEditState } from "@/stores/use-edit-store";
 import type { EditAudioTrack, EditMedia } from "@/types/edit";
@@ -148,8 +149,9 @@ function AudioTrackStrip({ track, source, totalSeconds }: { track: EditAudioTrac
                 ref={stripRef}
                 data-edit-waveform-strip={track.id}
                 className="absolute inset-y-0 left-0 overflow-hidden rounded-[8px] border border-black/[0.09] dark:border-white/[0.09]"
-                // 条宽 = 该音轨在成片时间轴上占的秒数 / 成片总秒数：与标尺、播放头同一套百分比换算，x 严格对齐。
-                style={{ width: `${totalSeconds > 0 ? (stripSeconds / totalSeconds) * 100 : 0}%` }}
+                // 条宽 = 该音轨在成片时间轴上占的秒数 / 成片总秒数：与标尺刻度、播放头、片段条
+                // 共用 lib/timeline-scale 的同一套百分比换算，x 严格对齐（片段条不再有 gap 偏移）。
+                style={{ width: `${timeToPercent(stripSeconds, totalSeconds)}%` }}
             >
                 <canvas ref={canvasRef} data-edit-waveform={track.id} className="block h-full w-full" />
             </div>

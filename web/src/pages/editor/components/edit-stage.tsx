@@ -27,10 +27,15 @@ import {
 } from "@/lib/edit/playback-clock";
 import { EDIT_SHORTCUTS, editShortcutDisplay, editShortcutHints, isEditShortcutTargetBlocked, matchEditShortcut, type EditShortcutAction } from "@/lib/edit/shortcuts";
 import { buildEditClips, editPlaybackSeconds, editTickLabel, editTickStep, formatEditTime, resolveEditPlayback, resolveEditSeek, type EditClipView } from "@/lib/edit/timeline";
+import { timelinePlacements, timeToPercent } from "@/lib/timeline-scale";
 import { createEditClip, useEditState } from "@/stores/use-edit-store";
 import type { EditClip, EditMedia } from "@/types/edit";
 import { useEditMediaUrls } from "../use-edit-media-urls";
 import { EditAudioTrackRow } from "./edit-audio-track";
+
+// 素材没探测到时长的片段长度为 0：按百分比算宽度就是 0，既看不见也抓不住。
+// 只给它一个最小抓取宽度——绝对定位下它不会推动任何别的元素，因此不会重新引入累积偏移。
+const EDIT_CLIP_MIN_PX = 14;
 
 type EditStageProps = {
     projectId: string;
@@ -49,8 +54,13 @@ const EMPTY_CLIPS: EditClip[] = [];
  * 预览与时间轴的坐标必须完全一致，拆开就要跨组件同步播放头，反而更容易写入抖动。
  *
  * 高频交互（拖动片段换序、拖两端裁剪、拖播放头、播放）**一次都不写 store / setState**：
- * 过程量只存在 ref 里，视觉反馈直接改 DOM（flexGrow / transform / textContent / style.left），
+ * 过程量只存在 ref 里，视觉反馈直接改 DOM（style.left / style.width / transform / textContent），
  * 松手时（pointerup / pointercancel / pointerleave）才一次性提交到剪辑台 store。
+ *
+ * 时间轴几何只有一套换算（lib/timeline-scale）：标尺刻度、播放头、吸附导引线、波形条、片段条
+ * 都用「秒数 / 总秒数」的百分比定位。片段条不再用 flex + gap 分配宽度（间隙会吃掉容器像素，
+ * 片段一多就与严格百分比的标尺 / 播放头 / 波形错开），片段之间的视觉缝改由边框与内层色块
+ * 在片段**内部**留出，不占轨道像素。
  *
  * 播放由**主时钟**主导（EditPlaybackClock）：只有它是播放时间的真相，
  * 各段 <video>.currentTime 只是被定期对齐的对象，偏差超过一帧就丢帧追赶 / 补帧等待。
@@ -111,8 +121,9 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
 
     // 播放头与读数一律直接改 DOM：这两个节点的 style/textContent 不参与 React 渲染，
     // 因此其它原因引起的重渲染也不会把播放中的位置冲掉。
+    // 位置与标尺刻度、波形条、片段条共用 timeToPercent：同一秒在任何一行的 x 都相同。
     const paintPlayhead = (seconds: number, total = totalRef.current) => {
-        if (playheadRef.current) playheadRef.current.style.left = `${total > 0 ? Math.min(100, Math.max(0, (seconds / total) * 100)) : 0}%`;
+        if (playheadRef.current) playheadRef.current.style.left = `${Math.min(100, Math.max(0, timeToPercent(seconds, total)))}%`;
         if (readoutRef.current) readoutRef.current.textContent = formatEditTime(seconds);
         const index = viewsRef.current.findIndex((view) => seconds < view.offset + view.length);
         const active = playingRef.current && index >= 0 ? viewsRef.current[index] : null;
@@ -128,7 +139,7 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
             guide.style.opacity = "0";
             return;
         }
-        guide.style.left = `${Math.min(100, Math.max(0, (point.seconds / total) * 100))}%`;
+        guide.style.left = `${Math.min(100, Math.max(0, timeToPercent(point.seconds, total)))}%`;
         guide.style.opacity = "1";
     };
 
@@ -511,7 +522,7 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
     }, [snapEnabled]);
 
     // ── 时间线上的直接操作：拖片段本体换序，拖两端裁剪入点/出点，过程中开启吸附 ───────────
-    // 拖动过程只写 DOM（flexGrow / transform / textContent / 导引线位置），一条 store 写入都不发生；
+    // 拖动过程只写 DOM（style.width / transform / textContent / 导引线位置），一条 store 写入都不发生；
     // 松手时按 ref 里记下的目标值提交一次。这是 React #185 的直接对策。
     const dragRef = useRef<{ index: number; x: number; shift: number; target: number; perPixel: number; element: HTMLElement } | null>(null);
     const trimRef = useRef<{ index: number; edge: "start" | "end"; x: number; perPixel: number; pending: number | null; element: HTMLElement; label: HTMLElement | null } | null>(null);
@@ -559,6 +570,8 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
         const width = bar.getBoundingClientRect().width;
         draggedRef.current = true;
         velocityRef.current = { x: event.clientX, at: performance.now() };
+        // 条宽 = 本段秒数占轨道宽度的百分比，所以「秒 / 像素」就是全轨道共用的总秒数 / 轨道宽，
+        // 与标尺、播放头同一套换算（不再受 gap 影响，缩放与吸附阈值都因此严格对齐）。
         trimRef.current = {
             index,
             edge,
@@ -568,6 +581,8 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
             element: bar,
             label: bar.querySelector("[data-clip-label]"),
         };
+        // 裁剪时这条片段会临时压到邻居上面（宽度变大）；抬高它，否则被邻居盖住看不出在长。
+        bar.style.zIndex = "5";
     };
 
     /** 裁剪值的合法区间：入点不低于 0、不越过出点前 0.1 秒；出点不早于入点后 0.1 秒、不超过素材全长。 */
@@ -605,9 +620,11 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
                 }
             }
             trim.pending = pending;
-            // 只改这一条片段自己的宽度与标签：flex 布局会让后面的片段自动跟着挪，无需 React 参与。
+            // 只改这一条片段自己的宽度（同一套「秒数 → 百分比」换算），标尺 / 播放头 / 波形的位置
+            // 因此始终有效——拖动中就能拿波形当尺子对准入出点。位置左边缘不动：顺序时间线里
+            // 该段的起点由前面各段时长决定，松手提交后整行才按新总时长重排一次。
             const length = trim.edge === "start" ? (view.end || view.sourceSeconds) - pending : pending - view.start;
-            trim.element.style.flexGrow = String(Math.max(0.2, length));
+            trim.element.style.width = `${timeToPercent(Math.max(0, length), totalRef.current)}%`;
             if (trim.label) trim.label.textContent = clipLabel(view, trim.index, Math.max(0, length));
             paintGuide(guide);
             return;
@@ -661,6 +678,9 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
             const current = trim.edge === "start" ? view?.start : view?.end;
             if (view && trim.pending !== current) updateClip(projectId, view.id, trim.edge === "start" ? { start: trim.pending } : { end: trim.pending });
         }
+        // 裁剪过程直写的 z-index 必须在松手时清掉：React 的 style 差分里没有这个键，
+        // 不清就会一直留着（下一次渲染也不会覆盖它）。
+        if (trim) trim.element.style.zIndex = "";
     };
 
     const movePlayheadFromClientX = (clientX: number, commit: boolean) => {
@@ -775,6 +795,9 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
     const tickStep = editTickStep(totalSeconds);
     const ticks: number[] = [];
     for (let tickValue = 0; totalSeconds > 0 && tickValue < totalSeconds; tickValue += tickStep) ticks.push(Number(tickValue.toFixed(3)));
+    // 片段条位置：与上面刻度、下面的播放头 / 波形共用 timeline-scale 这一套换算，
+    // 因此第 k 段的右边缘严格落在「前 k 段时长之和」上，不再被 gap 吃掉像素而累积偏移。
+    const placements = timelinePlacements(views.map((view) => view.length), totalSeconds);
     const empty = views.length === 0;
 
     // 时间线空状态的一键引导：把已探测到时长的视频素材按素材顺序一次排上时间线（一次写入）。
@@ -888,7 +911,7 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
                     <div className="relative mt-2" ref={timelineRef}>
                         <div className="relative h-6 cursor-pointer touch-none select-none" title={t("editor.seekHint")} onPointerDown={(event) => { seekingRef.current = true; movePlayheadFromClientX(event.clientX, false); }} onPointerMove={(event) => { if (seekingRef.current) movePlayheadFromClientX(event.clientX, false); }} onPointerUp={() => { seekingRef.current = false; commitPlayhead(secondsRef.current); }} onPointerCancel={() => { seekingRef.current = false; }} onPointerLeave={() => { seekingRef.current = false; }}>
                             {ticks.map((tickValue) => (
-                                <span key={tickValue} className="absolute top-0 flex flex-col items-center" style={{ left: `${(tickValue / totalSeconds) * 100}%`, transform: tickValue === 0 ? "none" : "translateX(-50%)" }}>
+                                <span key={tickValue} className="absolute top-0 flex flex-col items-center" style={{ left: `${timeToPercent(tickValue, totalSeconds)}%`, transform: tickValue === 0 ? "none" : "translateX(-50%)" }}>
                                     <span className="h-1.5 w-px bg-stone-300 dark:bg-zinc-700" />
                                     <span className="text-[9px] leading-none tabular-nums text-stone-400 dark:text-zinc-600">{editTickLabel(tickValue, tickStep)}</span>
                                 </span>
@@ -896,17 +919,23 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
                             <span className="absolute bottom-0 right-0 text-[9px] leading-none text-stone-400 dark:text-zinc-600">{t("editor.seconds")}</span>
                         </div>
 
-                        <div className="flex items-stretch gap-1" onPointerMove={handleTimelineMove} onPointerUp={endTimelineDrag} onPointerCancel={endTimelineDrag} onPointerLeave={endTimelineDrag}>
+                        <div className="relative h-12" onPointerMove={handleTimelineMove} onPointerUp={endTimelineDrag} onPointerCancel={endTimelineDrag} onPointerLeave={endTimelineDrag}>
                             {views.map((view, index) => (
                                 <div
                                     key={view.id}
                                     data-edit-clip={view.id}
-                                    className={`relative h-12 min-w-[14px] cursor-grab touch-none select-none overflow-hidden rounded-[8px] border transition-colors active:cursor-grabbing ${view.id === clipId ? "border-[#756bff]" : "border-black/[0.09] hover:bg-black/[0.03] dark:border-white/[0.09] dark:hover:bg-white/[0.04]"}`}
-                                    // 片段条宽度按真实时长铺开：flexGrow 就是该段秒数，拖动裁剪时直接改这个值即可让后面自动让位。
-                                    style={{ flex: `${Math.max(0.2, view.length)} 1 0%` }}
+                                    className={`absolute inset-y-0 cursor-grab touch-none select-none overflow-hidden rounded-[8px] border transition-colors active:cursor-grabbing ${view.id === clipId ? "border-[#756bff]" : "border-black/[0.09] hover:bg-black/[0.03] dark:border-white/[0.09] dark:hover:bg-white/[0.04]"}`}
+                                    // 片段条按真实时长占位：left / width 都是「秒数 / 总秒数」的百分比，
+                                    // 与标尺刻度、播放头、波形条同一套换算，第 k 段的右边缘就是前 k 段时长之和。
+                                    // 未探测到时长的片段长度为 0（宽度 0% 会看不见也抓不住），只给它一个最小抓取宽度：
+                                    // 绝对定位下它不会推动别的元素，累积偏移仍然是 0。
+                                    style={{ left: `${placements[index]!.left}%`, width: `${placements[index]!.width}%`, minWidth: view.hasDuration ? undefined : EDIT_CLIP_MIN_PX }}
                                     title={t("editor.clipHint", { index: index + 1, seconds: view.length.toFixed(1) })}
                                     onPointerDown={(event) => { startReorder(event, index); onSelectClip(view.id); }}
                                 >
+                                    {/* 视觉缝画在片段内部：外框（含 1px 边框）严格落在时间位置上，内层色块左右各内缩 2px，
+                                        于是相邻片段的底色之间恒有 4px 空隙——分隔不占用轨道像素，不引入任何偏移。 */}
+                                    <span className="pointer-events-none absolute inset-y-0 left-[2px] right-[2px] rounded-[6px] bg-black/[0.03] dark:bg-white/[0.04]" />
                                     <span data-clip-label className="pointer-events-none absolute inset-0 flex items-center gap-1 truncate px-2 text-[10px] text-stone-500 dark:text-zinc-400">
                                         {view.hasDuration ? clipLabel(view, index, view.length) : t("editor.clipNoDuration", { index: index + 1 })}
                                     </span>
@@ -922,8 +951,9 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
 
                         {/* 吸附导引线：吸附到哪就画到哪，位置只由 paintGuide 直写 style.left（不弹时间气泡）。 */}
                         <div ref={guideRef} data-edit-snap-guide className="pointer-events-none absolute inset-y-0 z-10 w-px" style={{ left: "0%", opacity: 0, background: token.colorPrimary }} />
-                        {/* 播放头：位置只由 paintPlayhead 直接写 style.left，不参与 React 渲染。 */}
-                        <div ref={playheadRef} data-edit-playhead className="pointer-events-none absolute inset-y-0 w-px bg-[#756bff]" style={{ left: "0%" }} />
+                        {/* 播放头：位置只由 paintPlayhead 直接写 style.left，不参与 React 渲染；z-10 保证它压在
+                            片段条之上（裁剪中片段条会临时抬到 z-5，插在两者之间）。 */}
+                        <div ref={playheadRef} data-edit-playhead className="pointer-events-none absolute inset-y-0 z-10 w-px bg-[#756bff]" style={{ left: "0%" }} />
                     </div>
                 )}
 

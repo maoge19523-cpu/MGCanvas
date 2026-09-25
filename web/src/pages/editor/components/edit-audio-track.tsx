@@ -36,7 +36,10 @@ export function EditAudioTrackRow({ projectId, totalSeconds }: { projectId: stri
     const media = project?.media ?? EMPTY_MEDIA;
 
     return (
-        <div data-edit-audio-track className="thin-scrollbar mt-1.5 flex max-h-[80px] shrink-0 flex-col gap-1 overflow-y-auto">
+        // 音轨行**不再自己滚动**：滚动条（3 条以上就会出现）会从它自己的宽度里吃掉 6~15px，
+        // 波形条随之比标尺、播放头、片段条窄，音画对齐的尺子就废了。
+        // 音轨多时整条时间轴统一在外层那一个容器里滚动，滚动条扣掉的是四类元素共用的同一个宽度（见 edit-stage）。
+        <div data-edit-audio-track className="mt-1.5 flex flex-col gap-1">
             {tracks.length ? (
                 tracks.map((track) => <AudioTrackStrip key={track.id} track={track} source={media.find((item) => item.id === track.mediaId)} totalSeconds={totalSeconds} />)
             ) : (

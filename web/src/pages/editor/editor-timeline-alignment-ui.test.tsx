@@ -158,3 +158,74 @@ describe("剪辑台时间线：片段条与标尺 / 播放头 / 波形共用同�
         expect(markup.match(/<div data-edit-clip="c1"[^>]*>/)?.[0] ?? "").not.toContain("min-width");
     });
 });
+
+/** 音轨数量是这条缺陷的唯一开关：0 / 1 条时音轨行不滚动（看起来完全正常），≥3 条才出现那条吃宽度的滚动条。 */
+const TRACK_COUNTS = [0, 1, 3, 5, 10];
+
+function withTracks(count: number): EditProject {
+    return { ...demo(CLIPS), audioTracks: Array.from({ length: count }, (_, index) => ({ id: `t${index + 1}`, mediaId: "m3", volume: 1, fadeIn: 0, fadeOut: 0, loop: false })) };
+}
+
+const occurrences = (text: string, needle: string) => text.split(needle).length - 1;
+
+describe("剪辑台时间线：音轨数量变化时，波形条与标尺 / 片段条 / 播放头仍摊在同一个可定位宽度上（真实产物读回）", () => {
+    it("音轨 0 / 1 / 3 / 5 / 10 条：音轨行不再自带滚动条，纵向滚动只在包住全部时间定位元素的容器上", () => {
+        for (const count of TRACK_COUNTS) {
+            const markup = render(withTracks(count), `editor-timeline-width-${count}`);
+
+            // 1) 音轨行自己不再是滚动容器：滚动条只会从**它自己**的宽度里扣像素，而标尺 / 片段条不会——
+            //    这正是「波形条比标尺窄 6~15px」的根因，所以这一行不允许出现 overflow 与 max-h。
+            const row = markup.match(/<div data-edit-audio-track[^>]*>/)?.[0] ?? "";
+            expect(row).toContain("data-edit-audio-track");
+            expect(row).not.toMatch(/overflow/);
+            expect(row).not.toMatch(/max-h-/);
+            expect(row).not.toContain("width:");
+
+            // 2) 唯一的纵向滚动在共享容器上：固定预留滚动条槽（宽度不随音轨数量跳），并挡住横向溢出
+            //    （标尺末端刻度是 left:100% + translateX(-50%)，标签会向右悬挑，否则会凭空多一条横向滚动条）。
+            const scroller = markup.match(/<div data-edit-timeline-scroll[^>]*>/)?.[0] ?? "";
+            expect(scroller).toContain("overflow-y-auto");
+            expect(scroller).toContain("overflow-x-hidden");
+            expect(scroller).toContain("scrollbar-gutter:stable");
+            expect(occurrences(markup, "data-edit-timeline-scroll")).toBe(1);
+            // 时间线所在的区域本身也不再套一层滚动（否则标题栏与快捷键行会跟着滚走）。
+            expect(markup.match(/<div data-edit-area="timeline"[^>]*>/)?.[0] ?? "").not.toMatch(/overflow-y/);
+
+            // 3) 标尺刻度、片段条、波形条、播放头一个都不落在共享容器之外（切片到播放头为止）。
+            const from = markup.indexOf("data-edit-timeline-scroll");
+            const end = markup.indexOf(">", markup.indexOf("data-edit-playhead")) + 1;
+            const inner = markup.slice(from, end);
+            const outer = markup.slice(end);
+            expect(occurrences(inner, 'data-edit-clip="')).toBe(occurrences(markup, 'data-edit-clip="'));
+            expect(occurrences(inner, 'data-edit-waveform-strip="')).toBe(count);
+            expect(occurrences(markup, 'data-edit-waveform-strip="')).toBe(count);
+            expect(occurrences(inner, "translateX(-50%)")).toBe(occurrences(markup, "translateX(-50%)"));
+            expect(occurrences(outer, 'data-edit-clip="')).toBe(0);
+            expect(occurrences(outer, 'data-edit-waveform-strip="')).toBe(0);
+            expect(occurrences(outer, "translateX(-50%)")).toBe(0);
+        }
+    });
+
+    it("音轨 5 条时的真实产物：音轨行只剩间隙，波形条宽度只有百分比、没有像素宽度（同一份产物落盘读回）", () => {
+        const markup = render(withTracks(5), "editor-timeline-width-5-evidence");
+        const row = markup.match(/<div data-edit-audio-track[^>]*>/)?.[0] ?? "";
+
+        // 纯函数测试里的 36px 条高 / 4px 间隙就是这两处类名：改这里必须同步改那条模型。
+        expect(row).toContain("gap-1");
+        expect(row).toContain("flex-col");
+        expect(occurrences(markup, 'class="relative h-9 shrink-0 overflow-hidden rounded-[8px]')).toBe(5);
+
+        // 每条波形条只有「秒数 / 总秒数」的百分比宽度（相对共享容器），没有任何像素宽度与自己的滚动容器。
+        const strips = [...markup.matchAll(/data-edit-waveform-strip="([^"]+)"[^>]*style="width:([-\d.eE+]+)%/g)];
+        expect(strips.map((match) => match[1])).toEqual(["t1", "t2", "t3", "t4", "t5"]);
+        for (const strip of strips) expect(Number(strip[2])).toBeCloseTo(Number(timeToPercent(20, TOTAL).toFixed(14)), 12);
+        expect(occurrences(markup, 'data-edit-waveform-strip="t1"')).toBe(1);
+        // 波形条外框（h-9 那一层）只有裁圆角的 overflow-hidden：没有 overflow-y-auto，也就没有会吃掉宽度的滚动条。
+        const boxes = [...markup.matchAll(/<div class="relative h-9[^"]*"[^>]*>/g)].map((match) => match[0]);
+        expect(boxes.length).toBe(5);
+        for (const box of boxes) {
+            expect(box).toContain("overflow-hidden");
+            expect(box).not.toMatch(/overflow-y|overflow-auto|max-h-/);
+        }
+    });
+});

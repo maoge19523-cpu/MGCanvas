@@ -613,7 +613,7 @@ export default {
             updatedUnknown: "Update time unavailable",
             saveName: "Save name",
             cancelRename: "Cancel rename",
-            export: "Export",
+            export: "Download canvas",
             rename: "Rename",
             delete: "Delete",
             deleteTitle: "Delete canvases?",

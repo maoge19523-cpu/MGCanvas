@@ -187,3 +187,114 @@ describe("片段条占位：与标尺、播放头、波形共用同一套换算"
         }
     });
 });
+
+/**
+ * 「可定位宽度」：百分比换算之外的前提。标尺 / 播放头 / 导引线 / 片段条 / 波形条只有摊在**同一个**
+ * 宽度上，同一秒才会落在同一像素；而滚动条会从它所在的那个容器里扣掉像素。
+ *
+ * 修复前：音轨行自己 `overflow-y-auto` + `max-h-[80px]`，音轨 ≥3 条时出现滚动条，
+ * 滚动条只吃音轨行自己的宽度 → 波形条比标尺 / 片段条窄 6~15px，音画对齐的尺子失效。
+ * 修复后：纵向滚动只放在包住全部时间定位元素的 `[data-edit-timeline-scroll]` 上，并固定预留
+ * 滚动条槽（scrollbar-gutter: stable）→ 四类元素拿到同一个宽度，且与音轨数量无关。
+ *
+ * 这里的断言必须是**像素**：百分比断言抓不到这个缺陷——修复前波形条的 `width:100%` 与标尺末尾的
+ * 100% 同样「相等」，错的是同一秒换算出来的像素位置（与上一次「只断言末尾对齐」漏掉中间段同理，
+ * 所以下面按多个时刻逐一比对，而不是只看两端）。
+ */
+const AUDIO_STRIP_PX = 36; // 组件里波形条的 h-9
+const AUDIO_GAP_PX = 4; // 组件里音轨行的 gap-1
+const LEGACY_AUDIO_ROW_MAX_PX = 80; // 修复前音轨行的 max-h-[80px]
+const SCROLLBAR_PX = 11; // thin 滚动条的名义宽度（Windows/WebView2；默认滚动条约 15px）
+
+const safePx = (value: number) => (Number.isFinite(value) && value > 0 ? value : 0);
+
+/** 音轨行的内容高度：0 条时是那行 h-9 的虚线占位。 */
+function audioRowContentPx(trackCount: number) {
+    return trackCount > 0 ? trackCount * AUDIO_STRIP_PX + (trackCount - 1) * AUDIO_GAP_PX : AUDIO_STRIP_PX;
+}
+
+/** 修复前：音轨行自带纵向滚动 → 只有波形条那一行被扣掉一个滚动条宽度。 */
+function legacyRowWidths(containerPx: number, trackCount: number) {
+    const width = safePx(containerPx);
+    const scrolls = audioRowContentPx(trackCount) > LEGACY_AUDIO_ROW_MAX_PX;
+    return { ruler: width, clip: width, waveform: scrolls ? Math.max(0, width - SCROLLBAR_PX) : width, scrolls };
+}
+
+/** 修复后：纵向滚动在共享容器上（槽位固定预留）→ 四类元素同一个宽度，与音轨数量无关。 */
+function sharedRowWidths(containerPx: number) {
+    const width = Math.max(0, safePx(containerPx) - SCROLLBAR_PX);
+    return { ruler: width, clip: width, waveform: width, playhead: width, guide: width };
+}
+
+describe("时间轴同源宽度：音轨行不得自己滚动，否则波形条会窄于标尺", () => {
+    const TRACK_COUNTS = [0, 1, 3, 5, 10];
+    const CONTAINER_PX = 720;
+
+    it("音轨 0 / 1 / 3 / 5 / 10 条：波形条与标尺、片段条、播放头、导引线拿到同一个可定位宽度", () => {
+        for (const trackCount of TRACK_COUNTS) {
+            const width = sharedRowWidths(CONTAINER_PX);
+            expect(width.waveform).toBe(width.ruler);
+            expect(width.waveform).toBe(width.clip);
+            expect(width.waveform).toBe(width.playhead);
+            expect(width.waveform).toBe(width.guide);
+            expect(audioRowContentPx(trackCount)).toBeGreaterThan(0); // 音轨行始终占住这一行
+        }
+        // 音轨数量变化时宽度一个像素都不变（滚动条槽固定预留，不随音轨数量出现 / 消失）。
+        expect(new Set(TRACK_COUNTS.map(() => sharedRowWidths(CONTAINER_PX).waveform)).size).toBe(1);
+        expect(sharedRowWidths(CONTAINER_PX).waveform).toBe(CONTAINER_PX - SCROLLBAR_PX);
+    });
+
+    it("同一秒在四类元素上落在同一像素：不只两端对齐，中间时刻也必须一致", () => {
+        for (const trackCount of TRACK_COUNTS) {
+            const width = sharedRowWidths(CONTAINER_PX);
+            for (const seconds of [0, 1.25, 3, 6, 7.5, 11.75, 12]) {
+                const onWaveform = (timeToPercent(seconds, 12) / 100) * width.waveform;
+                expect((timeToPercent(seconds, 12) / 100) * width.ruler).toBeCloseTo(onWaveform, 12);
+                expect((timeToPercent(seconds, 12) / 100) * width.clip).toBeCloseTo(onWaveform, 12);
+                expect((timeToPercent(seconds, 12) / 100) * width.playhead).toBeCloseTo(onWaveform, 12);
+                expect((timeToPercent(seconds, 12) / 100) * width.guide).toBeCloseTo(onWaveform, 12);
+                expect(audioRowContentPx(trackCount)).toBeGreaterThan(0);
+            }
+        }
+    });
+
+    it("同一条断言对修复前的实现会失败：音轨 ≥3 条时波形条恰好窄一个滚动条宽度", () => {
+        // 0 条与 1 条时音轨行不滚动，修复前后一样——只看这两个数字会误判「没问题」。
+        for (const trackCount of [0, 1]) {
+            const legacy = legacyRowWidths(CONTAINER_PX, trackCount);
+            expect(legacy.scrolls).toBe(false);
+            expect(legacy.ruler - legacy.waveform).toBe(0);
+        }
+        for (const trackCount of [3, 5, 10]) {
+            const legacy = legacyRowWidths(CONTAINER_PX, trackCount);
+            expect(legacy.scrolls).toBe(true);
+            expect(legacy.ruler - legacy.waveform).toBe(SCROLLBAR_PX);
+            expect(legacy.ruler - legacy.waveform).toBeGreaterThan(0); // 这条在修复前必然不成立
+        }
+        // 错位从中间时刻就开始了：偏差 = 该时刻的位置占比 × 滚动条宽度，不只是末尾少一点。
+        const legacy = legacyRowWidths(CONTAINER_PX, 5);
+        const midpoint = timeToPercent(6, 12) / 100;
+        expect(midpoint * legacy.ruler - midpoint * legacy.waveform).toBeCloseTo(midpoint * SCROLLBAR_PX, 12);
+        expect(midpoint * legacy.ruler - midpoint * legacy.waveform).toBeGreaterThan(5);
+        // 而百分比断言抓不到它：修复前两边的宽度都是 100%（这正是必须断言像素的原因）。
+        expect(timeToPercent(12, 12)).toBe(100);
+    });
+
+    it("边界：容器极窄、比滚动条还窄、音轨为 0 或很多时都不出现负宽度 / NaN", () => {
+        for (const trackCount of [0, 1, 3, 5, 50]) {
+            for (const containerPx of [0, 4, SCROLLBAR_PX - 1, SCROLLBAR_PX, 320, 1920]) {
+                const width = sharedRowWidths(containerPx);
+                for (const value of Object.values(width)) {
+                    expect(Number.isFinite(value)).toBe(true);
+                    expect(value).toBeGreaterThanOrEqual(0);
+                }
+                expect(audioRowContentPx(trackCount)).toBeGreaterThan(0);
+            }
+        }
+        expect(sharedRowWidths(0).waveform).toBe(0);
+        expect(sharedRowWidths(-50).waveform).toBe(0);
+        expect(sharedRowWidths(SCROLLBAR_PX).waveform).toBe(0);
+        expect(sharedRowWidths(Number.NaN).waveform).toBe(0);
+        expect(sharedRowWidths(1920).waveform).toBe(1920 - SCROLLBAR_PX);
+    });
+});

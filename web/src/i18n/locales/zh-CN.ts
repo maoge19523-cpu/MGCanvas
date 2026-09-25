@@ -607,7 +607,7 @@ export default {
             updatedUnknown: "更新时间未知",
             saveName: "保存名称",
             cancelRename: "取消重命名",
-            export: "导出",
+            export: "下载画布",
             rename: "重命名",
             delete: "删除",
             deleteTitle: "删除画布？",

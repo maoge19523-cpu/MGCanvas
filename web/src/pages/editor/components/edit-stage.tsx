@@ -62,6 +62,11 @@ const EMPTY_CLIPS: EditClip[] = [];
  * 片段一多就与严格百分比的标尺 / 播放头 / 波形错开），片段之间的视觉缝改由边框与内层色块
  * 在片段**内部**留出，不占轨道像素。
  *
+ * 百分比之外还有一层前提：**这些元素必须摊在同一个可定位宽度上**。音轨行原先自己 overflow-y-auto，
+ * 3 条以上时滚动条只吃它自己的宽度，波形条于是比标尺窄 6~15px。现在纵向滚动只放在包住全部
+ * 时间定位元素的 [data-edit-timeline-scroll] 上（并固定预留滚动条槽），宽度对四类元素完全一致。
+ * 改这一块时记住：任何**只包住其中一部分**的滚动容器 / 内边距 / 负外边距，都会重新把宽度拆成两套。
+ *
  * 播放由**主时钟**主导（EditPlaybackClock）：只有它是播放时间的真相，
  * 各段 <video>.currentTime 只是被定期对齐的对象，偏差超过一帧就丢帧追赶 / 补帧等待。
  *
@@ -908,52 +913,61 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
                         ) : null}
                     </div>
                 ) : (
-                    <div className="relative mt-2" ref={timelineRef}>
-                        <div className="relative h-6 cursor-pointer touch-none select-none" title={t("editor.seekHint")} onPointerDown={(event) => { seekingRef.current = true; movePlayheadFromClientX(event.clientX, false); }} onPointerMove={(event) => { if (seekingRef.current) movePlayheadFromClientX(event.clientX, false); }} onPointerUp={() => { seekingRef.current = false; commitPlayhead(secondsRef.current); }} onPointerCancel={() => { seekingRef.current = false; }} onPointerLeave={() => { seekingRef.current = false; }}>
-                            {ticks.map((tickValue) => (
-                                <span key={tickValue} className="absolute top-0 flex flex-col items-center" style={{ left: `${timeToPercent(tickValue, totalSeconds)}%`, transform: tickValue === 0 ? "none" : "translateX(-50%)" }}>
-                                    <span className="h-1.5 w-px bg-stone-300 dark:bg-zinc-700" />
-                                    <span className="text-[9px] leading-none tabular-nums text-stone-400 dark:text-zinc-600">{editTickLabel(tickValue, tickStep)}</span>
-                                </span>
-                            ))}
-                            <span className="absolute bottom-0 right-0 text-[9px] leading-none text-stone-400 dark:text-zinc-600">{t("editor.seconds")}</span>
-                        </div>
-
-                        <div className="relative h-12" onPointerMove={handleTimelineMove} onPointerUp={endTimelineDrag} onPointerCancel={endTimelineDrag} onPointerLeave={endTimelineDrag}>
-                            {views.map((view, index) => (
-                                <div
-                                    key={view.id}
-                                    data-edit-clip={view.id}
-                                    className={`absolute inset-y-0 cursor-grab touch-none select-none overflow-hidden rounded-[8px] border transition-colors active:cursor-grabbing ${view.id === clipId ? "border-[#756bff]" : "border-black/[0.09] hover:bg-black/[0.03] dark:border-white/[0.09] dark:hover:bg-white/[0.04]"}`}
-                                    // 片段条按真实时长占位：left / width 都是「秒数 / 总秒数」的百分比，
-                                    // 与标尺刻度、播放头、波形条同一套换算，第 k 段的右边缘就是前 k 段时长之和。
-                                    // 未探测到时长的片段长度为 0（宽度 0% 会看不见也抓不住），只给它一个最小抓取宽度：
-                                    // 绝对定位下它不会推动别的元素，累积偏移仍然是 0。
-                                    style={{ left: `${placements[index]!.left}%`, width: `${placements[index]!.width}%`, minWidth: view.hasDuration ? undefined : EDIT_CLIP_MIN_PX }}
-                                    title={t("editor.clipHint", { index: index + 1, seconds: view.length.toFixed(1) })}
-                                    onPointerDown={(event) => { startReorder(event, index); onSelectClip(view.id); }}
-                                >
-                                    {/* 视觉缝画在片段内部：外框（含 1px 边框）严格落在时间位置上，内层色块左右各内缩 2px，
-                                        于是相邻片段的底色之间恒有 4px 空隙——分隔不占用轨道像素，不引入任何偏移。 */}
-                                    <span className="pointer-events-none absolute inset-y-0 left-[2px] right-[2px] rounded-[6px] bg-black/[0.03] dark:bg-white/[0.04]" />
-                                    <span data-clip-label className="pointer-events-none absolute inset-0 flex items-center gap-1 truncate px-2 text-[10px] text-stone-500 dark:text-zinc-400">
-                                        {view.hasDuration ? clipLabel(view, index, view.length) : t("editor.clipNoDuration", { index: index + 1 })}
+                    // 时间轴唯一的纵向滚动只在这一个容器上：标尺、片段行、音轨行、导引线、播放头都在它里面，
+                    // 滚动条扣掉的是它们共用的同一个宽度，四类按时间定位的元素因此永远同宽同源；
+                    // scrollbar-gutter: stable 让滚动条槽一直预留，音轨数量变化时宽度也不再跳。
+                    // 反例（本次修的缺陷）：音轨行自己 overflow-y-auto——3 条以上时滚动条只吃它自己的宽度，
+                    // 波形条就比标尺窄 6~15px，音画这把尺子随之失效。
+                    // pr-4 + overflow-x-hidden：标尺末端的刻度是 left:100% + translateX(-50%)，标签会向右悬挑，
+                    // 留出这段内边距既不会切掉标签，也不会凭空多出一条横向滚动条。
+                    <div data-edit-timeline-scroll className="thin-scrollbar mt-2 min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-4" style={{ scrollbarGutter: "stable" }}>
+                        <div className="relative" ref={timelineRef}>
+                            <div className="relative h-6 cursor-pointer touch-none select-none" title={t("editor.seekHint")} onPointerDown={(event) => { seekingRef.current = true; movePlayheadFromClientX(event.clientX, false); }} onPointerMove={(event) => { if (seekingRef.current) movePlayheadFromClientX(event.clientX, false); }} onPointerUp={() => { seekingRef.current = false; commitPlayhead(secondsRef.current); }} onPointerCancel={() => { seekingRef.current = false; }} onPointerLeave={() => { seekingRef.current = false; }}>
+                                {ticks.map((tickValue) => (
+                                    <span key={tickValue} className="absolute top-0 flex flex-col items-center" style={{ left: `${timeToPercent(tickValue, totalSeconds)}%`, transform: tickValue === 0 ? "none" : "translateX(-50%)" }}>
+                                        <span className="h-1.5 w-px bg-stone-300 dark:bg-zinc-700" />
+                                        <span className="text-[9px] leading-none tabular-nums text-stone-400 dark:text-zinc-600">{editTickLabel(tickValue, tickStep)}</span>
                                     </span>
-                                    <span className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize rounded-l-[8px] hover:bg-black/10 dark:hover:bg-white/15" title={t("editor.trimStart")} onPointerDown={(event) => startTrim(event, index, "start")} />
-                                    <span className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize rounded-r-[8px] hover:bg-black/10 dark:hover:bg-white/15" title={t("editor.trimEnd")} onPointerDown={(event) => startTrim(event, index, "end")} />
-                                </div>
-                            ))}
+                                ))}
+                                <span className="absolute bottom-0 right-0 text-[9px] leading-none text-stone-400 dark:text-zinc-600">{t("editor.seconds")}</span>
+                            </div>
+
+                            <div className="relative h-12" onPointerMove={handleTimelineMove} onPointerUp={endTimelineDrag} onPointerCancel={endTimelineDrag} onPointerLeave={endTimelineDrag}>
+                                {views.map((view, index) => (
+                                    <div
+                                        key={view.id}
+                                        data-edit-clip={view.id}
+                                        className={`absolute inset-y-0 cursor-grab touch-none select-none overflow-hidden rounded-[8px] border transition-colors active:cursor-grabbing ${view.id === clipId ? "border-[#756bff]" : "border-black/[0.09] hover:bg-black/[0.03] dark:border-white/[0.09] dark:hover:bg-white/[0.04]"}`}
+                                        // 片段条按真实时长占位：left / width 都是「秒数 / 总秒数」的百分比，
+                                        // 与标尺刻度、播放头、波形条同一套换算，第 k 段的右边缘就是前 k 段时长之和。
+                                        // 未探测到时长的片段长度为 0（宽度 0% 会看不见也抓不住），只给它一个最小抓取宽度：
+                                        // 绝对定位下它不会推动别的元素，累积偏移仍然是 0。
+                                        style={{ left: `${placements[index]!.left}%`, width: `${placements[index]!.width}%`, minWidth: view.hasDuration ? undefined : EDIT_CLIP_MIN_PX }}
+                                        title={t("editor.clipHint", { index: index + 1, seconds: view.length.toFixed(1) })}
+                                        onPointerDown={(event) => { startReorder(event, index); onSelectClip(view.id); }}
+                                    >
+                                        {/* 视觉缝画在片段内部：外框（含 1px 边框）严格落在时间位置上，内层色块左右各内缩 2px，
+                                            于是相邻片段的底色之间恒有 4px 空隙——分隔不占用轨道像素，不引入任何偏移。 */}
+                                        <span className="pointer-events-none absolute inset-y-0 left-[2px] right-[2px] rounded-[6px] bg-black/[0.03] dark:bg-white/[0.04]" />
+                                        <span data-clip-label className="pointer-events-none absolute inset-0 flex items-center gap-1 truncate px-2 text-[10px] text-stone-500 dark:text-zinc-400">
+                                            {view.hasDuration ? clipLabel(view, index, view.length) : t("editor.clipNoDuration", { index: index + 1 })}
+                                        </span>
+                                        <span className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize rounded-l-[8px] hover:bg-black/10 dark:hover:bg-white/15" title={t("editor.trimStart")} onPointerDown={(event) => startTrim(event, index, "start")} />
+                                        <span className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize rounded-r-[8px] hover:bg-black/10 dark:hover:bg-white/15" title={t("editor.trimEnd")} onPointerDown={(event) => startTrim(event, index, "end")} />
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* 音轨行：音频只出现在右侧属性区的「音轨」列表里，看不到波形就没法做音画对齐，
+                                所以在这里按同一条时间轴给每条音轨铺一行波形（位置与宽度都用百分比，与标尺、播放头同一套换算）。 */}
+                            <EditAudioTrackRow projectId={projectId} totalSeconds={totalSeconds} />
+
+                            {/* 吸附导引线：吸附到哪就画到哪，位置只由 paintGuide 直写 style.left（不弹时间气泡）。 */}
+                            <div ref={guideRef} data-edit-snap-guide className="pointer-events-none absolute inset-y-0 z-10 w-px" style={{ left: "0%", opacity: 0, background: token.colorPrimary }} />
+                            {/* 播放头：位置只由 paintPlayhead 直接写 style.left，不参与 React 渲染；z-10 保证它压在
+                                片段条之上（裁剪中片段条会临时抬到 z-5，插在两者之间）。 */}
+                            <div ref={playheadRef} data-edit-playhead className="pointer-events-none absolute inset-y-0 z-10 w-px bg-[#756bff]" style={{ left: "0%" }} />
                         </div>
-
-                        {/* 音轨行：音频只出现在右侧属性区的「音轨」列表里，看不到波形就没法做音画对齐，
-                            所以在这里按同一条时间轴给每条音轨铺一行波形（位置与宽度都用百分比，与标尺、播放头同一套换算）。 */}
-                        <EditAudioTrackRow projectId={projectId} totalSeconds={totalSeconds} />
-
-                        {/* 吸附导引线：吸附到哪就画到哪，位置只由 paintGuide 直写 style.left（不弹时间气泡）。 */}
-                        <div ref={guideRef} data-edit-snap-guide className="pointer-events-none absolute inset-y-0 z-10 w-px" style={{ left: "0%", opacity: 0, background: token.colorPrimary }} />
-                        {/* 播放头：位置只由 paintPlayhead 直接写 style.left，不参与 React 渲染；z-10 保证它压在
-                            片段条之上（裁剪中片段条会临时抬到 z-5，插在两者之间）。 */}
-                        <div ref={playheadRef} data-edit-playhead className="pointer-events-none absolute inset-y-0 z-10 w-px bg-[#756bff]" style={{ left: "0%" }} />
                     </div>
                 )}
 

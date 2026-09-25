@@ -1206,5 +1206,110 @@ mod tests {
         assert!(result.peaks[126] < 0.02, "分界前的点仍是静音：{}", result.peaks[126]);
         assert!(result.peaks[129] > 0.5, "分界后的点已经是满幅正弦：{}", result.peaks[129]);
     }
+
+    // ── 静音 / 独奏导出链路的真实 FFmpeg 冒烟 ──────────────────────────────────────
+    // 静音与独奏都在**前端构造请求时**生效：被排除的轨整条不进 request.tracks，
+    // 因此 FFmpeg 侧只看到「少了一条输入」，不需要改任何滤镜链。这组测试真的跑一遍 FFmpeg，
+    // 验证两件事：① 被排除的轨在成片里确实没有声音；② 整条滤镜链（含上次出过尾逗号事故的
+    // 整体淡入淡出）语法成立、真能出片。默认忽略，用 `cargo test --offline --lib -- --ignored` 执行。
+
+    /// 跑一次真实合成：`tracks` 就是前端算完「谁真的出声」之后交给 FFmpeg 的那一份。
+    fn compose_smoke(cache: &Path, segment: &str, tracks: &[&str], fade: f64) -> ComposeVideoResult {
+        compose_blocking(
+            cache,
+            ComposeVideoRequest {
+                ffmpeg_path: None,
+                segments: vec![ComposeSegment {
+                    path: segment.to_owned(),
+                    start: None,
+                    end: None,
+                    volume: None,
+                    transition: None,
+                    transition_duration: None,
+                    subtitle: None,
+                    fade_in: None,
+                    fade_out: None,
+                }],
+                tracks: tracks
+                    .iter()
+                    .map(|path| ComposeAudioTrack { path: (*path).to_owned(), volume: None, fade_in: None, fade_out: None, looped: None })
+                    .collect(),
+                long_edge: Some(320.0),
+                fps: Some(30.0),
+                // 整体淡入淡出必须开着：它才是上次「尾逗号 ⇒ 空滤镜名 ⇒ 拒绝出片」的那段代码。
+                fade_in: Some(fade),
+                fade_out: Some(fade),
+                title: Some("静音冒烟".to_owned()),
+                subtitle_style: None,
+                subtitle_size: None,
+            },
+        )
+        .expect("真实合成应当成功（滤镜链语法必须成立）")
+    }
+
+    /// 用同一套波形解码读出成片的最大幅度：0 附近表示这条成片没有声音。
+    fn peak_of(path: &str) -> f32 {
+        audio_waveform_blocking(AudioWaveformRequest { ffmpeg_path: None, path: path.to_owned(), samples: Some(256) })
+            .expect("应当能读出成片音频")
+            .peaks
+            .iter()
+            .copied()
+            .fold(0.0_f32, f32::max)
+    }
+
+    #[test]
+    #[ignore]
+    fn muted_track_really_is_silent_in_the_final_cut() {
+        let Some(executable) = detect_ffmpeg_path(None) else {
+            return;
+        };
+        let dir = std::env::temp_dir().join(format!("mgcanvas-mute-smoke-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("应当能建临时目录");
+        let text = |name: &str| dir.join(name).to_string_lossy().into_owned();
+        let video = text("segment.mp4");
+        let bed = text("bed.wav");
+        let music = text("music.wav");
+
+        // 视频段故意**没有音轨**：这样 [ca] 走 anullsrc 静音，成片里剩下的声音只可能来自附加音轨。
+        let generated = run_captured(
+            &executable,
+            &["-hide_banner", "-y", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30:duration=3", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", &video],
+        )
+        .expect("应当能生成测试视频");
+        assert!(generated.status.success(), "生成测试视频失败：{}", String::from_utf8_lossy(&generated.stderr));
+
+        // bed = 静音（「留着出声」的那条轨）；music = 满幅 880Hz（「被静音」的那条轨）。
+        // sine 的默认幅度只有约 1/8 满幅，这里直接拉到满幅，静音与否的差距才是决定性的。
+        let muted_source = "sine=frequency=880:duration=3:sample_rate=44100";
+        for (path, source, gain) in [(&bed, "anullsrc=channel_layout=stereo:sample_rate=44100:d=3", "1"), (&music, muted_source, "8")] {
+            let made = run_captured(&executable, &["-hide_banner", "-y", "-f", "lavfi", "-i", source, "-filter:a", &format!("volume={gain}"), "-c:a", "pcm_s16le", path.as_str()])
+                .expect("应当能生成测试音频");
+            assert!(made.status.success(), "生成测试音频失败：{}", String::from_utf8_lossy(&made.stderr));
+        }
+
+        // ① 两条轨都在（没人静音）：成片里听得到 music 的声音。
+        let both = compose_smoke(&dir, &video, &[&bed, &music], 0.3);
+        let both_peak = peak_of(&both.absolute_path);
+
+        // ② music 被静音 ⇒ 前端只把 bed 交给 FFmpeg：成片应当彻底安静。
+        let muted = compose_smoke(&dir, &video, &[&bed], 0.3);
+        let muted_peak = peak_of(&muted.absolute_path);
+
+        // ③ 全部静音 ⇒ tracks 为空，连混音分支都不进：同样安静，且仍然出片。
+        let all_muted = compose_smoke(&dir, &video, &[], 0.3);
+        let all_muted_peak = peak_of(&all_muted.absolute_path);
+
+        let _ = std::fs::remove_dir_all(&dir);
+
+        println!("① 两条轨都出声：峰值 {both_peak}，时长 {}ms，{} 字节", both.duration_ms, both.bytes);
+        println!("② music 被静音（只把 bed 交给 FFmpeg）：峰值 {muted_peak}，时长 {}ms，{} 字节", muted.duration_ms, muted.bytes);
+        println!("③ 全部静音（tracks 为空）：峰值 {all_muted_peak}，时长 {}ms，{} 字节", all_muted.duration_ms, all_muted.bytes);
+
+        assert!((both.duration_ms as i64 - 3_000).abs() <= 400, "成片时长应按片段长度算：{}", both.duration_ms);
+        assert!(both_peak > 0.5, "两条轨都出声时成片应当有声音，实测峰值 {both_peak}");
+        assert!(muted_peak < 0.02, "静音轨被跳过之后成片应当安静，实测峰值 {muted_peak}");
+        assert!(all_muted_peak < 0.02, "全部音轨被排除之后成片应当安静，实测峰值 {all_muted_peak}");
+        assert!(both.bytes > 0 && muted.bytes > 0 && all_muted.bytes > 0, "三种情况都必须真的出片");
+    }
 }
 

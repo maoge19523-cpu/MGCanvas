@@ -39,6 +39,12 @@ export type EditClip = {
     transition?: string;
     transitionDuration?: number;
     subtitle?: string;
+    /**
+     * 锁定：这一段的拖动换序、两端裁剪、拆分、删除都会被拒绝。
+     * 锁定**只影响编辑**，不参与导出（成片里照样有这一段），缺省（undefined）= 不锁定。
+     * 视频轨是「一条轨 + 若干片段」的结构（没有 EditTrack 对象），所以锁挂在片段自己身上。
+     */
+    locked?: boolean;
 };
 
 /** 片段转场白名单：与 Rust 侧 compose_video 认识的转场一一对应，属性区下拉框也只从这里取。 */
@@ -63,6 +69,18 @@ export type EditAudioTrack = {
     fadeIn: number;
     fadeOut: number;
     loop: boolean;
+    /**
+     * 静音：这条轨在合成时整条跳过（不交给 FFmpeg），成片里不出声，其它轨不受影响。
+     * 缺省（undefined）= 不静音；旧项目读进来就是缺省，语义不变，不需要任何迁移。
+     */
+    muted?: boolean;
+    /**
+     * 独奏：只要有**任一**音轨 solo === true，其余未独奏的音轨在导出里一律不出声；
+     * 与 muted 叠加时以「被排除」为准（静音的轨即使 solo 也不出声）。
+     */
+    solo?: boolean;
+    /** 锁定：这条轨的参数编辑与删除被拒绝；不参与导出。缺省 = 不锁定。 */
+    locked?: boolean;
 };
 
 export type EditOutput = {

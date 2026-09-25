@@ -14,7 +14,7 @@ import {
     type EditHistoryEntry,
     type EditHistoryStack,
 } from "./history";
-import { EDIT_DEFAULT_OUTPUT, type EditClip, type EditProject } from "@/types/edit";
+import { EDIT_DEFAULT_OUTPUT, type EditAudioTrack as EditTrack, type EditClip, type EditProject } from "@/types/edit";
 
 function project(patch: Partial<EditProject> = {}): EditProject {
     return {
@@ -62,6 +62,25 @@ describe("剪辑台撤销栈：快照只存会被改动的切片", () => {
         expect(sameEditSnapshot(editSnapshot(before), editSnapshot({ ...before, media: [...before.media] }))).toBe(false);
         // 素材数组引用没变时不算改动。
         expect(sameEditSnapshot(editSnapshot(before), editSnapshot({ ...before }))).toBe(true);
+    });
+
+    /**
+     * 轨道头的静音 / 独奏 / 锁定与片段锁定都是「点一下切状态」的编辑。
+     * 这三个字段漏进比较函数的话，切换会被判成「值没变」，store 直接把这次更新丢掉 —— 开关点了不动。
+     */
+    it("静音 / 独奏 / 锁定都必须参与比较，否则开关点了不生效", () => {
+        const base = project({ audioTracks: [{ id: "t1", mediaId: "m1", volume: 1, fadeIn: 0, fadeOut: 0, loop: false }] });
+        const trackWith = (patch: Partial<EditTrack>) => ({ ...base, audioTracks: [{ ...base.audioTracks[0]!, ...patch }] });
+
+        expect(sameEditSnapshot(editSnapshot(base), editSnapshot(trackWith({ muted: true })))).toBe(false);
+        expect(sameEditSnapshot(editSnapshot(base), editSnapshot(trackWith({ solo: true })))).toBe(false);
+        expect(sameEditSnapshot(editSnapshot(base), editSnapshot(trackWith({ locked: true })))).toBe(false);
+        // 切回缺省值同样算一次改动（取消静音也是编辑）。
+        const muted = trackWith({ muted: true });
+        expect(sameEditSnapshot(editSnapshot(muted), editSnapshot(trackWith({ muted: undefined })))).toBe(false);
+
+        const clipWith = (patch: Partial<EditClip>) => ({ ...base, clips: [{ ...base.clips[0]!, ...patch }] });
+        expect(sameEditSnapshot(editSnapshot(base), editSnapshot(clipWith({ locked: true })))).toBe(false);
     });
 });
 

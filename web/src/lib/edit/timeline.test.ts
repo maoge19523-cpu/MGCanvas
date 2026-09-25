@@ -224,7 +224,7 @@ describe("剪辑台时间线：标尺与读数", () => {
 });
 
 describe("剪辑台导出：项目数据 → compose_video 入参", () => {
-    const paths = { a: "C:\\tmp\\a.mp4", b: "C:\\tmp\\b.mp4", c: "C:\\tmp\\c.mp4", m: "C:\\tmp\\m.mp3" };
+    const paths = { a: "C:\\tmp\\a.mp4", b: "C:\\tmp\\b.mp4", c: "C:\\tmp\\c.mp4", m: "C:\\tmp\\m.mp3", x: "C:\\tmp\\x.mp3", y: "C:\\tmp\\y.mp3", z: "C:\\tmp\\z.mp3" };
 
     it("视频片段按片段列表顺序映射成 segments，入出点与音量淡入淡出原样带过去", () => {
         const segments = buildComposeSegments({ project: project(), paths });
@@ -246,6 +246,44 @@ describe("剪辑台导出：项目数据 → compose_video 入参", () => {
         const withAudio = project({ media: [...project().media, media("m", 30, "audio")], audioTracks: [{ id: "t1", mediaId: "m", volume: 0.4, fadeIn: 1, fadeOut: 2, loop: true }] });
         expect(buildComposeTracks({ project: withAudio, paths })).toEqual([{ path: "C:\\tmp\\m.mp3", volume: 0.4, fadeIn: 1, fadeOut: 2, loop: true }]);
         expect(buildComposeSegments({ project: withAudio, paths }).length).toBe(3);
+    });
+
+    /**
+     * 静音 / 独奏真的影响导出：判定与 UI 显示共用 resolveAudibleTracks，
+     * 被排除的轨**整条不进 tracks**（不是把音量设成 0），所以 FFmpeg 侧的 amix 输入数与补偿系数依然自洽。
+     */
+    describe("静音 / 独奏直接改的是交给 FFmpeg 的音轨列表", () => {
+        const threeTracks = project({
+            media: [...project().media, media("x", 30, "audio"), media("y", 30, "audio"), media("z", 30, "audio")],
+            audioTracks: [
+                { id: "t1", mediaId: "x", volume: 1, fadeIn: 0, fadeOut: 0, loop: false },
+                { id: "t2", mediaId: "y", volume: 1, fadeIn: 0, fadeOut: 0, loop: false },
+                { id: "t3", mediaId: "z", volume: 1, fadeIn: 0, fadeOut: 0, loop: false },
+            ],
+        });
+        const trackPaths = (patch: Partial<EditProject>) => buildComposeTracks({ project: { ...threeTracks, ...patch }, paths }).map((item) => item.path);
+
+        it("没有静音 / 独奏时三条轨都在请求体里", () => {
+            expect(trackPaths({})).toEqual(["C:\\tmp\\x.mp3", "C:\\tmp\\y.mp3", "C:\\tmp\\z.mp3"]);
+        });
+
+        it("静音的轨不进请求体，其它轨照旧", () => {
+            expect(trackPaths({ audioTracks: threeTracks.audioTracks.map((item) => (item.id === "t2" ? { ...item, muted: true } : item)) })).toEqual(["C:\\tmp\\x.mp3", "C:\\tmp\\z.mp3"]);
+        });
+
+        it("有独奏时其余轨全部不进请求体", () => {
+            expect(trackPaths({ audioTracks: threeTracks.audioTracks.map((item) => (item.id === "t2" ? { ...item, solo: true } : item)) })).toEqual(["C:\\tmp\\y.mp3"]);
+        });
+
+        it("全部静音时 tracks 为空数组（等于一条附加轨都不混）", () => {
+            const request = buildComposeRequest({ project: { ...threeTracks, audioTracks: threeTracks.audioTracks.map((item) => ({ ...item, muted: true })) }, paths });
+            expect(request.tracks).toEqual([]);
+            expect(request.segments.length).toBe(3);
+        });
+
+        it("锁定的轨仍然正常导出（锁定只影响编辑，不参与导出）", () => {
+            expect(trackPaths({ audioTracks: threeTracks.audioTracks.map((item) => (item.id === "t1" ? { ...item, locked: true } : item)) })).toHaveLength(3);
+        });
     });
 
     it("整份导出请求带上输出参数与项目名，不涉及画布节点或 compositeSettings", () => {

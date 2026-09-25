@@ -43,14 +43,25 @@ function sameClip(left: EditClip, right: EditClip) {
             left.fadeOut === right.fadeOut &&
             left.transition === right.transition &&
             left.transitionDuration === right.transitionDuration &&
-            left.subtitle === right.subtitle)
+            left.subtitle === right.subtitle &&
+            // 锁定必须参与比较：漏了它，切换锁定会被判成「值没变」而整条状态更新被丢掉（轨道头的开关就点不动了）。
+            left.locked === right.locked)
     );
 }
 
 function sameTrack(left: EditAudioTrack, right: EditAudioTrack) {
     return (
         left === right ||
-        (left.id === right.id && left.mediaId === right.mediaId && left.volume === right.volume && left.fadeIn === right.fadeIn && left.fadeOut === right.fadeOut && left.loop === right.loop)
+        (left.id === right.id &&
+            left.mediaId === right.mediaId &&
+            left.volume === right.volume &&
+            left.fadeIn === right.fadeIn &&
+            left.fadeOut === right.fadeOut &&
+            left.loop === right.loop &&
+            // 同上：静音 / 独奏 / 锁定都要参与比较，否则轨道头上的三个开关点了不生效。
+            left.muted === right.muted &&
+            left.solo === right.solo &&
+            left.locked === right.locked)
     );
 }
 

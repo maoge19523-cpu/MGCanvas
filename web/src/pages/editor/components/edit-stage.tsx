@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { App, Button, Popover, Tooltip, theme } from "antd";
-import { Clapperboard, Info, Magnet, Music2, Pause, Play, Redo2, Undo2 } from "lucide-react";
+import { Clapperboard, Info, Lock, Magnet, Music2, Pause, Play, Redo2, Undo2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -550,10 +550,22 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
         return !isEditSnapSuppressed(velocity);
     };
 
+    /**
+     * 锁定片段的编辑一律拒绝：拖动换序、拉两端裁剪、拆分、删除四个入口都先过这里，
+     * 拒绝时给同一句可理解的反馈（锁定时**不**静默失效，也不产生任何 store 写入）。
+     */
+    const refuseIfLocked = (view: EditClipView | undefined) => {
+        if (!view?.locked) return false;
+        message.warning(t("editor.trackLockedNotice"));
+        return true;
+    };
+
     const snapPointsFor = (excludeClipId: string) => collectEditSnapPoints(views, { playhead: secondsRef.current, grid: editGridStep(totalSeconds), excludeClipIds: [excludeClipId] });
 
     const startReorder = (event: ReactPointerEvent<HTMLDivElement>, index: number) => {
         event.stopPropagation();
+        // 锁定片段直接拒绝：连 dragRef 都不建，拖动过程一次都不会发生。
+        if (refuseIfLocked(views[index])) return;
         draggedRef.current = false;
         const box = timelineRef.current?.getBoundingClientRect();
         velocityRef.current = { x: event.clientX, at: performance.now() };
@@ -572,6 +584,7 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
         const view = views[index];
         const bar = event.currentTarget.parentElement;
         if (!view || !bar) return;
+        if (refuseIfLocked(view)) return;
         const width = bar.getBoundingClientRect().width;
         draggedRef.current = true;
         velocityRef.current = { x: event.clientX, at: performance.now() };
@@ -714,7 +727,12 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
         const here = playheadClipId();
         const selectedInside = Boolean(clipId) && views.some((view) => view.id === clipId && editSecondsInsideClip(view, secondsRef.current));
         const target = selectedInside ? clipId : here;
-        if (!target || !splitClip(projectId, target, secondsRef.current)) {
+        if (!target) {
+            message.warning(t("editor.splitNowhere"));
+            return false;
+        }
+        if (refuseIfLocked(views.find((view) => view.id === target))) return false;
+        if (!splitClip(projectId, target, secondsRef.current)) {
             message.warning(t("editor.splitNowhere"));
             return false;
         }
@@ -728,6 +746,7 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
             return false;
         }
         const removed = views.find((view) => view.id === target);
+        if (refuseIfLocked(removed)) return false;
         onSelectClip(null);
         if (ripple) {
             rippleRemoveClip(projectId, target);
@@ -937,7 +956,8 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
                                     <div
                                         key={view.id}
                                         data-edit-clip={view.id}
-                                        className={`absolute inset-y-0 cursor-grab touch-none select-none overflow-hidden rounded-[8px] border transition-colors active:cursor-grabbing ${view.id === clipId ? "border-[#756bff]" : "border-black/[0.09] hover:bg-black/[0.03] dark:border-white/[0.09] dark:hover:bg-white/[0.04]"}`}
+                                        data-edit-clip-locked={view.locked ? "true" : undefined}
+                                        className={`absolute inset-y-0 touch-none select-none overflow-hidden rounded-[8px] border transition-colors ${view.locked ? "cursor-not-allowed" : "cursor-grab active:cursor-grabbing"} ${view.id === clipId ? "border-[#756bff]" : "border-black/[0.09] hover:bg-black/[0.03] dark:border-white/[0.09] dark:hover:bg-white/[0.04]"}`}
                                         // 片段条按真实时长占位：left / width 都是「秒数 / 总秒数」的百分比，
                                         // 与标尺刻度、播放头、波形条同一套换算，第 k 段的右边缘就是前 k 段时长之和。
                                         // 未探测到时长的片段长度为 0（宽度 0% 会看不见也抓不住），只给它一个最小抓取宽度：
@@ -951,6 +971,8 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
                                         <span className="pointer-events-none absolute inset-y-0 left-[2px] right-[2px] rounded-[6px] bg-black/[0.03] dark:bg-white/[0.04]" />
                                         <span data-clip-label className="pointer-events-none absolute inset-0 flex items-center gap-1 truncate px-2 text-[10px] text-stone-500 dark:text-zinc-400">
                                             {view.hasDuration ? clipLabel(view, index, view.length) : t("editor.clipNoDuration", { index: index + 1 })}
+                                            {/* 锁定片段在时间线上直接标出来：拖不动时能一眼看出是「锁着」而不是坏了。 */}
+                                            {view.locked ? <Lock className="size-3 shrink-0" /> : null}
                                         </span>
                                         <span className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize rounded-l-[8px] hover:bg-black/10 dark:hover:bg-white/15" title={t("editor.trimStart")} onPointerDown={(event) => startTrim(event, index, "start")} />
                                         <span className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize rounded-r-[8px] hover:bg-black/10 dark:hover:bg-white/15" title={t("editor.trimEnd")} onPointerDown={(event) => startTrim(event, index, "end")} />

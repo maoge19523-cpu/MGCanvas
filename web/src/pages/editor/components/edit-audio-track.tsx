@@ -1,7 +1,9 @@
-import { theme } from "antd";
+import { Button, Popover, Tooltip, theme } from "antd";
+import { Headphones, Lock, LockOpen, Plus, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { editTrackAudibility, type EditTrackAudibility } from "@/lib/edit/audio-mix";
 import { editWaveformBuckets, waveformColumns, waveformHasSignal, waveformStripSeconds, waveformY } from "@/lib/edit/waveform";
 import { formatEditTime } from "@/lib/edit/timeline";
 import { timeToPercent } from "@/lib/timeline-scale";
@@ -14,8 +16,16 @@ const EMPTY_TRACKS: EditAudioTrack[] = [];
 const EMPTY_MEDIA: EditMedia[] = [];
 const EMPTY_PEAKS = new Float32Array(0);
 
+/**
+ * 轨道头开关的两套类名：激活态给一层双主题都看得清的底色，未激活态保持透明。
+ * 底色只用既有 Tailwind 双主题类（不写死颜色），状态色另外走 antd token（见下面的图标 style）。
+ */
+const TRACK_TOGGLE_ON = "bg-black/[0.09] dark:bg-white/[0.14]";
+const TRACK_TOGGLE_OFF = "bg-transparent";
+
 /** 一条音轨的波形状态：数据没到手前 pending，到手后按有没有信号分 ready / silent，出错是 failed。 */
 type WaveformStatus = "pending" | "ready" | "silent" | "failed";
+
 
 /**
  * 时间线下方新增的**音轨行**：剪辑台原来的时间线只画视频片段，音频只以「音轨」列表出现在右侧属性区，
@@ -34,6 +44,8 @@ export function EditAudioTrackRow({ projectId, totalSeconds }: { projectId: stri
     const project = projects.find((item) => item.id === projectId);
     const tracks = project?.audioTracks ?? EMPTY_TRACKS;
     const media = project?.media ?? EMPTY_MEDIA;
+    // 谁真的出声只有这一个判定（与导出请求构造共用 resolveAudibleTracks / editTrackAudibility）。
+    const audibility = editTrackAudibility(tracks);
 
     return (
         // 音轨行**不再自己滚动**：滚动条（3 条以上就会出现）会从它自己的宽度里吃掉 6~15px，
@@ -41,18 +53,76 @@ export function EditAudioTrackRow({ projectId, totalSeconds }: { projectId: stri
         // 音轨多时整条时间轴统一在外层那一个容器里滚动，滚动条扣掉的是四类元素共用的同一个宽度（见 edit-stage）。
         <div data-edit-audio-track className="mt-1.5 flex flex-col gap-1">
             {tracks.length ? (
-                tracks.map((track) => <AudioTrackStrip key={track.id} track={track} source={media.find((item) => item.id === track.mediaId)} totalSeconds={totalSeconds} />)
+                tracks.map((track) => (
+                    <AudioTrackStrip key={track.id} projectId={projectId} track={track} source={media.find((item) => item.id === track.mediaId)} totalSeconds={totalSeconds} audibility={audibility[track.id] ?? "audible"} />
+                ))
             ) : (
                 // 没有音轨时也占住这一行：布局稳定，也说明波形会画在哪里。
                 <div className="flex h-9 items-center justify-center rounded-[8px] border border-dashed border-black/[0.08] px-2 text-center text-[10px] text-stone-400 dark:border-white/[0.08] dark:text-zinc-600">{t("editor.emptyAudioTracks")}</div>
             )}
+            <AddAudioTrackRow projectId={projectId} />
         </div>
     );
 }
 
-function AudioTrackStrip({ track, source, totalSeconds }: { track: EditAudioTrack; source: EditMedia | undefined; totalSeconds: number }) {
+/**
+ * 时间线底部的「添加音轨」入口：**复用既有的 addAudioTrack**（与左侧音频素材上的「加入音轨」同一个动作），
+ * 只是把「从哪条音频素材建轨」这一步摆到时间线这里选，不再造第二套建轨流程。
+ */
+function AddAudioTrackRow({ projectId }: { projectId: string }) {
     const { t } = useTranslation();
     const { token } = theme.useToken();
+    const { projects, addAudioTrack } = useEditState();
+    const [open, setOpen] = useState(false);
+    const audio = (projects.find((item) => item.id === projectId)?.media ?? EMPTY_MEDIA).filter((item) => item.kind === "audio");
+
+    return (
+        <Popover
+            open={open}
+            onOpenChange={setOpen}
+            trigger="click"
+            placement="topLeft"
+            title={t("editor.addTrack")}
+            content={
+                audio.length ? (
+                    <div className="thin-scrollbar flex max-h-[200px] flex-col overflow-y-auto">
+                        {audio.map((item) => (
+                            <Button
+                                key={item.id}
+                                type="text"
+                                size="small"
+                                className="!justify-start !text-[11px]"
+                                icon={<Plus className="size-3.5" />}
+                                onClick={() => {
+                                    addAudioTrack(projectId, item.id);
+                                    setOpen(false);
+                                }}
+                            >
+                                {item.name}
+                            </Button>
+                        ))}
+                    </div>
+                ) : (
+                    <span className="text-[10px] leading-4 text-stone-400 dark:text-zinc-600">{t("editor.addTrackEmpty")}</span>
+                )
+            }
+        >
+            {/* Popover 的外层包一个 span：它只负责接点击，里面的 Tooltip + Button 仍是既有写法。 */}
+            <span className="inline-flex self-start">
+                <Tooltip title={t("editor.addTrackHint")}>
+                    <Button data-edit-track-add type="text" size="small" className="!h-6 !px-1.5 !text-[10px]" title={t("editor.addTrackHint")} aria-label={t("editor.addTrack")} icon={<Plus className="size-3.5" />} style={{ color: token.colorTextSecondary }}>
+                        {t("editor.addTrack")}
+                    </Button>
+                </Tooltip>
+            </span>
+        </Popover>
+    );
+}
+
+function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility }: { projectId: string; track: EditAudioTrack; source: EditMedia | undefined; totalSeconds: number; audibility: EditTrackAudibility }) {
+    const { t } = useTranslation();
+    const { token } = theme.useToken();
+    const { updateAudioTrack } = useEditState();
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const stripRef = useRef<HTMLDivElement | null>(null);
     // 波形数据只进 ref：绘制不经过 React，数据到手也只需要重绘一次，不产生任何状态写入。
@@ -60,6 +130,8 @@ function AudioTrackStrip({ track, source, totalSeconds }: { track: EditAudioTrac
     const sizeRef = useRef({ width: 0, height: 0 });
     const [buckets, setBuckets] = useState<number | null>(null);
     const [status, setStatus] = useState<WaveformStatus>("pending");
+    const audible = audibility === "audible";
+
 
     const audioSeconds = (source?.durationMs || 0) / 1000;
     const stripSeconds = waveformStripSeconds(audioSeconds, totalSeconds, track.loop);
@@ -145,22 +217,77 @@ function AudioTrackStrip({ track, source, totalSeconds }: { track: EditAudioTrac
     }, [track.loop, status, buckets, stripSeconds, token.colorPrimary, token.colorFill]);
 
     const hint = !source ? t("editor.mediaRemoved") : !source.durationMs ? t("editor.noDurationInline") : status === "pending" ? t("editor.waveformPending") : status === "failed" ? t("editor.waveformFailed") : null;
+    // 每个开关都是「点一下切状态」的低频交互，直接提交一次 store —— 拖动路径里一次都不写（见文件顶部说明）。
+    const toggle = (patch: Partial<EditAudioTrack>) => updateAudioTrack(projectId, track.id, patch);
 
     return (
         <div className="relative h-9 shrink-0 overflow-hidden rounded-[8px] bg-black/[0.03] dark:bg-white/[0.05]" title={source ? `${source.name} · ${formatEditTime(audioSeconds)}` : t("editor.mediaRemoved")}>
             <div
                 ref={stripRef}
                 data-edit-waveform-strip={track.id}
-                className="absolute inset-y-0 left-0 overflow-hidden rounded-[8px] border border-black/[0.09] dark:border-white/[0.09]"
+                data-edit-track-audible={audible ? "true" : "false"}
+                // 静音 / 被独奏排除的轨在时间线上明确变淡：状态在波形上就看得出来，不用去数右侧参数。
+                className={`absolute inset-y-0 left-0 overflow-hidden rounded-[8px] border border-black/[0.09] dark:border-white/[0.09] ${audible ? "" : "opacity-40"}`}
                 // 条宽 = 该音轨在成片时间轴上占的秒数 / 成片总秒数：与标尺刻度、播放头、片段条
                 // 共用 lib/timeline-scale 的同一套百分比换算，x 严格对齐（片段条不再有 gap 偏移）。
                 style={{ width: `${timeToPercent(stripSeconds, totalSeconds)}%` }}
             >
                 <canvas ref={canvasRef} data-edit-waveform={track.id} className="block h-full w-full" />
             </div>
+
+            {/* 轨道头：绝对定位压在行的左端，**不占任何宽度**，所以标尺 / 播放头 / 波形条共用的定位宽度一个像素都没变。 */}
+            <span data-edit-track-head={track.id} className="absolute left-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded-[7px] p-0.5" style={{ background: token.colorBgElevated, border: `1px solid ${token.colorBorderSecondary}` }}>
+                <Tooltip title={t("editor.trackMuteHint")}>
+                    <Button
+                        data-edit-track-mute={track.id}
+                        type="text"
+                        size="small"
+                        className={`!h-5 !w-5 !min-w-5 !p-0 ${track.muted ? TRACK_TOGGLE_ON : TRACK_TOGGLE_OFF}`}
+                        title={t("editor.trackMuteHint")}
+                        aria-label={track.muted ? t("editor.trackUnmute") : t("editor.trackMute")}
+                        aria-pressed={track.muted === true}
+                        icon={<VolumeX className="size-3" style={{ color: track.muted ? token.colorError : token.colorTextTertiary }} />}
+                        onClick={() => toggle({ muted: !track.muted })}
+                    />
+                </Tooltip>
+                <Tooltip title={t("editor.trackSoloHint")}>
+                    <Button
+                        data-edit-track-solo={track.id}
+                        type="text"
+                        size="small"
+                        className={`!h-5 !w-5 !min-w-5 !p-0 ${track.solo ? TRACK_TOGGLE_ON : TRACK_TOGGLE_OFF}`}
+                        title={t("editor.trackSoloHint")}
+                        aria-label={track.solo ? t("editor.trackUnsolo") : t("editor.trackSolo")}
+                        aria-pressed={track.solo === true}
+                        icon={<Headphones className="size-3" style={{ color: track.solo ? token.colorPrimary : token.colorTextTertiary }} />}
+                        onClick={() => toggle({ solo: !track.solo })}
+                    />
+                </Tooltip>
+                <Tooltip title={t("editor.trackLockHint")}>
+                    <Button
+                        data-edit-track-lock={track.id}
+                        type="text"
+                        size="small"
+                        className={`!h-5 !w-5 !min-w-5 !p-0 ${track.locked ? TRACK_TOGGLE_ON : TRACK_TOGGLE_OFF}`}
+                        title={t("editor.trackLockHint")}
+                        aria-label={track.locked ? t("editor.trackUnlock") : t("editor.trackLock")}
+                        aria-pressed={track.locked === true}
+                        icon={track.locked ? <Lock className="size-3" style={{ color: token.colorWarning }} /> : <LockOpen className="size-3" style={{ color: token.colorTextTertiary }} />}
+                        onClick={() => toggle({ locked: !track.locked })}
+                    />
+                </Tooltip>
+            </span>
+
             {hint ? (
-                <span data-edit-waveform-hint className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-[10px] text-stone-400 dark:text-zinc-600">
+                // left-[78px]：让开左边的轨道头（三个开关约 70px 宽）。提示与轨道头都在行的最左端，
+                // 不挪开就会叠在一起；这是纯粹的水平占位，与波形条的百分比定位互不影响。
+                <span data-edit-waveform-hint className="pointer-events-none absolute inset-y-0 left-[78px] flex items-center text-[10px] text-stone-400 dark:text-zinc-600">
                     {hint}
+                </span>
+            ) : null}
+            {!audible ? (
+                <span data-edit-track-excluded={track.id} className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] text-stone-400 dark:text-zinc-500">
+                    {audibility === "muted" ? t("editor.trackMute") : t("editor.trackSoloExcluded")}
                 </span>
             ) : null}
         </div>

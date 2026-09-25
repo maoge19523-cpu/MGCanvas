@@ -1,4 +1,5 @@
 import type { ComposeAudioTrackInput, ComposeSegmentInput, ComposeVideoRequest } from "@/services/platform/desktop-ffmpeg";
+import { resolveAudibleTracks } from "./audio-mix";
 import { normalizeEditTransition, type EditClip, type EditMedia, type EditProject } from "@/types/edit";
 
 /** 时间线上的一段：时长与起点都由素材真实时长与入出点算出，顺序即数组顺序。 */
@@ -19,6 +20,8 @@ export type EditClipView = {
     transition?: string;
     transitionDuration: number;
     subtitle?: string;
+    /** 锁定：拖动换序、两端裁剪、拆分、删除都会被拒绝（只影响编辑，不影响导出）。 */
+    locked: boolean;
     /** 素材自身时长（秒），0 表示没探测到。 */
     sourceSeconds: number;
     /** 素材缺少时长信息时为 false，该段长度为 0、无法真正入轨。 */
@@ -59,6 +62,7 @@ export function buildEditClips(media: EditMedia[], clips: EditClip[], urls: Reco
             transition: normalizeEditTransition(clip.transition),
             transitionDuration: clip.transitionDuration ?? 0.5,
             subtitle: clip.subtitle,
+            locked: clip.locked === true,
             sourceSeconds,
             hasDuration: sourceSeconds > 0,
         };
@@ -165,7 +169,12 @@ export function buildComposeSegments({ project, paths }: EditComposeInput): Comp
 /** 剪辑台音轨 → compose_video 的 tracks：音频素材按整段混进成片，音量与淡入淡出生效。 */
 export function buildComposeTracks({ project, paths }: EditComposeInput): ComposeAudioTrackInput[] {
     const mediaById = new Map(project.media.map((item) => [item.id, item]));
+    // 静音轨与被独奏排除的轨**整条跳过**，不进 FFmpeg 的 tracks：
+    // amix 的输入数就是 tracks 长度 + 1、补偿系数也随之自洽，所以跳一条轨既不出声、
+    // 也不改变其它轨的电平，而且滤镜链一个字都不用动（那条链上出过尾逗号事故）。
+    const audible = resolveAudibleTracks(project.audioTracks);
     return project.audioTracks.flatMap((track) => {
+        if (!audible.has(track.id)) return [];
         const path = paths[track.mediaId];
         if (!path || mediaById.get(track.mediaId)?.kind !== "audio") return [];
         return [{ path, volume: track.volume, fadeIn: track.fadeIn, fadeOut: track.fadeOut, loop: track.loop }];

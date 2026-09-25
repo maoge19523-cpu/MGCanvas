@@ -1,5 +1,5 @@
 import { App, Button, Empty, Input, InputNumber, Select, Switch, Tooltip } from "antd";
-import { FolderOpen, Music2, Scissors, Trash2 } from "lucide-react";
+import { FolderOpen, Lock, LockOpen, Music2, Scissors, Trash2, VolumeX } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -29,6 +29,14 @@ export function EditInspector({ projectId, clipId }: { projectId: string; clipId
     const clip = project.clips.find((item) => item.id === clipId) || null;
     const view = views.find((item) => item.id === clipId) || null;
     const outputSeconds = editOutputSeconds(views);
+    const locked = clip?.locked === true;
+
+    /** 锁定（片段或音轨）的编辑一律拒绝，并给出同一句可理解的反馈，绝不静默失效。 */
+    const refuseLocked = (locked: boolean) => {
+        if (!locked) return false;
+        message.warning(t("editor.trackLockedNotice"));
+        return true;
+    };
 
     const runExport = async () => {
         if (!isTauriRuntime()) {
@@ -58,23 +66,26 @@ export function EditInspector({ projectId, clipId }: { projectId: string; clipId
 
             {clip && view ? (
                 <div className="flex flex-col gap-2.5 px-3 py-3">
+                    {/* 锁定 = 这一段只读：参数控件全部禁用，拖动 / 裁剪 / 拆分 / 删除另外在时间线里拒绝（见 edit-stage）。
+                        锁定按钮本身始终可用，否则会把自己锁死。 */}
                     <Field label={t("editor.start")}>
-                        <InputNumber size="small" min={0} max={view.sourceSeconds || undefined} step={0.1} controls={false} addonAfter={t("editor.seconds")} value={clip.start} style={{ width: 108 }} onChange={(value) => updateClip(projectId, clip.id, { start: clampNumber(value, 0, view.sourceSeconds || Number.MAX_SAFE_INTEGER, clip.start) })} />
+                        <InputNumber disabled={locked} size="small" min={0} max={view.sourceSeconds || undefined} step={0.1} controls={false} addonAfter={t("editor.seconds")} value={clip.start} style={{ width: 108 }} onChange={(value) => updateClip(projectId, clip.id, { start: clampNumber(value, 0, view.sourceSeconds || Number.MAX_SAFE_INTEGER, clip.start) })} />
                     </Field>
                     <Field label={t("editor.end")}>
-                        <InputNumber size="small" min={0} max={view.sourceSeconds || undefined} step={0.1} controls={false} addonAfter={t("editor.seconds")} value={clip.end || undefined} placeholder={view.sourceSeconds ? String(Number(view.sourceSeconds.toFixed(1))) : "—"} style={{ width: 108 }} onChange={(value) => updateClip(projectId, clip.id, { end: value === null || !Number.isFinite(Number(value)) ? 0 : clampNumber(value, 0, view.sourceSeconds || Number.MAX_SAFE_INTEGER, clip.end) })} />
+                        <InputNumber disabled={locked} size="small" min={0} max={view.sourceSeconds || undefined} step={0.1} controls={false} addonAfter={t("editor.seconds")} value={clip.end || undefined} placeholder={view.sourceSeconds ? String(Number(view.sourceSeconds.toFixed(1))) : "—"} style={{ width: 108 }} onChange={(value) => updateClip(projectId, clip.id, { end: value === null || !Number.isFinite(Number(value)) ? 0 : clampNumber(value, 0, view.sourceSeconds || Number.MAX_SAFE_INTEGER, clip.end) })} />
                     </Field>
                     <Field label={t("editor.volume")}>
-                        <InputNumber size="small" min={0} max={400} step={5} controls={false} addonAfter="%" value={Math.round(clip.volume * 100)} style={{ width: 108 }} onChange={(value) => updateClip(projectId, clip.id, { volume: clampNumber(value, 0, 400, clip.volume * 100) / 100 })} />
+                        <InputNumber disabled={locked} size="small" min={0} max={400} step={5} controls={false} addonAfter="%" value={Math.round(clip.volume * 100)} style={{ width: 108 }} onChange={(value) => updateClip(projectId, clip.id, { volume: clampNumber(value, 0, 400, clip.volume * 100) / 100 })} />
                     </Field>
                     <Field label={t("editor.fadeIn")}>
-                        <InputNumber size="small" min={0} max={5} step={0.5} controls={false} addonAfter="s" value={clip.fadeIn} style={{ width: 108 }} onChange={(value) => updateClip(projectId, clip.id, { fadeIn: clampNumber(value, 0, 5, clip.fadeIn) })} />
+                        <InputNumber disabled={locked} size="small" min={0} max={5} step={0.5} controls={false} addonAfter="s" value={clip.fadeIn} style={{ width: 108 }} onChange={(value) => updateClip(projectId, clip.id, { fadeIn: clampNumber(value, 0, 5, clip.fadeIn) })} />
                     </Field>
                     <Field label={t("editor.fadeOut")}>
-                        <InputNumber size="small" min={0} max={10} step={0.5} controls={false} addonAfter="s" value={clip.fadeOut} style={{ width: 108 }} onChange={(value) => updateClip(projectId, clip.id, { fadeOut: clampNumber(value, 0, 10, clip.fadeOut) })} />
+                        <InputNumber disabled={locked} size="small" min={0} max={10} step={0.5} controls={false} addonAfter="s" value={clip.fadeOut} style={{ width: 108 }} onChange={(value) => updateClip(projectId, clip.id, { fadeOut: clampNumber(value, 0, 10, clip.fadeOut) })} />
                     </Field>
                     <Field label={t("editor.transition")}>
                         <Select
+                            disabled={locked}
                             size="small"
                             className="w-[108px]"
                             value={clip.transition || "none"}
@@ -85,16 +96,33 @@ export function EditInspector({ projectId, clipId }: { projectId: string; clipId
                     </Field>
                     {clip.transition ? (
                         <Field label={t("editor.transitionDuration")}>
-                            <InputNumber size="small" min={0.2} max={1.5} step={0.1} controls={false} addonAfter="s" value={clip.transitionDuration ?? 0.5} style={{ width: 108 }} onChange={(value) => updateClip(projectId, clip.id, { transitionDuration: clampNumber(value, 0.2, 1.5, clip.transitionDuration ?? 0.5) })} />
+                            <InputNumber disabled={locked} size="small" min={0.2} max={1.5} step={0.1} controls={false} addonAfter="s" value={clip.transitionDuration ?? 0.5} style={{ width: 108 }} onChange={(value) => updateClip(projectId, clip.id, { transitionDuration: clampNumber(value, 0.2, 1.5, clip.transitionDuration ?? 0.5) })} />
                         </Field>
                     ) : null}
                     <div className="flex flex-col gap-1">
                         <span className="text-[10px] text-stone-400 dark:text-zinc-600">{t("editor.subtitle")}</span>
-                        <Input size="small" placeholder={t("editor.subtitlePlaceholder")} value={clip.subtitle ?? ""} onChange={(event) => updateClip(projectId, clip.id, { subtitle: event.target.value || undefined })} />
+                        <Input disabled={locked} size="small" placeholder={t("editor.subtitlePlaceholder")} value={clip.subtitle ?? ""} onChange={(event) => updateClip(projectId, clip.id, { subtitle: event.target.value || undefined })} />
                     </div>
-                    <Button size="small" type="text" danger className="self-start" icon={<Trash2 className="size-3.5" />} onClick={() => removeClip(projectId, clip.id)}>
-                        {t("editor.removeClip")}
-                    </Button>
+                    <div className="flex items-center gap-1">
+                        <Tooltip title={t("editor.trackLockHint")}>
+                            <Button
+                                data-edit-clip-lock={clip.id}
+                                size="small"
+                                type="text"
+                                className="self-start"
+                                title={t("editor.trackLockHint")}
+                                aria-pressed={clip.locked === true}
+                                aria-label={clip.locked ? t("editor.trackUnlock") : t("editor.trackLock")}
+                                icon={clip.locked ? <Lock className="size-3.5" /> : <LockOpen className="size-3.5" />}
+                                onClick={() => updateClip(projectId, clip.id, { locked: !clip.locked })}
+                            >
+                                {clip.locked ? t("editor.trackUnlock") : t("editor.trackLock")}
+                            </Button>
+                        </Tooltip>
+                        <Button size="small" type="text" danger className="self-start" icon={<Trash2 className="size-3.5" />} onClick={() => { if (!refuseLocked(Boolean(clip.locked))) removeClip(projectId, clip.id); }}>
+                            {t("editor.removeClip")}
+                        </Button>
+                    </div>
                 </div>
             ) : (
                 <div className="px-3 py-6 text-[11px] leading-5 text-stone-500 dark:text-zinc-500">{views.length ? t("editor.pickClipHint") : t("editor.emptyClipsHint")}</div>
@@ -108,18 +136,25 @@ export function EditInspector({ projectId, clipId }: { projectId: string; clipId
                 {project.audioTracks.length ? (
                     <ul className="mt-2 flex flex-col gap-2">
                         {project.audioTracks.map((track) => (
-                            <li key={track.id} className="rounded-[10px] bg-black/[0.025] p-2 dark:bg-white/[0.03]">
+                            <li key={track.id} data-edit-track-locked={track.locked ? track.id : undefined} className="rounded-[10px] bg-black/[0.025] p-2 dark:bg-white/[0.03]">
                                 <div className="flex items-center gap-2">
                                     <span className="min-w-0 flex-1 truncate text-[11px] text-stone-700 dark:text-zinc-300">{project.media.find((item) => item.id === track.mediaId)?.name || t("editor.mediaRemoved")}</span>
-                                    <Button type="text" size="small" danger icon={<Trash2 className="size-3.5" />} aria-label={t("editor.removeAudioTrack")} onClick={() => removeAudioTrack(projectId, track.id)} />
+                                    {track.muted ? <VolumeX className="size-3.5 shrink-0 text-stone-400 dark:text-zinc-600" /> : null}
+                                    {track.locked ? (
+                                        <Tooltip title={t("editor.trackLockHint")}>
+                                            <Lock className="size-3.5 shrink-0 text-amber-600 dark:text-amber-500/90" />
+                                        </Tooltip>
+                                    ) : null}
+                                    <Button type="text" size="small" danger icon={<Trash2 className="size-3.5" />} aria-label={t("editor.removeAudioTrack")} onClick={() => { if (!refuseLocked(Boolean(track.locked))) removeAudioTrack(projectId, track.id); }} />
                                 </div>
+                                {/* 锁定的轨参数不可改：控件直接禁用（锁定的语义是「只读」），删除与解锁仍可用，所以不会把自己锁死。 */}
                                 <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-stone-400 dark:text-zinc-600">
-                                    <InputNumber size="small" min={0} max={400} step={5} controls={false} addonAfter="%" value={Math.round(track.volume * 100)} style={{ width: 92 }} onChange={(value) => updateAudioTrack(projectId, track.id, { volume: clampNumber(value, 0, 400, track.volume * 100) / 100 })} />
-                                    <InputNumber size="small" min={0} max={5} step={0.5} controls={false} addonAfter="s" value={track.fadeIn} style={{ width: 84 }} onChange={(value) => updateAudioTrack(projectId, track.id, { fadeIn: clampNumber(value, 0, 5, track.fadeIn) })} />
-                                    <InputNumber size="small" min={0} max={10} step={0.5} controls={false} addonAfter="s" value={track.fadeOut} style={{ width: 84 }} onChange={(value) => updateAudioTrack(projectId, track.id, { fadeOut: clampNumber(value, 0, 10, track.fadeOut) })} />
+                                    <InputNumber disabled={Boolean(track.locked)} size="small" min={0} max={400} step={5} controls={false} addonAfter="%" value={Math.round(track.volume * 100)} style={{ width: 92 }} onChange={(value) => updateAudioTrack(projectId, track.id, { volume: clampNumber(value, 0, 400, track.volume * 100) / 100 })} />
+                                    <InputNumber disabled={Boolean(track.locked)} size="small" min={0} max={5} step={0.5} controls={false} addonAfter="s" value={track.fadeIn} style={{ width: 84 }} onChange={(value) => updateAudioTrack(projectId, track.id, { fadeIn: clampNumber(value, 0, 5, track.fadeIn) })} />
+                                    <InputNumber disabled={Boolean(track.locked)} size="small" min={0} max={10} step={0.5} controls={false} addonAfter="s" value={track.fadeOut} style={{ width: 84 }} onChange={(value) => updateAudioTrack(projectId, track.id, { fadeOut: clampNumber(value, 0, 10, track.fadeOut) })} />
                                     <span className="inline-flex items-center gap-1">
                                         {t("editor.loop")}
-                                        <Switch size="small" checked={track.loop} onChange={(checked) => updateAudioTrack(projectId, track.id, { loop: checked })} />
+                                        <Switch disabled={Boolean(track.locked)} size="small" checked={track.loop} onChange={(checked) => updateAudioTrack(projectId, track.id, { loop: checked })} />
                                     </span>
                                 </div>
                             </li>

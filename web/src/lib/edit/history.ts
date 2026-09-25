@@ -63,7 +63,10 @@ function sameTrack(left: EditAudioTrack, right: EditAudioTrack) {
             // 同上：静音 / 独奏 / 锁定都要参与比较，否则轨道头上的三个开关点了不生效。
             left.muted === right.muted &&
             left.solo === right.solo &&
-            left.locked === right.locked)
+            left.locked === right.locked &&
+            // 同理：时间线起点是「拖一下改变一个值」的编辑，漏了它整次拖动都会被判成「值没变」而丢掉，
+            // 现象就是「拖了不动、撤销栈里也没有这一次」。
+            left.start === right.start)
     );
 }
 

@@ -42,6 +42,31 @@ describe("波形：波形条在时间线上占多长", () => {
         expect(waveformStripSeconds(4, 0, true)).toBe(0);
         expect(waveformStripSeconds(Number.NaN, 9, false)).toBe(0);
     });
+
+    /**
+     * 音轨有起点之后，条宽只算「起点之后还能落进成片的部分」：
+     * amix 是 duration=first（以视频为准），起点之后超出的那截本来就被截断，画出来只会误导。
+     * 起点缺省 0 时口径必须与改动前逐字一致（上面三条就是它的守护）。
+     */
+    it("有起点时从起点算剩余长度：音频比视频长也只画到成片末尾为止", () => {
+        // 20s 音频放进 9s 成片：起点 3s ⇒ 只剩 6s 能进成片。
+        expect(waveformStripSeconds(20, 9, false, 3)).toBe(6);
+        expect(waveformStripSeconds(4, 9, false, 3)).toBe(4);
+        // loop 的轨从起点铺满剩余全片（FFmpeg 侧是 -stream_loop -1）。
+        expect(waveformStripSeconds(4, 9, true, 3)).toBe(6);
+        expect(waveformStripSeconds(20, 9, true, 3)).toBe(6);
+        // 起点为 0 / 缺省完全等价。
+        expect(waveformStripSeconds(20, 9, false, 0)).toBe(waveformStripSeconds(20, 9, false));
+        expect(waveformStripSeconds(4, 9, true, 0)).toBe(waveformStripSeconds(4, 9, true));
+    });
+
+    it("起点落在成片末尾或越界时条宽为 0，负起点与异常值按 0 处理", () => {
+        expect(waveformStripSeconds(4, 9, false, 9)).toBe(0);
+        expect(waveformStripSeconds(4, 9, false, 99)).toBe(0);
+        // 负起点与缺省同一口径（夹到 0），不会画出比整片还长的条。
+        expect(waveformStripSeconds(4, 9, false, -3)).toBe(4);
+        expect(waveformStripSeconds(4, 9, false, Number.NaN)).toBe(4);
+    });
 });
 
 describe("波形：秒数 → 采样点换算", () => {

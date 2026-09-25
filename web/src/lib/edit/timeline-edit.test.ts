@@ -10,8 +10,11 @@ import {
     editReorderIndex,
     editSecondsInsideClip,
     editSnapThresholdSeconds,
+    editTrackDraggable,
+    editTrackStartLimit,
     isEditSnapSuppressed,
     resolveEditSnap,
+    resolveEditTrackStart,
     splitEditClip,
 } from "./timeline-edit";
 import { buildEditClips } from "./timeline";
@@ -122,6 +125,61 @@ describe("剪辑台吸附：快拖不吸附", () => {
     it("阈值可覆盖，用于不同缩放的场景", () => {
         expect(isEditSnapSuppressed(500, 400)).toBe(true);
         expect(isEditSnapSuppressed(500, 800)).toBe(false);
+    });
+});
+
+/**
+ * 音轨左右拖动改起点：拖动过程只调这里的纯函数求落点（组件那边只写 ref 与 DOM，松手才提交）。
+ * 候选点与拖动时用的是同一份 collectEditSnapPoints（0 秒 = 第一段的起点 / 片段边界 / 播放头 / 网格），
+ * 阈值也来自同一个 editSnapThresholdSeconds——这里不另造第二套吸附。
+ */
+describe("剪辑台音轨：起始时间的落点与边界", () => {
+    // 上面三段合计 12s 就是成片总长（也就是起始时间的上界）。
+    const total = 12;
+    const points = collectEditSnapPoints(VIEWS, { playhead: 6.15, grid: editGridStep(total) });
+
+    it("阈值内的原始秒数吸附到 0 秒 / 播放头 / 片段边界", () => {
+        // 片段边界：第 4 秒既是 c1 的终点也是 c2 的起点（同一个位置网格也有点，片段边缘优先级更高）。
+        const boundary = resolveEditTrackStart(4.2, points, 0.5, total);
+        expect(boundary.seconds).toBe(4);
+        expect(boundary.snapped).toBe(true);
+        expect(boundary.point?.seconds).toBe(4);
+        expect(boundary.point?.kind).toMatch(/^clip-(start|end)$/);
+        // 播放头 6.15：离它 0.05，离网格 6 是 0.1。
+        expect(resolveEditTrackStart(6.1, points, 0.5, total).point?.kind).toBe("playhead");
+        // 「0 秒」就是第一段的起点（clip-start 0），所以拖到最左也吸得住。
+        expect(resolveEditTrackStart(0.1, points, 0.5, total)).toEqual({ seconds: 0, snapped: true, point: { seconds: 0, kind: "clip-start" } });
+    });
+
+    it("阈值外不吸附：原值原样返回，连 point 都不给（导引线不会指着一个到不了的位置）", () => {
+        expect(resolveEditTrackStart(7.5, points, 0.1, total)).toEqual({ seconds: 7.5, snapped: false });
+    });
+
+    it("关掉吸附（或快拖）时只夹区间：等价于候选点为空、阈值为 0", () => {
+        expect(resolveEditTrackStart(7.53, [], 0, total)).toEqual({ seconds: 7.53, snapped: false });
+    });
+
+    it("负值夹到 0、超过成片总长的夹到总长，两者都不算「吸附成功」", () => {
+        expect(resolveEditTrackStart(-3, points, 0.5, total)).toEqual({ seconds: 0, snapped: false });
+        expect(resolveEditTrackStart(99, points, 0.5, total)).toEqual({ seconds: 12, snapped: false });
+        // 上界正好是成片末尾：它在时间线上是 100%，与标尺右端严格重合。
+        expect(editTrackStartLimit(total)).toBe(12);
+        expect(resolveEditTrackStart(12, points, 0.5, total).seconds).toBe(12);
+    });
+
+    it("总时长无效时上界为 0（起点只能是 0）；非有限输入按 0 处理，不会算出 Infinity / NaN", () => {
+        expect(editTrackStartLimit(0)).toBe(0);
+        expect(editTrackStartLimit(Number.NaN)).toBe(0);
+        expect(resolveEditTrackStart(3, points, 0.5, 0).seconds).toBe(0);
+        // 与 resolveEditSnap 同一口径：非有限的原值一律当 0（缺省起点），不产生 NaN。
+        expect(resolveEditTrackStart(Number.NaN, points, 0.5, total).seconds).toBe(0);
+        expect(resolveEditTrackStart(Number.POSITIVE_INFINITY, [], 0, total).seconds).toBe(0);
+    });
+
+    it("锁定的轨一律不能拖：拖动入口先过这一条，连拖动过程都不会开始", () => {
+        expect(editTrackDraggable({ locked: true })).toBe(false);
+        expect(editTrackDraggable({ locked: false })).toBe(true);
+        expect(editTrackDraggable({})).toBe(true);
     });
 });
 

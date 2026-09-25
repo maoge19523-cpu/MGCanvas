@@ -173,7 +173,7 @@ export function buildComposeSegments({ project, paths }: EditComposeInput): Comp
         });
 }
 
-/** 剪辑台音轨 → compose_video 的 tracks：音频素材按整段混进成片，音量与淡入淡出生效。 */
+/** 剪辑台音轨 → compose_video 的 tracks：音频素材按整段混进成片，起点、音量与淡入淡出生效。 */
 export function buildComposeTracks({ project, paths }: EditComposeInput): ComposeAudioTrackInput[] {
     const mediaById = new Map(project.media.map((item) => [item.id, item]));
     // 静音轨与被独奏排除的轨**整条跳过**，不进 FFmpeg 的 tracks：
@@ -184,7 +184,18 @@ export function buildComposeTracks({ project, paths }: EditComposeInput): Compos
         if (!audible.has(track.id)) return [];
         const path = paths[track.mediaId];
         if (!path || mediaById.get(track.mediaId)?.kind !== "audio") return [];
-        return [{ path, volume: track.volume, fadeIn: track.fadeIn, fadeOut: track.fadeOut, loop: track.loop }];
+        return [
+            {
+                path,
+                volume: track.volume,
+                fadeIn: track.fadeIn,
+                fadeOut: track.fadeOut,
+                loop: track.loop,
+                // 起始时间照旧只下发「真的不是 0」的那一种：缺省 / 0 不下发这个字段，
+                // 请求体与改动前逐字一致（Rust 侧也就不追加 adelay）。
+                start: track.start !== undefined && track.start > 0 ? track.start : undefined,
+            },
+        ];
     });
 }
 

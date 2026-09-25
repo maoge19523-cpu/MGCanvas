@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { buildEditClips, editOutputSeconds, formatEditTime } from "@/lib/edit/timeline";
+import { editTrackStartLimit } from "@/lib/edit/timeline-edit";
 import { isTauriRuntime } from "@/services/platform/desktop-runtime";
 import { useEditState } from "@/stores/use-edit-store";
 import { EDIT_TRANSITIONS } from "@/types/edit";
@@ -167,6 +168,32 @@ export function EditInspector({ projectId, clipId }: { projectId: string; clipId
                                 </div>
                                 {/* 锁定的轨参数不可改：控件直接禁用（锁定的语义是「只读」），删除与解锁仍可用，所以不会把自己锁死。 */}
                                 <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-stone-400 dark:text-zinc-600">
+                                    {/* 起点：与时间线上左右拖动波形条是同一件事。这里给的是精确输入与键盘入口——
+                                        拖到成片末尾之后波形条会缩成 0 宽，也只有这里能稳妥地改回来。
+                                        上界与拖动一致：成片总长（再往后这条轨在成片里就一个字都听不到了）。 */}
+                                    <span data-edit-track-start={track.id} className="inline-flex items-center gap-1">
+                                        <Tooltip title={t("editor.trackStartHint")}>
+                                            <span className="cursor-help" title={t("editor.trackStartHint")}>
+                                                {t("editor.trackStart")}
+                                            </span>
+                                        </Tooltip>
+                                        <InputNumber
+                                            disabled={Boolean(track.locked)}
+                                            size="small"
+                                            min={0}
+                                            max={editTrackStartLimit(outputSeconds)}
+                                            step={0.1}
+                                            controls={false}
+                                            addonAfter="s"
+                                            value={track.start ?? 0}
+                                            style={{ width: 84 }}
+                                            aria-label={t("editor.trackStartHint")}
+                                            onChange={(value) => {
+                                                const next = clampNumber(value, 0, editTrackStartLimit(outputSeconds), track.start ?? 0);
+                                                updateAudioTrack(projectId, track.id, { start: next > 0 ? next : undefined });
+                                            }}
+                                        />
+                                    </span>
                                     <InputNumber disabled={Boolean(track.locked)} size="small" min={0} max={400} step={5} controls={false} addonAfter="%" value={Math.round(track.volume * 100)} style={{ width: 92 }} onChange={(value) => updateAudioTrack(projectId, track.id, { volume: clampNumber(value, 0, 400, track.volume * 100) / 100 })} />
                                     <InputNumber disabled={Boolean(track.locked)} size="small" min={0} max={5} step={0.5} controls={false} addonAfter="s" value={track.fadeIn} style={{ width: 84 }} onChange={(value) => updateAudioTrack(projectId, track.id, { fadeIn: clampNumber(value, 0, 5, track.fadeIn) })} />
                                     <InputNumber disabled={Boolean(track.locked)} size="small" min={0} max={10} step={0.5} controls={false} addonAfter="s" value={track.fadeOut} style={{ width: 84 }} onChange={(value) => updateAudioTrack(projectId, track.id, { fadeOut: clampNumber(value, 0, 10, track.fadeOut) })} />

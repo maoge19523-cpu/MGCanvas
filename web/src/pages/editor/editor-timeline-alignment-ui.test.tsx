@@ -89,6 +89,16 @@ function readWaveformWidths(markup: string) {
     return [...markup.matchAll(/data-edit-waveform-strip="[^"]+"[^>]*style="width:([-\d.eE+]+)%/g)].map((match) => Number(match[1]));
 }
 
+/** 读出每条波形条的内联 left / width（都是「秒数 / 总秒数」的百分比）；left 缺省时按 0 处理。 */
+function readWaveformStrips(markup: string) {
+    return [...markup.matchAll(/data-edit-waveform-strip="([^"]+)"[^>]*style="width:([-\d.eE+]+)%(?:;left:([-\d.eE+]+)%)?"/g)].map((match) => ({ id: match[1]!, width: Number(match[2]), left: match[3] === undefined ? 0 : Number(match[3]) }));
+}
+
+/** 波形条那一段真实的内联样式字符串（用来逐字核对「起点为 0 时连 left 都不写」）。 */
+function waveformStyle(markup: string, id: string) {
+    return markup.match(new RegExp(`data-edit-waveform-strip="${id}"[^>]*style="([^"]*)"`))?.[1] ?? "";
+}
+
 describe("剪辑台时间线：片段条与标尺 / 播放头 / 波形共用同一套换算（真实产物读回）", () => {
     it("每条片段条的 left / width 就是「秒数 / 总秒数」的百分比，第 k 段右边缘 == 前 k 段时长之和", () => {
         const markup = render(demo(CLIPS), "editor-timeline-alignment");
@@ -335,5 +345,101 @@ describe("剪辑台时间线：视频轨轨道头挪进片段行，与音轨头�
         expect(markup.indexOf("data-edit-video-track")).toBeGreaterThan(markup.indexOf("data-edit-timeline-scroll"));
         expect(audioRow.slice(0, audioRow.indexOf(">") + 1)).not.toMatch(/(?:^|[\s"])(?:p[lrx]?-|m[lrx]?-|border-l)/);
         expect(divSlice(markup, "data-edit-timeline-scroll")).toContain("data-edit-video-track");
+    });
+});
+
+/**
+ * 音轨左右拖动改起点：波形条的左边缘必须按「起点 / 成片总长」推到时间位置上，
+ * 而且仍与标尺刻度、片段条、播放头摊在**同一个可定位宽度**里（这条前提上已经出过两次偏移事故）。
+ */
+describe("剪辑台时间线：音轨起点推动波形条，换算仍与标尺同源（真实产物读回）", () => {
+    const withStarts = (starts: Array<number | undefined>): EditProject => ({
+        ...demo(CLIPS),
+        audioTracks: starts.map((start, index) => ({ id: `t${index + 1}`, mediaId: "m3", volume: 1, fadeIn: 0, fadeOut: 0, loop: false, start })),
+    });
+
+    it("start > 0 时 left 就是「起点 / 成片总长」，宽度是起点之后还能进成片的那一段", () => {
+        const markup = render(withStarts([3, undefined]), "editor-track-start-offset");
+        const strips = readWaveformStrips(markup);
+
+        expect(strips.map((strip) => strip.id)).toEqual(["t1", "t2"]);
+        // 60s 成片 + 20s 音轨：起点 3s ⇒ left 5%、宽仍是 20s 那一份（起点之后还剩 57s，音频只有 20s）。
+        expect(strips[0]!.left).toBeCloseTo(timeToPercent(3, TOTAL), 12);
+        expect(strips[0]!.width).toBeCloseTo(timeToPercent(20, TOTAL), 12);
+        // 缺省起点（t2）连 left 都不写：产物与改动前逐字一致。
+        expect(waveformStyle(markup, "t2")).toBe(`width:${timeToPercent(20, TOTAL)}%`);
+        expect(strips[1]!.left).toBe(0);
+    });
+
+    it("起点为 0 与缺省同口径：产物里同样不出现 left（老项目读进来逐字不变）", () => {
+        const markup = render(withStarts([0]), "editor-track-start-zero");
+
+        expect(waveformStyle(markup, "t1")).toBe(`width:${timeToPercent(20, TOTAL)}%`);
+        expect(readWaveformStrips(markup)[0]!.left).toBe(0);
+    });
+
+    it("波形条的 left 与标尺同一条换算：起点 30s 的条左缘正好落在「30」这条刻度上", () => {
+        const markup = render(withStarts([30]), "editor-track-start-tick");
+        const ticks = readTicks(markup);
+        const strip = readWaveformStrips(markup)[0]!;
+
+        // 总时长 60s → 刻度步长 10s：刻度依次是 0、10、20、30、40、50。
+        expect(ticks.map((left) => Number(left.toFixed(6)))).toEqual([0, 10, 20, 30, 40, 50].map((seconds) => Number(timeToPercent(seconds, TOTAL).toFixed(6))));
+        expect(strip.left).toBeCloseTo(ticks[3]!, 9);
+        expect(strip.left).not.toBeCloseTo(timeToPercent(0, TOTAL), 9);
+    });
+
+    it("音频比视频长也只画到成片末尾：left + width 恰好落在 100%，不会超出共用的定位宽度", () => {
+        // 20s 音频放进 60s 成片：起点 50s ⇒ 只剩 10s 能进成片（amix 是 duration=first，超出部分本来就被截断）。
+        const markup = render(withStarts([50]), "editor-track-start-tail");
+        const strip = readWaveformStrips(markup)[0]!;
+
+        expect(strip.left).toBeCloseTo(timeToPercent(50, TOTAL), 12);
+        expect(strip.width).toBeCloseTo(timeToPercent(10, TOTAL), 12);
+        expect(strip.left + strip.width).toBeCloseTo(100, 9);
+    });
+
+    it("起点落在上界（成片末尾）时条宽为 0，但整行仍是拖动入口：不会出现「拖过去就拿不回来」", () => {
+        const markup = render(withStarts([TOTAL]), "editor-track-start-limit");
+        const strip = readWaveformStrips(markup)[0]!;
+        const row = divSlice(markup, 'data-edit-track-row="t1"');
+
+        expect(strip.left).toBeCloseTo(100, 12);
+        expect(strip.width).toBe(0);
+        // 拖到最右端后波形条缩成 0 宽，所以拖动面是**整行**（轨道头是浮层、不占宽度），行上带抓取光标。
+        expect(row).toContain("cursor-grab");
+        expect(row).toContain('data-edit-waveform-strip="t1"');
+    });
+
+    it("波形条仍在与标尺 / 片段条 / 播放头同一个可定位宽度里：行容器没有会把 left 原点推开的横向内边距", () => {
+        const markup = render(withStarts([3]), "editor-track-start-shared-width");
+        const row = divSlice(markup, 'data-edit-track-row="t1"');
+        const scroller = divSlice(markup, "data-edit-timeline-scroll");
+
+        // 行容器不带横向内边距 / 外边距 / 左边框：left% 的原点就是共享容器的左边缘（与片段行同一约束）。
+        expect(row.slice(0, row.indexOf(">") + 1)).not.toMatch(/(?:^|[\s"])(?:p[lrx]?-|m[lrx]?-|border-l)/);
+        // 行与波形条都在唯一那个（带 scrollbar-gutter: stable 的）滚动容器里，和播放头同一个定位宽度。
+        expect(scroller).toContain('data-edit-track-row="t1"');
+        expect(scroller).toContain("data-edit-playhead");
+        expect(scroller).toContain('data-edit-clip="');
+    });
+
+    it("锁定的音轨渲染成「拖不动」：not-allowed 光标 + 锁定提示，且没有抓取光标", () => {
+        const markup = render({ ...demo(CLIPS), audioTracks: [{ id: "t1", mediaId: "m3", volume: 1, fadeIn: 0, fadeOut: 0, loop: false, locked: true, start: 3 }] }, "editor-track-start-locked");
+        const locked = divSlice(markup, 'data-edit-track-row="t1"');
+
+        expect(locked).toContain("cursor-not-allowed");
+        expect(locked).not.toContain("cursor-grab");
+        // 提示里说清楚为什么拖不动（与其它编辑入口同一句文案），不是静默失效。
+        expect(locked).toContain("锁定这条轨");
+
+        // 对照：没锁定的那条轨是可拖的，提示改成「左右拖动这一行…」。
+        const unlocked = render(withStarts([3]), "editor-track-start-unlocked");
+        const draggable = divSlice(unlocked, 'data-edit-track-row="t1"');
+        expect(draggable).toContain("cursor-grab");
+        expect(draggable).not.toContain("cursor-not-allowed");
+        expect(draggable).toContain("左右拖动这一行改变这条音轨的起点");
+        // 起点非 0 时行提示里带上读数，松开鼠标前也能知道落在了第几秒。
+        expect(draggable).toContain("起点 0:03.0");
     });
 });

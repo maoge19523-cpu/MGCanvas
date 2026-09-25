@@ -12,10 +12,18 @@ export function editWaveformBuckets(deviceWidth: number): number {
     return WAVEFORM_BUCKETS.find((bucket) => bucket >= deviceWidth) ?? WAVEFORM_BUCKETS[WAVEFORM_BUCKETS.length - 1];
 }
 
-/** 波形条在时间线上能占多长：loop 的音轨铺满全片（FFmpeg 侧也是 -stream_loop -1），其余按自身时长且不超过全片。 */
-export function waveformStripSeconds(audioSeconds: number, totalSeconds: number, loop: boolean): number {
+/**
+ * 波形条在时间线上能占多长：从 `startSeconds`（这条轨的起点）起算，loop 的音轨铺满**剩余**的全片
+ * （FFmpeg 侧也是 -stream_loop -1），其余按自身时长且不超过剩余全片。
+ * 起点之后剩下的才是它真正能落进成片的部分——amix 是 duration=first（以视频为准），
+ * 所以「音频比视频长」时条宽只到成片末尾为止，不会画出一条根本没进成片的尾巴。
+ * `startSeconds` 缺省 0 = 改动前的口径（整条从 0 秒铺开）。
+ */
+export function waveformStripSeconds(audioSeconds: number, totalSeconds: number, loop: boolean, startSeconds = 0): number {
     if (!(totalSeconds > 0) || !(audioSeconds > 0)) return 0;
-    return loop ? totalSeconds : Math.min(audioSeconds, totalSeconds);
+    const start = Number.isFinite(startSeconds) ? Math.max(0, startSeconds) : 0;
+    const remaining = Math.max(0, totalSeconds - start);
+    return loop ? remaining : Math.min(audioSeconds, remaining);
 }
 
 /** 时间线秒数 → 峰值下标；loop 的音轨按自身时长回卷到开头。没有可用数据时返回 -1。 */

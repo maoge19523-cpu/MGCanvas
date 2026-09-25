@@ -21,7 +21,7 @@ export function setFfmpegPath(path: string) {
 }
 
 export type ComposeSegmentInput = { path: string; start?: number; end?: number; volume?: number; transition?: string; transitionDuration?: number; subtitle?: string; fadeIn?: number; fadeOut?: number; muted?: boolean };
-export type ComposeAudioTrackInput = { path: string; volume?: number; fadeIn?: number; fadeOut?: number; loop?: boolean };
+export type ComposeAudioTrackInput = { path: string; volume?: number; fadeIn?: number; fadeOut?: number; loop?: boolean; start?: number };
 export type ComposeVideoRequest = {
     ffmpegPath?: string;
     segments: ComposeSegmentInput[];

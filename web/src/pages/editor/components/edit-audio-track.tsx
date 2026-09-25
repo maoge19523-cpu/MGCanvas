@@ -1,9 +1,10 @@
 import { Button, Popover, Tooltip, theme } from "antd";
 import { Headphones, Lock, LockOpen, Plus, Volume2, VolumeX } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import { editTrackAudibility, type EditTrackAudibility } from "@/lib/edit/audio-mix";
+import { editTrackDraggable, editTrackStartLimit, type EditSnapPoint, type EditSnapResult } from "@/lib/edit/timeline-edit";
 import { editWaveformBuckets, waveformColumns, waveformHasSignal, waveformStripSeconds, waveformY } from "@/lib/edit/waveform";
 import { formatEditTime } from "@/lib/edit/timeline";
 import { timeToPercent } from "@/lib/timeline-scale";
@@ -27,6 +28,23 @@ export const TRACK_TOGGLE_OFF = "bg-transparent";
 /** 一条音轨的波形状态：数据没到手前 pending，到手后按有没有信号分 ready / silent，出错是 failed。 */
 type WaveformStatus = "pending" | "ready" | "silent" | "failed";
 
+/**
+ * 音轨拖动的共用上下文：**由时间线容器（edit-stage）提供**，因为吸附候选点、吸附阈值、
+ * 吸附导引线在整条时间线上只有那一份（与片段拖动共用同一套），音轨行不另造第二套吸附。
+ */
+export type EditTrackDrag = {
+    /** 按下时播种指针速度：「快拖不吸附」判据用的就是它，拖动过程中不再写任何状态。 */
+    begin: (event: ReactPointerEvent<HTMLElement>) => void;
+    /** 求落点：复用时间线的吸附（0 秒 / 播放头 / 片段边界 / 网格）并夹进 [0, 成片总长]。 */
+    place: (event: ReactPointerEvent<HTMLElement>, rawSeconds: number) => EditSnapResult;
+    /** 显示 / 收起吸附导引线（与片段拖动共用同一条线）。 */
+    guide: (point: EditSnapPoint | null) => void;
+    /** 松手时才调用：提交一次起始时间（0 回缺省）。 */
+    commit: (trackId: string, start: number) => void;
+    /** 锁定轨被拖动时的反馈。 */
+    refuse: () => void;
+};
+
 
 /**
  * 时间线下方新增的**音轨行**：剪辑台原来的时间线只画视频片段，音频只以「音轨」列表出现在右侧属性区，
@@ -35,11 +53,13 @@ type WaveformStatus = "pending" | "ready" | "silent" | "failed";
  *
  * 时间对齐的依据：条的位置与宽度都用**百分比**（秒数 / 成片总秒数），与标尺刻度、播放头同一套换算，
  * 所以波形上的某一秒和视频片段上的同一秒在 x 上一致（详见 waveformStripSeconds 与下面的 style.width）。
+ * 起始时间（track.start）同样只由 timeToPercent 换算成 left，不自己写第二套百分比。
  *
  * 纪律：绘制只在「数据或尺寸变化」时发生，播放与拖动路径里一次都不写 store / setState——
- * 波形的数据进 ref，尺寸进 ref，canvas 的具体像素尺寸与重绘由 ResizeObserver 直接操作 DOM。
+ * 波形的数据进 ref，尺寸进 ref，canvas 的具体像素尺寸与重绘由 ResizeObserver 直接操作 DOM；
+ * 左右拖动这条轨时同样只写 ref 与波形条的 style，松手（pointerup / pointercancel）才提交一次。
  */
-export function EditAudioTrackRow({ projectId, totalSeconds }: { projectId: string; totalSeconds: number }) {
+export function EditAudioTrackRow({ projectId, totalSeconds, drag }: { projectId: string; totalSeconds: number; drag: EditTrackDrag }) {
     const { t } = useTranslation();
     const { projects } = useEditState();
     const project = projects.find((item) => item.id === projectId);
@@ -55,7 +75,7 @@ export function EditAudioTrackRow({ projectId, totalSeconds }: { projectId: stri
         <div data-edit-audio-track className="mt-1.5 flex flex-col gap-1">
             {tracks.length ? (
                 tracks.map((track) => (
-                    <AudioTrackStrip key={track.id} projectId={projectId} track={track} source={media.find((item) => item.id === track.mediaId)} totalSeconds={totalSeconds} audibility={audibility[track.id] ?? "audible"} />
+                    <AudioTrackStrip key={track.id} projectId={projectId} track={track} source={media.find((item) => item.id === track.mediaId)} totalSeconds={totalSeconds} audibility={audibility[track.id] ?? "audible"} drag={drag} />
                 ))
             ) : (
                 // 没有音轨时也占住这一行：布局稳定，也说明波形会画在哪里。
@@ -120,7 +140,7 @@ function AddAudioTrackRow({ projectId }: { projectId: string }) {
     );
 }
 
-function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility }: { projectId: string; track: EditAudioTrack; source: EditMedia | undefined; totalSeconds: number; audibility: EditTrackAudibility }) {
+function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility, drag }: { projectId: string; track: EditAudioTrack; source: EditMedia | undefined; totalSeconds: number; audibility: EditTrackAudibility; drag: EditTrackDrag }) {
     const { t } = useTranslation();
     const { token } = theme.useToken();
     const { updateAudioTrack } = useEditState();
@@ -134,8 +154,28 @@ function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility }:
     const audible = audibility === "audible";
 
 
+    // 时间线上的起点（秒）：缺省 / 0 都表示从 0 秒起混入，与改动前逐字一致。
+    const trackStart = track.start !== undefined && track.start > 0 ? track.start : 0;
     const audioSeconds = (source?.durationMs || 0) / 1000;
-    const stripSeconds = waveformStripSeconds(audioSeconds, totalSeconds, track.loop);
+    const stripSeconds = waveformStripSeconds(audioSeconds, totalSeconds, track.loop, trackStart);
+
+    /**
+     * 波形条的定位：left / width **只有这一个地方写**（拖动过程中与松手之后都走它），
+     * 所以 DOM 永远等于「已经提交 / 正要提交的那个起始时间」，不会出现视图与数据不一致。
+     * 换算仍走 lib/timeline-scale 的 timeToPercent（与标尺、播放头、片段条同一套），
+     * 起点为 0 时**不写 left**（回落到 left-0 类名），旧项目的产物与改动前逐字一致。
+     */
+    const paintStrip = (startSeconds: number) => {
+        const element = stripRef.current;
+        if (!element) return;
+        const start = Math.min(editTrackStartLimit(totalSeconds), Math.max(0, Number.isFinite(startSeconds) ? startSeconds : 0));
+        if (start > 0) element.style.left = `${timeToPercent(start, totalSeconds)}%`;
+        else element.style.removeProperty("left");
+        element.style.width = `${timeToPercent(waveformStripSeconds(audioSeconds, totalSeconds, track.loop, start), totalSeconds)}%`;
+        // 条长变了，画布上的波形也要按新的秒数重画（ResizeObserver 回调里用的仍是同一个 drawRef）。
+        // 这里只写 ref：拖动期间一次状态写入都没有。
+        pendingStartRef.current = start;
+    };
 
     const draw = () => {
         const canvas = canvasRef.current;
@@ -145,8 +185,10 @@ function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility }:
         if (!context) return;
         context.clearRect(0, 0, width, height);
         const waveform = waveformRef.current;
+        // 拖动中（还没松手）用 ref 里的未提交起点重算条长，否则条被裁短的那一刻画布会先用旧秒数画一帧。
+        const seconds = pendingStartRef.current === null ? stripSeconds : waveformStripSeconds(audioSeconds, totalSeconds, track.loop, pendingStartRef.current);
         // 一列画布像素 = 一列波形极值；数据为空（还没算出来 / 素材没有音频流）时全是 0，只剩中位线。
-        const columns = waveformColumns(waveform?.peaks ?? EMPTY_PEAKS, waveform?.troughs ?? EMPTY_PEAKS, width, stripSeconds, audioSeconds, track.loop);
+        const columns = waveformColumns(waveform?.peaks ?? EMPTY_PEAKS, waveform?.troughs ?? EMPTY_PEAKS, width, seconds, audioSeconds, track.loop);
         context.fillStyle = token.colorFill;
         context.fillRect(0, Math.round(height / 2), width, 1);
         context.fillStyle = token.colorPrimary;
@@ -221,17 +263,79 @@ function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility }:
     // 每个开关都是「点一下切状态」的低频交互，直接提交一次 store —— 拖动路径里一次都不写（见文件顶部说明）。
     const toggle = (patch: Partial<EditAudioTrack>) => updateAudioTrack(projectId, track.id, patch);
 
+    /**
+     * 左右拖动改这条轨的起始时间。拖动期间**只写 ref 与 DOM**（波形条的 left / width 直接改 style），
+     * 一次都不写 store / setState —— 松手（pointerup / pointercancel）才提交一次。这是 React #185 的直接对策。
+     * 秒 / 像素用「成片总秒数 ÷ 行宽」：行宽就是标尺、片段条、波形条共用的那个可定位宽度
+     * （整条时间轴的滚动 / 内边距只加在共用容器上，所以这里与标尺严格同源，见 edit-stage）。
+     */
+    const dragRef = useRef<{ x: number; start: number; perPixel: number; pending: number } | null>(null);
+    // 拖动期间「还没提交的起点」：只由 paintStrip 写、由 draw 读（都是 ref，不产生状态写入）。
+    // 松手提交后置回 null，之后画布与条宽都只认 props 里那个已经提交的值。
+    const pendingStartRef = useRef<number | null>(null);
+
+    const startDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+        // 轨道头（静音 / 独奏 / 锁定）压在行上：点它是在按开关，不是在拖轨。
+        if ((event.target as HTMLElement).closest("[data-edit-track-head]")) return;
+        // 锁定的轨连 dragRef 都不建：拖动过程一次都不会发生，并给出同一句可理解的反馈（不静默失效）。
+        if (!editTrackDraggable(track)) {
+            drag.refuse();
+            return;
+        }
+        const width = event.currentTarget.getBoundingClientRect().width;
+        drag.begin(event);
+        dragRef.current = { x: event.clientX, start: trackStart, perPixel: width > 0 && totalSeconds > 0 ? totalSeconds / width : 0.05, pending: trackStart };
+        // 抓住指针：横向拖出这一行（甚至拖出窗口）都不会中途丢事件，松手一定提交。
+        event.currentTarget.setPointerCapture(event.pointerId);
+    };
+
+    const moveDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+        const state = dragRef.current;
+        if (!state) return;
+        // place 里复用时线那一套吸附（0 秒 / 播放头 / 片段边界 / 网格）：只算落点，不写任何状态。
+        const placed = drag.place(event, state.start + (event.clientX - state.x) * state.perPixel);
+        state.pending = placed.seconds;
+        paintStrip(placed.seconds);
+        drag.guide(placed.point ?? null);
+    };
+
+    const endDrag = () => {
+        const state = dragRef.current;
+        dragRef.current = null;
+        drag.guide(null);
+        if (!state) return;
+        // 先把 DOM 钉在要提交的那个值上（拖动期间是自己写的像素，React 的 style 差分未必覆盖），再提交一次；
+        // 提交后清掉「未提交起点」，之后条宽与画布都只认 props 里那个已经提交的值。
+        paintStrip(state.pending);
+        pendingStartRef.current = null;
+        drag.commit(track.id, state.pending);
+    };
+
+    const rowTitle = [source ? `${source.name} · ${formatEditTime(audioSeconds)}` : t("editor.mediaRemoved"), trackStart > 0 ? t("editor.trackStartAt", { time: formatEditTime(trackStart) }) : null, track.locked ? t("editor.trackLockHint") : t("editor.trackDragHint")].filter(Boolean).join(" · ");
+
     return (
-        <div className="relative h-9 shrink-0 overflow-hidden rounded-[8px] bg-black/[0.03] dark:bg-white/[0.05]" title={source ? `${source.name} · ${formatEditTime(audioSeconds)}` : t("editor.mediaRemoved")}>
+        <div
+            // className 必须仍是这个标签的**第一个**属性：editor-timeline-alignment-ui.test.tsx 用它逐字定位音轨行
+            // （`<div class="relative h-9...`），也用它核对行容器没有会吃掉宽度的内边距 / 滚动条。
+            // 类名前半段同样被逐字核对，追加类名时不要插到它中间去。
+            className={`relative h-9 shrink-0 overflow-hidden rounded-[8px] bg-black/[0.03] dark:bg-white/[0.05] touch-none select-none ${track.locked ? "cursor-not-allowed" : "cursor-grab active:cursor-grabbing"}`}
+            data-edit-track-row={track.id}
+            title={rowTitle}
+            onPointerDown={startDrag}
+            onPointerMove={moveDrag}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+        >
             <div
                 ref={stripRef}
                 data-edit-waveform-strip={track.id}
                 data-edit-track-audible={audible ? "true" : "false"}
                 // 静音 / 被独奏排除的轨在时间线上明确变淡：状态在波形上就看得出来，不用去数右侧参数。
                 className={`absolute inset-y-0 left-0 overflow-hidden rounded-[8px] border border-black/[0.09] dark:border-white/[0.09] ${audible ? "" : "opacity-40"}`}
-                // 条宽 = 该音轨在成片时间轴上占的秒数 / 成片总秒数：与标尺刻度、播放头、片段条
-                // 共用 lib/timeline-scale 的同一套百分比换算，x 严格对齐（片段条不再有 gap 偏移）。
-                style={{ width: `${timeToPercent(stripSeconds, totalSeconds)}%` }}
+                // 条宽 = 这条音轨在成片时间轴上**还能占**的秒数 / 成片总秒数，left = 起始时间 / 成片总秒数：
+                // 都与标尺刻度、播放头、片段条共用 lib/timeline-scale 的同一套百分比换算，x 严格对齐。
+                // 起始时间为 0 时不下发 left（回落到 left-0 类名），产物与改动前逐字一致。
+                style={{ width: `${timeToPercent(stripSeconds, totalSeconds)}%`, ...(trackStart > 0 ? { left: `${timeToPercent(trackStart, totalSeconds)}%` } : {}) }}
             >
                 <canvas ref={canvasRef} data-edit-waveform={track.id} className="block h-full w-full" />
             </div>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildComposeRequest, buildComposeSegments, buildComposeTracks, buildEditClips, editOutputSeconds, editPlaybackSeconds, editTickLabel, editTickStep, editTransitionSeconds, formatEditTime, resolveEditPlayback, resolveEditSeek } from "./timeline";
-import { EDIT_DEFAULT_OUTPUT, EDIT_TRANSITIONS, normalizeEditTransition, type EditClip, type EditMedia, type EditProject } from "@/types/edit";
+import { EDIT_DEFAULT_OUTPUT, EDIT_TRANSITIONS, normalizeEditTransition, type EditAudioTrack, type EditClip, type EditMedia, type EditProject } from "@/types/edit";
 
 function media(id: string, seconds: number | undefined, kind: "video" | "audio" = "video"): EditMedia {
     return { id, name: `素材${id.toUpperCase()}`, kind, source: "local", url: `blob:${id}`, durationMs: seconds === undefined ? undefined : Math.round(seconds * 1000), width: 1920, height: 1080, createdAt: "2024-01-01T00:00:00.000Z" };
@@ -321,6 +321,38 @@ describe("剪辑台导出：项目数据 → compose_video 入参", () => {
         it("缺省的片段不进 muted 字段（旧项目语义与改动前完全一致）", () => {
             const segments = buildComposeSegments({ project: project(), paths });
             expect(segments.every((segment) => !("muted" in segment) || segment.muted === undefined)).toBe(true);
+        });
+    });
+
+    /**
+     * 音轨起始时间真的影响导出：非 0 时请求体里带 start，
+     * 缺省 / 0 时**不下发这个字段**，请求体与改动前逐字一致（Rust 侧也就不追加 adelay）。
+     */
+    describe("音轨起始时间直接改的是交给 FFmpeg 的音轨参数", () => {
+        const withTrack = (patch: Partial<EditAudioTrack>) =>
+            project({
+                media: [...project().media, media("m", 30, "audio")],
+                audioTracks: [{ id: "t1", mediaId: "m", volume: 0.4, fadeIn: 1, fadeOut: 2, loop: false, ...patch }],
+            });
+
+        it("起始时间非 0 时请求体里带上它，其余参数一个都不变", () => {
+            expect(buildComposeTracks({ project: withTrack({ start: 3 }), paths })).toEqual([{ path: paths.m, volume: 0.4, fadeIn: 1, fadeOut: 2, loop: false, start: 3 }]);
+        });
+
+        it("缺省与 0 都不下发 start：整条轨的请求体与改动前逐字一致", () => {
+            const plain = buildComposeTracks({ project: withTrack({}), paths });
+            expect(plain).toEqual([{ path: paths.m, volume: 0.4, fadeIn: 1, fadeOut: 2, loop: false }]);
+            // 逐字对照：JSON 里既没有 start 键，也没有多出来的 null / false。
+            expect(JSON.stringify(plain[0])).toBe(`{"path":${JSON.stringify(paths.m)},"volume":0.4,"fadeIn":1,"fadeOut":2,"loop":false}`);
+            // 0 与缺省同一口径（都是从 0 秒起混入）。
+            const zero = buildComposeTracks({ project: withTrack({ start: 0 }), paths });
+            expect(zero).toEqual(plain);
+            expect(JSON.stringify(zero[0])).toBe(JSON.stringify(plain[0]));
+        });
+
+        it("被静音 / 被独奏排除的轨照旧整条不进请求体（起始时间不改变这一点）", () => {
+            expect(buildComposeTracks({ project: withTrack({ start: 3, muted: true }), paths })).toEqual([]);
+            expect(buildComposeTracks({ project: withTrack({ start: 3, solo: false }), paths })).toHaveLength(1);
         });
     });
 

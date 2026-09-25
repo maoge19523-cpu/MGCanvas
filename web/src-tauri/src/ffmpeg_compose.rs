@@ -52,6 +52,9 @@ pub struct ComposeAudioTrack {
     // 音轨比成片短时循环补齐（背景音乐常用）；loop 是 Rust 关键字，所以字段另取名再改回 JSON 名。
     #[serde(rename = "loop")]
     looped: Option<bool>,
+    // 这条轨在成片时间线上的起点（秒）：整条素材从这个时刻开始混入，之前是静音。
+    // 缺省 / 0 表示从 0 秒起混入，滤镜链与改动前逐字一致（不出现 adelay）。
+    start: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -294,6 +297,40 @@ fn global_fade_chain(video_label: &str, fade_in: f64, fade_out: f64, total: f64)
         return None;
     }
     Some(format!("[{video_label}]{}[vout]", steps.join(",")))
+}
+
+/// 一条附加音轨的整形链：音量 → 裁到成片时长 → 时间戳归零 → 淡入淡出 → 起始时间（前置静音）。
+///
+/// - `atrim=end` 仍是**成片总长**（与本改动前逐字相同），起点之后的尾巴交给 amix 的 duration=first 截断；
+/// - 淡出的**绝对**位置必须始终落在成片末尾（total − fade_out），所以在延迟之前的本地时间轴上
+///   它从 `span − fade_out` 开始（`span` 是起点之后剩下的时长；起点为 0 时 span == total，与改动前一致）；
+/// - 起始时间 > 0 时才在链**末尾**追加一个 adelay（前置静音）。前面每一步的顺序与参数一个都没动，
+///   改动面只有这一条——这条链上出过「末尾多一个逗号 ⇒ 空滤镜名 ⇒ 拒绝出片」的事故，越少动越好。
+///
+/// 起始时间缺省 / 为 0 时输出的字符串一个字符都不变，所以旧项目的滤镜链与改动前逐字一致。
+fn track_chain(input_index: u32, track: &ComposeAudioTrack, total: f64) -> String {
+    let volume = clamp(track.volume.unwrap_or(1.0), 0.0, 4.0);
+    let fade_in = clamp(track.fade_in.unwrap_or(0.0), 0.0, 5.0);
+    let fade_out = clamp(track.fade_out.unwrap_or(0.0), 0.0, 10.0);
+    // 起点的合法区间是 [0, 成片总长]：落到末尾之后这条轨在成片里一个字都听不到。
+    let delay = clamp(track.start.unwrap_or(0.0), 0.0, total);
+    let span = (total - delay).max(0.0);
+    let mut chain = format!(
+        "[{input_index}:a]aformat=sample_rates=44100:channel_layouts=stereo,volume={volume},atrim=end={},asetpts=PTS-STARTPTS",
+        seconds(total)
+    );
+    if fade_in > 0.0 {
+        chain.push_str(&format!(",afade=t=in:st=0:d={}", seconds(fade_in)));
+    }
+    if fade_out > 0.0 {
+        chain.push_str(&format!(",afade=t=out:st={}:d={}", seconds((span - fade_out).max(0.0)), seconds(fade_out)));
+    }
+    if delay > 0.0 {
+        // adelay 的位置参数就是 delays：aformat 已经把这条流固定成 stereo，所以 | 两侧各给一个毫秒数。
+        let millis = (delay * 1000.0).round() as i64;
+        chain.push_str(&format!(",adelay={millis}|{millis}"));
+    }
+    chain
 }
 
 /// 把 FFmpeg 的退出码翻成人能读懂的说明。新版 FFmpeg 会把内部错误码（AVERROR）直接当退出码，
@@ -540,25 +577,10 @@ fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<Co
 
     let mut audio_label = "ca".to_string();
     if !request.tracks.is_empty() {
-        // 每条附加音轨单独整形：音量、裁到成片时长、淡入淡出。
+        // 每条附加音轨单独整形：音量、裁到成片时长、淡入淡出、起始时间（见 track_chain）。
         let mut mix_inputs = "[ca]".to_owned();
         for (index, track) in request.tracks.iter().enumerate() {
-            let volume = clamp(track.volume.unwrap_or(1.0), 0.0, 4.0);
-            let fade_in = clamp(track.fade_in.unwrap_or(0.0), 0.0, 5.0);
-            let fade_out = clamp(track.fade_out.unwrap_or(0.0), 0.0, 10.0);
-            let mut chain = format!(
-                "[{}:a]aformat=sample_rates=44100:channel_layouts=stereo,volume={volume},atrim=end={},asetpts=PTS-STARTPTS",
-                track_index + index as u32,
-                seconds(total)
-            );
-            if fade_in > 0.0 {
-                chain.push_str(&format!(",afade=t=in:st=0:d={}", seconds(fade_in)));
-            }
-            if fade_out > 0.0 {
-                chain.push_str(&format!(",afade=t=out:st={}:d={}", seconds((total - fade_out).max(0.0)), seconds(fade_out)));
-            }
-            chain.push_str(&format!("[mix{index}]"));
-            filters.push(chain);
+            filters.push(format!("{}[mix{index}]", track_chain(track_index + index as u32, track, total)));
             mix_inputs.push_str(&format!("[mix{index}]"));
         }
         // amix 的 normalize 选项需要 FFmpeg 4.4+，为兼容用户可能存在的旧版本（例如 2016 年的构建），
@@ -1055,6 +1077,56 @@ mod tests {
         assert!(segment_needs_silence(false, true), "既没有音频流又关闭原声同样是静音源");
     }
 
+    /// 音轨的起始时间只加一个 adelay，而且**只在真的不是 0 时**才加：
+    /// 缺省 / 0 的整条链必须与改动前逐字一致（旧项目行为不变是硬约束，也是这次改动风险最低的写法）。
+    #[test]
+    fn track_chain_only_adds_a_delay_when_the_start_time_is_positive() {
+        let track = |start: Option<f64>| ComposeAudioTrack {
+            path: "music.wav".to_owned(),
+            volume: Some(0.4),
+            fade_in: Some(1.0),
+            fade_out: Some(2.0),
+            looped: Some(true),
+            start,
+        };
+        let plain = track_chain(1, &track(None), 10.0);
+        // 逐字对照改动前那条链：音量 → atrim（成片总长）→ 时间戳归零 → 淡入 → 淡出（落在成片末尾 10 − 2 = 8）。
+        assert_eq!(
+            plain,
+            "[1:a]aformat=sample_rates=44100:channel_layouts=stereo,volume=0.4,atrim=end=10,asetpts=PTS-STARTPTS,afade=t=in:st=0:d=1,afade=t=out:st=8:d=2"
+        );
+        assert_eq!(track_chain(1, &track(Some(0.0)), 10.0), plain, "起始 0 与缺省必须逐字一致");
+        assert!(!plain.contains("adelay"), "起始为 0 时不得出现 adelay");
+
+        // 起始 3 秒：只在链尾追加 adelay（毫秒 × 两条声道），同时把淡出挪到延迟之前的本地时间轴上，
+        // 于是延迟之后它仍然落在成片末尾：3 + (7 − 2) = 8 = 10 − 2。
+        assert_eq!(
+            track_chain(1, &track(Some(3.0)), 10.0),
+            "[1:a]aformat=sample_rates=44100:channel_layouts=stereo,volume=0.4,atrim=end=10,asetpts=PTS-STARTPTS,afade=t=in:st=0:d=1,afade=t=out:st=5:d=2,adelay=3000|3000"
+        );
+        // 连上输出标签一起看：标签前不能多出逗号（那条链上出过的事故）。
+        assert_no_empty_filter(&format!("{}[mix0]", track_chain(1, &track(Some(3.0)), 10.0)));
+        // 淡出仍然落在成片末尾：延迟之前的本地起点 = (10 − 3) − 2 = 5，延迟之后正好是 10 − 2 = 8。
+        assert_eq!(track_chain(1, &track(Some(3.0)), 10.0).matches("afade=t=out:st=5:d=2").count(), 1);
+
+        // 起点超过成片总长时被夹到总长：链的形状照旧（atrim 仍是总长，不会出现空的裁剪区间）。
+        let off_end = format!("{}[mix0]", track_chain(1, &track(Some(30.0)), 10.0));
+        assert!(off_end.contains(",adelay=10000|10000"), "起点的上界是成片总长：{off_end}");
+        assert_no_empty_filter(&off_end);
+
+        // 淡入淡出都为 0 时同样不留尾逗号（这条链上出过「末尾多一个逗号」的事故）。
+        let bare = format!(
+            "{}[mix0]",
+            track_chain(
+                0,
+                &ComposeAudioTrack { path: "x.mp3".to_owned(), volume: None, fade_in: None, fade_out: None, looped: None, start: Some(0.5) },
+                4.0
+            )
+        );
+        assert_eq!(bare, "[0:a]aformat=sample_rates=44100:channel_layouts=stereo,volume=1,atrim=end=4,asetpts=PTS-STARTPTS,adelay=500|500[mix0]");
+        assert_no_empty_filter(&bare);
+    }
+
     // ── 波形峰值包络 ──────────────────────────────────────────────────────────
     // i16 / 32768 的商是二进制有限小数，能被 f32 精确表示，所以这些断言可以直接比相等。
 
@@ -1241,8 +1313,9 @@ mod tests {
     // 验证两件事：① 被排除的轨在成片里确实没有声音；② 整条滤镜链（含上次出过尾逗号事故的
     // 整体淡入淡出）语法成立、真能出片。默认忽略，用 `cargo test --offline --lib -- --ignored` 执行。
 
-    /// 跑一次真实合成：`tracks` 就是前端算完「谁真的出声」之后交给 FFmpeg 的那一份。
-    fn compose_smoke(cache: &Path, segment: &str, tracks: &[&str], fade: f64) -> ComposeVideoResult {
+    /// 跑一次真实合成：`tracks` 就是前端算完「谁真的出声」之后交给 FFmpeg 的那一份，
+    /// 每项第二个元素是这条轨的起始时间（秒，None = 缺省从 0 秒起）。
+    fn compose_smoke(cache: &Path, segment: &str, tracks: &[(&str, Option<f64>)], fade: f64) -> ComposeVideoResult {
         compose_blocking(
             cache,
             ComposeVideoRequest {
@@ -1261,7 +1334,7 @@ mod tests {
                 }],
                 tracks: tracks
                     .iter()
-                    .map(|path| ComposeAudioTrack { path: (*path).to_owned(), volume: None, fade_in: None, fade_out: None, looped: None })
+                    .map(|(path, start)| ComposeAudioTrack { path: (*path).to_owned(), volume: None, fade_in: None, fade_out: None, looped: None, start: *start })
                     .collect(),
                 long_edge: Some(320.0),
                 fps: Some(30.0),
@@ -1317,11 +1390,11 @@ mod tests {
         }
 
         // ① 两条轨都在（没人静音）：成片里听得到 music 的声音。
-        let both = compose_smoke(&dir, &video, &[&bed, &music], 0.3);
+        let both = compose_smoke(&dir, &video, &[(&bed, None), (&music, None)], 0.3);
         let both_peak = peak_of(&both.absolute_path);
 
         // ② music 被静音 ⇒ 前端只把 bed 交给 FFmpeg：成片应当彻底安静。
-        let muted = compose_smoke(&dir, &video, &[&bed], 0.3);
+        let muted = compose_smoke(&dir, &video, &[(&bed, None)], 0.3);
         let muted_peak = peak_of(&muted.absolute_path);
 
         // ③ 全部静音 ⇒ tracks 为空，连混音分支都不进：同样安静，且仍然出片。
@@ -1485,6 +1558,89 @@ mod tests {
         assert_eq!((kept.width, kept.height), (muted.width, muted.height), "关闭原声不该改变画面尺寸");
         assert!(kept.bytes > 0 && muted.bytes > 0, "两种情况都必须真的出片");
         // peak_of 走的是音频解码，能读出包络就说明成片里仍然有一条音频流（不是把音频整条丢掉）。
+    }
+
+    // ── 音轨「起始时间」的真实 FFmpeg 冒烟 ──────────────────────────────────────────
+    // 起始时间在 FFmpeg 侧就是链尾追加的一个 adelay（前置静音）。这组测试真的跑一遍 FFmpeg，验证四件事：
+    // ① 缺省（起始为 0）与改动前一致：整段都听得到；② 起始 1 秒时**前 0.9 秒确实无声**、1.1 秒之后确实有声
+    // （按 10ms 一档读回真实包络，不是只看时长）；③ 起始时间不改变成片总时长；
+    // ④ 起始落到成片末尾时整条彻底无声、但仍然出片（没有空滤镜 / 不认识的滤镜）。
+    // 默认忽略，用 `cargo test --offline --lib -- --ignored` 执行。
+
+    /// 按固定档位读回成片的峰值包络：每档时长 = 成片时长 / 档位。
+    fn envelope_of(path: &str, samples: usize) -> AudioWaveformResult {
+        audio_waveform_blocking(AudioWaveformRequest { ffmpeg_path: None, path: path.to_owned(), samples: Some(samples) }).expect("应当能读出成片音频")
+    }
+
+    fn peak_of_slice(values: &[f32]) -> f32 {
+        values.iter().copied().fold(0.0_f32, f32::max)
+    }
+
+    #[test]
+    #[ignore]
+    fn delayed_track_really_starts_later_in_the_final_cut() {
+        let Some(executable) = detect_ffmpeg_path(None) else {
+            return;
+        };
+        let dir = std::env::temp_dir().join(format!("mgcanvas-track-start-smoke-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("应当能建临时目录");
+        let video = dir.join("segment.mp4").to_string_lossy().into_owned();
+        let music = dir.join("music.wav").to_string_lossy().into_owned();
+
+        // 视频段故意**没有音轨**：成片里剩下的声音只可能来自附加音轨（[ca] 走 anullsrc 静音源）。
+        let generated = run_captured(
+            &executable,
+            &["-hide_banner", "-y", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30:duration=3", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", &video],
+        )
+        .expect("应当能生成测试视频");
+        assert!(generated.status.success(), "生成测试视频失败：{}", String::from_utf8_lossy(&generated.stderr));
+
+        // 满幅 880Hz 的 3 秒音轨：sine 默认只有约 1/8 满幅，这里拉到满幅，有声 / 无声的差距才是决定性的。
+        let made = run_captured(
+            &executable,
+            &["-hide_banner", "-y", "-f", "lavfi", "-i", "sine=frequency=880:duration=3:sample_rate=44100", "-filter:a", "volume=8", "-c:a", "pcm_s16le", &music],
+        )
+        .expect("应当能生成测试音频");
+        assert!(made.status.success(), "生成测试音频失败：{}", String::from_utf8_lossy(&made.stderr));
+
+        // ① 缺省（None）：等同改动前，整段都听得到这条轨。
+        let plain = compose_smoke(&dir, &video, &[(&music, None)], 0.3);
+        // ② 起始 1 秒：前 1 秒应当无声，之后有声。
+        let delayed = compose_smoke(&dir, &video, &[(&music, Some(1.0))], 0.3);
+        // ③ 起始 = 成片总长（3 秒）：整条彻底无声，但必须照旧出片。
+        let off_end = compose_smoke(&dir, &video, &[(&music, Some(3.0))], 0.3);
+
+        // 300 档 × 10ms：第 90 档是 0.9 秒、第 110 档是 1.1 秒，中间隔着 1 秒那条边界。
+        let plain_env = envelope_of(&plain.absolute_path, 300);
+        let delayed_env = envelope_of(&delayed.absolute_path, 300);
+        let off_end_env = envelope_of(&off_end.absolute_path, 300);
+
+        println!(
+            "① 起始缺省：总峰值 {:.3} / 前 0.9s 峰值 {:.4}；② 起始 1s：总峰值 {:.3} / 前 0.9s 峰值 {:.4} / 1.1s 之后峰值 {:.4}；③ 起始 3s：总峰值 {:.4}",
+            peak_of_slice(&plain_env.peaks),
+            peak_of_slice(&plain_env.peaks[..90]),
+            peak_of_slice(&delayed_env.peaks),
+            peak_of_slice(&delayed_env.peaks[..90]),
+            peak_of_slice(&delayed_env.peaks[110..]),
+            peak_of_slice(&off_end_env.peaks),
+        );
+        println!("时长：缺省 {}ms / 起始 1s {}ms / 起始 3s {}ms（原片段 3s）", plain.duration_ms, delayed.duration_ms, off_end.duration_ms);
+
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // ① 缺省行为与改动前一致：整段有声音（下面那条「缺省时前 0.9 秒有声」是它的对照）。
+        assert!(peak_of_slice(&plain_env.peaks) > 0.5, "缺省（起始 0）时整段应当有声音，实测总峰值 {}", peak_of_slice(&plain_env.peaks));
+        assert!(peak_of_slice(&plain_env.peaks[..90]) > 0.5, "缺省时前 0.9 秒应当有声音，实测峰值 {}", peak_of_slice(&plain_env.peaks[..90]));
+        // ② 起始 1 秒：前 0.9 秒真的无声（10ms 一档的真实包络，不是只看时长），1.1 秒之后真的有声音。
+        assert!(peak_of_slice(&delayed_env.peaks[..90]) < 0.02, "起始 1 秒时前 0.9 秒应当无声，实测峰值 {}", peak_of_slice(&delayed_env.peaks[..90]));
+        assert!(peak_of_slice(&delayed_env.peaks[110..]) > 0.5, "起始 1 秒之后应当有声音，实测峰值 {}", peak_of_slice(&delayed_env.peaks[110..]));
+        // ③ 起始落到成片末尾：一个字都听不到。
+        assert!(peak_of_slice(&off_end_env.peaks) < 0.02, "起始等于成片总长时应当彻底静音，实测峰值 {}", peak_of_slice(&off_end_env.peaks));
+        // ④ 总时长没有被意外改变：三种情况都仍然按片段长度算（3 秒）。
+        for (name, result) in [("缺省", &plain), ("起始 1 秒", &delayed), ("起始 3 秒", &off_end)] {
+            assert!((result.duration_ms as i64 - 3_000).abs() <= 400, "{name}的成片时长应当仍按片段长度算：{}ms", result.duration_ms);
+            assert!(result.bytes > 0, "{name}必须真的出片");
+        }
     }
 }
 

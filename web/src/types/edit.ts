@@ -86,6 +86,13 @@ export type EditAudioTrack = {
      * 与 muted 叠加时以「被排除」为准（静音的轨即使 solo 也不出声）。
      */
     solo?: boolean;
+    /**
+     * 这条轨在**时间线上的起点**（秒）：整条素材从这个时刻开始混进成片，之前是静音。
+     * 缺省（undefined）= 从 0 秒起混入，与改动前逐字一致（导出侧不出现 adelay，不需要任何迁移）。
+     * 上界是成片总时长（见 lib/edit/timeline-edit 的 editTrackStartLimit）：起点落到成片末尾之后
+     * 这条轨在成片里一个字都听不到（amix 是 duration=first，以视频为准）。
+     */
+    start?: number;
     /** 锁定：这条轨的参数编辑与删除被拒绝；不参与导出。缺省 = 不锁定。 */
     locked?: boolean;
 };

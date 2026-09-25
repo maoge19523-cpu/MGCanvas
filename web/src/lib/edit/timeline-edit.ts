@@ -1,4 +1,4 @@
-import type { EditClip } from "@/types/edit";
+import type { EditAudioTrack, EditClip } from "@/types/edit";
 import { editPlaybackSeconds, editTickStep, type EditClipView } from "./timeline";
 
 /** 吸附候选点的种类。优先级顺序沿用 OpenReel：相邻片段边缘 > 播放头 > 时间网格。 */
@@ -87,6 +87,43 @@ export function resolveEditSnap(rawSeconds: number, durationSeconds: number, poi
     if (!best) return { seconds: raw, snapped: false };
     const seconds = snapFromEnd ? best.seconds - durationSeconds : best.seconds;
     return { seconds: Math.max(0, Number(seconds.toFixed(3))), snapped: true, point: best };
+}
+
+/**
+ * 音轨起始时间的上界 = **成片总长**。
+ *
+ * 为什么是总长，而不是「不限」或「总长 − 一点余量」：
+ * - 导出侧 amix 是 duration=first（以视频为准），起点一旦落到成片末尾之后就一个字都听不到；
+ *   允许继续往右拖只会让波形条整条滑出可定位宽度，用户反而看不出这条轨已经不出声了。
+ * - 所以允许的最大起点就是「正好落在成片末尾」：它在时间线上是 100%，与标尺右端严格重合，
+ *   语义可解释（这条轨整条落在成片之外），不用再凭空引入一个魔法余量。
+ * - 音频比视频长时同理：条宽只到成片末尾为止（见 waveformStripSeconds 的 startSeconds），
+ *   超出的部分本来就是被 amix 截断的，画出来只会误导。
+ */
+export function editTrackStartLimit(totalSeconds: number) {
+    return Number.isFinite(totalSeconds) && totalSeconds > 0 ? totalSeconds : 0;
+}
+
+/**
+ * 音轨拖动 / 输入的落点：先按共用候选点吸附（0 秒 / 播放头 / 片段边界 / 网格），再夹进 [0, 上界]。
+ *
+ * 只吸附**起点这一条边**（durationSeconds 传 0）：用户拖的是「这条轨从第几秒开始」，
+ * 音频尾巴落在哪里与这个动作无关，也不该在两个都看不见的位置之间来回跳。
+ * 夹取把吸附结果拉回区间时不再算吸附成功（导引线就不会指着一个到不了的位置，与片段裁剪同一口径）。
+ */
+export function resolveEditTrackStart(rawSeconds: number, points: EditSnapPoint[], thresholdSeconds: number, totalSeconds: number): EditSnapResult {
+    const snapped = resolveEditSnap(Number.isFinite(rawSeconds) ? rawSeconds : 0, 0, points, thresholdSeconds);
+    const seconds = Number(Math.min(editTrackStartLimit(totalSeconds), Math.max(0, snapped.seconds)).toFixed(3));
+    return snapped.snapped && seconds === snapped.seconds ? { ...snapped, seconds } : { seconds, snapped: false };
+}
+
+/**
+ * 这条音轨能不能被拖动改起点：锁定的轨一律不能（与片段拖动 / 裁剪、属性区、删除同一口径）。
+ * 拖动入口先过这一条——锁定轨连拖动过程都不会开始，也就不会产生任何 store 写入，
+ * 拒绝时会给出与其它编辑入口同一句可理解的反馈（见 edit-audio-track / edit-stage）。
+ */
+export function editTrackDraggable(track: Pick<EditAudioTrack, "locked">) {
+    return track.locked !== true;
 }
 
 /** 播放头是否落在这一段内部：起点算在内、终点不算（段边界归后一段），空段永远不匹配。 */

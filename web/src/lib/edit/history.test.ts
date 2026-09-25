@@ -86,6 +86,24 @@ describe("剪辑台撤销栈：快照只存会被改动的切片", () => {
         const clipMuted = clipWith({ muted: true });
         expect(sameEditSnapshot(editSnapshot(clipMuted), editSnapshot(clipWith({ muted: undefined })))).toBe(false);
     });
+
+    /**
+     * 音轨的时间线起点（start）是「拖一下改变一个值」的编辑。
+     * 漏进比较函数的话，整次拖动都会被判成「值没变」：波形条看着动了，松手后却弹回原位、撤销栈里也没有这一次。
+     */
+    it("音轨起始时间必须参与比较：拖到哪就是哪，拖回缺省同样算一次改动", () => {
+        const base = project({ audioTracks: [{ id: "t1", mediaId: "m1", volume: 1, fadeIn: 0, fadeOut: 0, loop: false }] });
+        const trackWith = (patch: Partial<EditTrack>) => ({ ...base, audioTracks: [{ ...base.audioTracks[0]!, ...patch }] });
+
+        // 0 → 3 是一次真改动。
+        expect(sameEditSnapshot(editSnapshot(base), editSnapshot(trackWith({ start: 3 })))).toBe(false);
+        // 3 → 5 也是一次真改动（连续两次拖动不能互相吞掉）。
+        expect(sameEditSnapshot(editSnapshot(trackWith({ start: 3 })), editSnapshot(trackWith({ start: 5 })))).toBe(false);
+        // 3 → 0（拖回起点）算回缺省，同样必须被记成一次改动，否则波形条会停在半路。
+        expect(sameEditSnapshot(editSnapshot(trackWith({ start: 3 })), editSnapshot(trackWith({ start: undefined })))).toBe(false);
+        // 值确实没变的两次快照不算改动（不会白压一条历史）。
+        expect(sameEditSnapshot(editSnapshot(trackWith({ start: 3 })), editSnapshot({ ...trackWith({ start: 3 }) }))).toBe(true);
+    });
 });
 
 describe("剪辑台撤销栈：分组与内存上限", () => {

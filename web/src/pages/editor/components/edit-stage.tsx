@@ -13,6 +13,7 @@ import {
     editSnapThresholdSeconds,
     isEditSnapSuppressed,
     resolveEditSnap,
+    resolveEditTrackStart,
     type EditSnapPoint,
 } from "@/lib/edit/timeline-edit";
 import {
@@ -31,7 +32,7 @@ import { timelinePlacements, timeToPercent } from "@/lib/timeline-scale";
 import { createEditClip, useEditState } from "@/stores/use-edit-store";
 import type { EditClip, EditMedia } from "@/types/edit";
 import { useEditMediaUrls } from "../use-edit-media-urls";
-import { EditAudioTrackRow, TRACK_TOGGLE_OFF, TRACK_TOGGLE_ON } from "./edit-audio-track";
+import { EditAudioTrackRow, TRACK_TOGGLE_OFF, TRACK_TOGGLE_ON, type EditTrackDrag } from "./edit-audio-track";
 
 // 素材没探测到时长的片段长度为 0：按百分比算宽度就是 0，既看不见也抓不住。
 // 只给它一个最小抓取宽度——绝对定位下它不会推动任何别的元素，因此不会重新引入累积偏移。
@@ -82,7 +83,7 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
     const { t } = useTranslation();
     const { message } = App.useApp();
     const { token } = theme.useToken();
-    const { projects, updateClips, updateClip, addClips, removeClip, rippleRemoveClip, splitClip, setVideoTrackMuted, undoEdit, redoEdit, historyFlags, historyLabels } = useEditState();
+    const { projects, updateClips, updateClip, addClips, removeClip, rippleRemoveClip, splitClip, setVideoTrackMuted, updateAudioTrack, undoEdit, redoEdit, historyFlags, historyLabels } = useEditState();
     const project = projects.find((item) => item.id === projectId);
     const media = project?.media ?? EMPTY_MEDIA;
     const clips = project?.clips ?? EMPTY_CLIPS;
@@ -569,7 +570,24 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
         return true;
     };
 
-    const snapPointsFor = (excludeClipId: string) => collectEditSnapPoints(views, { playhead: secondsRef.current, grid: editGridStep(totalSeconds), excludeClipIds: [excludeClipId] });
+    const snapPointsFor = (excludeClipId?: string) => collectEditSnapPoints(views, { playhead: secondsRef.current, grid: editGridStep(totalSeconds), excludeClipIds: excludeClipId ? [excludeClipId] : [] });
+
+    /**
+     * 音轨拖动的共用上下文：吸附候选点、阈值、导引线与提交入口都取自时间线容器这一份
+     * （与片段拖动共用 snapActive / snapPointsFor / snapThreshold / paintGuide，**不另造一套吸附**）。
+     * 拖动过程一次都不写 store：begin 只播种指针速度、place 只算落点、guide 只写导引线的 style，
+     * 只有松手时的那一次 commit 才提交。
+     */
+    const trackDrag: EditTrackDrag = {
+        begin: (event) => {
+            velocityRef.current = { x: event.clientX, at: performance.now() };
+        },
+        place: (event, rawSeconds) => (snapActive(event) ? resolveEditTrackStart(rawSeconds, snapPointsFor(), snapThreshold(), totalSeconds) : resolveEditTrackStart(rawSeconds, [], 0, totalSeconds)),
+        guide: paintGuide,
+        // 起始 0 回缺省（undefined）：落盘与导出请求里都不留多余的 start 字段，老项目语义不变。
+        commit: (trackId, start) => updateAudioTrack(projectId, trackId, { start: start > 0 ? start : undefined }),
+        refuse: () => message.warning(t("editor.trackLockedNotice")),
+    };
 
     const startReorder = (event: ReactPointerEvent<HTMLDivElement>, index: number) => {
         event.stopPropagation();
@@ -1024,8 +1042,9 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
                             </div>
 
                             {/* 音轨行：音频只出现在右侧属性区的「音轨」列表里，看不到波形就没法做音画对齐，
-                                所以在这里按同一条时间轴给每条音轨铺一行波形（位置与宽度都用百分比，与标尺、播放头同一套换算）。 */}
-                            <EditAudioTrackRow projectId={projectId} totalSeconds={totalSeconds} />
+                                所以在这里按同一条时间轴给每条音轨铺一行波形（位置与宽度都用百分比，与标尺、播放头同一套换算）。
+                                波形条还可以左右拖动改起始时间：拖动过程不写状态，吸附与导引线复用上面那一套。 */}
+                            <EditAudioTrackRow projectId={projectId} totalSeconds={totalSeconds} drag={trackDrag} />
 
                             {/* 吸附导引线：吸附到哪就画到哪，位置只由 paintGuide 直写 style.left（不弹时间气泡）。 */}
                             <div ref={guideRef} data-edit-snap-guide className="pointer-events-none absolute inset-y-0 z-10 w-px" style={{ left: "0%", opacity: 0, background: token.colorPrimary }} />

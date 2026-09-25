@@ -195,3 +195,21 @@ describe("剪辑台 store：新建片段的数据入口", () => {
         expect(JSON.stringify(project().clips.at(-1))).not.toContain('"transition"');
     });
 });
+
+describe("剪辑台 store：接缝上的转场提交（接缝标记与属性区共用同一条写入）", () => {
+    beforeEach(() => seed());
+
+    it("加转场 / 改类型 / 改时长 / 删除都落在片段数据上，删除后回到硬切", () => {
+        const update = useEditStore.getState().updateClip;
+
+        update(PROJECT_ID, "c2", { transition: "wipeleft" });
+        expect(project().clips[1]!.transition).toBe("wipeleft");
+        update(PROJECT_ID, "c2", { transition: "circleopen", transitionDuration: 1.2 });
+        expect(project().clips[1]!.transition).toBe("circleopen");
+        expect(project().clips[1]!.transitionDuration).toBe(1.2);
+        // 其它片段不受影响：转场只挂在左段（「本段 → 下一段」）。
+        expect(project().clips[0]!.transition).toBe("fade");
+        update(PROJECT_ID, "c2", { transition: undefined });
+        expect(project().clips[1]!.transition).toBeUndefined();
+    });
+});

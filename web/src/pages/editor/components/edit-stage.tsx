@@ -28,11 +28,13 @@ import {
 } from "@/lib/edit/playback-clock";
 import { EDIT_SHORTCUTS, editShortcutDisplay, editShortcutHints, isEditShortcutTargetBlocked, matchEditShortcut, type EditShortcutAction } from "@/lib/edit/shortcuts";
 import { buildEditClips, editPlaybackSeconds, editTickLabel, editTickStep, formatEditTime, resolveEditPlayback, resolveEditSeek, type EditClipView } from "@/lib/edit/timeline";
+import { editTimelineSeams } from "@/lib/edit/timeline-seams";
 import { timelinePlacements, timeToPercent } from "@/lib/timeline-scale";
 import { createEditClip, useEditState } from "@/stores/use-edit-store";
 import type { EditClip, EditMedia } from "@/types/edit";
 import { useEditMediaUrls } from "../use-edit-media-urls";
 import { EditAudioTrackRow, TRACK_TOGGLE_OFF, TRACK_TOGGLE_ON, type EditTrackDrag } from "./edit-audio-track";
+import { EditTransitionSeam } from "./edit-transition-seam";
 
 // 素材没探测到时长的片段长度为 0：按百分比算宽度就是 0，既看不见也抓不住。
 // 只给它一个最小抓取宽度——绝对定位下它不会推动任何别的元素，因此不会重新引入累积偏移。
@@ -849,6 +851,8 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
     // 片段条位置：与上面刻度、下面的播放头 / 波形共用 timeline-scale 这一套换算，
     // 因此第 k 段的右边缘严格落在「前 k 段时长之和」上，不再被 gap 吃掉像素而累积偏移。
     const placements = timelinePlacements(views.map((view) => view.length), totalSeconds);
+    // 接缝标记的位置与上面的片段条同源（左段的右边缘）；片段少于 2 段时一条接缝都没有。
+    const seams = useMemo(() => editTimelineSeams(views, totalSeconds), [views, totalSeconds]);
     const empty = views.length === 0;
 
     // 时间线空状态的一键引导：把已探测到时长的视频素材按素材顺序一次排上时间线（一次写入）。
@@ -1038,6 +1042,13 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
                                         <span className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize rounded-l-[8px] hover:bg-black/10 dark:hover:bg-white/15" title={t("editor.trimStart")} onPointerDown={(event) => startTrim(event, index, "start")} />
                                         <span className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize rounded-r-[8px] hover:bg-black/10 dark:hover:bg-white/15" title={t("editor.trimEnd")} onPointerDown={(event) => startTrim(event, index, "end")} />
                                     </div>
+                                ))}
+                                {/* 接缝标记：每条相邻片段的交界处一个，**绝对定位压在分界线上、不占任何宽度**
+                                    （片段的 left / width 因此与改动前逐字相同，见 editor-transition-seam-ui.test）。
+                                    转场字段挂在左段上（「本段 → 下一段」），所以一条接缝改成一次 updateClip。
+                                    没有转场的接缝也渲染（虚线小槽 + 悬停「＋」）：否则用户找不到「怎么加转场」。 */}
+                                {seams.map((seam) => (
+                                    <EditTransitionSeam key={seam.leftClipId} seam={seam} onChange={(patch) => updateClip(projectId, seam.leftClipId, patch)} />
                                 ))}
                             </div>
 

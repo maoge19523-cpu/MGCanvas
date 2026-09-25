@@ -36,9 +36,12 @@ export type ToolRunner = { callTool: (name: unknown, input: unknown) => Promise<
 export type ApiSkillContext = { directory?: string; active?: { name: string; instructions: string } };
 
 /** Skill 目录与正文的注入上限：本机实测 50 个 Skill、单个最大 38KB，必须截断以免撑爆上下文。 */
-export const MAX_SKILL_DIRECTORY_CHARS = 6000;
+export const MAX_SKILL_DIRECTORY_CHARS = 3000;
 export const MAX_SKILL_INSTRUCTIONS_CHARS = 16000;
-const MAX_SKILL_DESCRIPTION_CHARS = 160;
+/** 目录里每条用途说明的截断长度：只留能看出「这个 Skill 干什么」的那半句。 */
+const MAX_SKILL_DESCRIPTION_CHARS = 32;
+/** 目录末尾提示（含「另有 N 个未列出」）的预留长度，保证「列表 + 提示」不超过总上限。 */
+const MAX_SKILL_DIRECTORY_TAIL_CHARS = 300;
 
 type ChatMessage =
     | { role: "system" | "user"; content: string }
@@ -181,37 +184,101 @@ function summarizeToolResult(result: unknown) {
 }
 
 /**
- * 把已安装的 Skill 整理成目录文本：只给名称和截断后的用途说明，
- * 让模型知道本机有哪些能力，但不把正文塞进上下文。
+ * 目录里每个 Skill 的一句话用途：超长时按句读截断，不硬切在半句里。
+ *
+ * 名字信息量有限（h3-prompt-writing 能猜，wizard / ask-matt / wayfinder 猜不到），
+ * 保留这半句用途，模型才能对用户说「这个任务建议用哪个 Skill」。
+ */
+function shortSkillDescription(value: string) {
+    const text = String(value || "").replace(/\s+/g, " ").trim();
+    if (text.length <= MAX_SKILL_DESCRIPTION_CHARS) return text;
+    const head = text.slice(0, MAX_SKILL_DESCRIPTION_CHARS);
+    const cut = Math.max(head.lastIndexOf("。"), head.lastIndexOf("；"), head.lastIndexOf("，"), head.lastIndexOf("："));
+    return cut >= MAX_SKILL_DESCRIPTION_CHARS / 2 ? head.slice(0, cut) : `${head}…`;
+}
+
+/**
+ * 把已安装的 Skill 压成目录文本：一条一个 Skill，格式「名字：一句话用途」。
+ *
+ * 本机 50 个 Skill 实测：旧的「名字 + 160 字说明」写法要 6073 字，超出上限后静默丢掉 9 个，
+ * 模型因此根本不知道这些 Skill 存在。这里换成「名字 + 32 字用途」，装不下时也不再沉默：
+ * 明确写出「另有 N 个未列出」并说明它们同样可以在界面上选中。名字一律保留，
+ * 因为模型要靠名字建议用户去「✨ 选择 Skill」里点选。
  */
 export function skillDirectoryPrompt(skills: Array<{ name: string; description: string }>) {
+    const unique: Array<{ name: string; description: string }> = [];
+    const seen = new Set<string>();
+    for (const skill of skills) {
+        const name = String(skill?.name || "").trim();
+        if (!name || seen.has(name)) continue;
+        seen.add(name);
+        unique.push({ name, description: shortSkillDescription(skill?.description) });
+    }
+    if (!unique.length) return "";
+
+    const head = `【可用 Skill】本机已启用 ${unique.length} 个 Skill，每条是「名字：一句话用途」；完整说明不注入，用户在「✨ 选择 Skill」选中或用 $skill-name 点名后才会出现在本轮对话里：`;
+    const budget = MAX_SKILL_DIRECTORY_CHARS - head.length - 1 - MAX_SKILL_DIRECTORY_TAIL_CHARS;
     const lines: string[] = [];
     let used = 0;
-    let dropped = 0;
-    for (const skill of skills) {
-        const description = String(skill.description || "").replace(/\s+/g, " ").trim();
-        const line = `- ${skill.name}：${description.length > MAX_SKILL_DESCRIPTION_CHARS ? `${description.slice(0, MAX_SKILL_DESCRIPTION_CHARS)}…` : description}`;
-        if (used + line.length > MAX_SKILL_DIRECTORY_CHARS) {
-            dropped += 1;
-            continue;
-        }
+    for (const skill of unique) {
+        const detailed = `- ${skill.name}${skill.description ? `：${skill.description}` : ""}`;
+        const line = used + detailed.length + 1 <= budget ? detailed : `- ${skill.name}`;
+        if (used + line.length + 1 > budget) break;
         lines.push(line);
         used += line.length + 1;
     }
-    if (!lines.length) return "";
-    return [
-        "【可用 Skill】用户在本机安装了以下 Skill（这里只有名称和用途）：",
-        ...lines,
-        ...(dropped ? [`（另有 ${dropped} 个 Skill 未列出）`] : []),
-        "当用户从界面选中某个 Skill，或在消息里用 $skill-name 点名时，该 Skill 的完整说明会出现在本轮对话里；",
-        "看到说明就按它执行，不要只复述它的名字或做概述。没有说明的 Skill 不要凭名字猜测内容。",
-    ].join("\n");
+    const dropped = unique.length - lines.length;
+    const tail = [
+        ...(dropped ? [`（以上不是全部：另有 ${dropped} 个 Skill 未列出（本机共 ${unique.length} 个）；未列出的 Skill 同样能在「✨ 选择 Skill」里选中。）`] : []),
+        "用户的任务如果对应某个 Skill，建议他按名字在「✨ 选择 Skill」里选中；选中后完整说明会出现在本轮对话里，看到说明就按它执行，不要只复述它的名字。",
+    ];
+    return [head, ...lines, ...tail].join("\n");
 }
 
 /** 截断超长 Skill 正文，避免单个 Skill 独占上下文。 */
 function skillInstructions(name: string, instructions: string) {
     const text = instructions.trim();
     return text.length > MAX_SKILL_INSTRUCTIONS_CHARS ? `${text.slice(0, MAX_SKILL_INSTRUCTIONS_CHARS)}\n【Skill「${name}」说明过长，以上为前 ${MAX_SKILL_INSTRUCTIONS_CHARS} 字】` : text;
+}
+
+/** API 模式固定追加的补充要求；与前面几段分开存放，顺序不能动。 */
+const API_BACKEND_SUPPLEMENT = [
+    "补充要求（API 模式）：",
+    "- 用户说的「画布」就是网页当前打开的那一个，直接用画布工具操作，不要去找项目列表。",
+    "- 需要了解现状时调用 canvas_get_state；要落笔就直接调用 canvas_create_text_node 等工具。",
+    "- 任务完成后用一两句中文说明你做了什么，不要罗列工具名。",
+    "- 生成类节点一次只能接一个提示词：不要把多个不同镜头的提示词接到同一个生成节点上，",
+    "  那样只会产出其中一个镜头的画面。用户要多个镜头/多段画面时，走两条路之一：",
+    "  (1) 把这些镜头写成一段连续描述放进同一个提示词；",
+    "  (2) 每个镜头各建一个文本节点和一个生成节点，生成完成后用合成节点把片段拼起来。",
+    "  用户要求多镜头短片时优先用 (2)，并明确告诉用户需要逐个生成再合成。",
+    "- 节点要克制：每个镜头只建「一个文本提示词节点 + 一个生成节点」并连线，",
+    "  不要再附带配置节点、素材节点或其它占位节点，节点总数越少越好。",
+    "- 多个生成任务必须串行：一次只触发一个节点的生成，等它结束后再触发下一个。",
+    "  同时触发多个会撞上服务商限流（HTTP 429 速率限制），反而全部失败。",
+    "- 尽量做最小改动：只需要生成节点就只建生成节点（可用 canvas_create_node 或 canvas_apply_ops 的 add_node），",
+    "  需要提示词就再单独建一个文本节点并连线；不要创建用不到的空节点（例如空白素材节点）。",
+    "- 写生成用的提示词时避开内容审核风险：不要使用暴力、战斗、血腥、武器，",
+    "  也不要直接使用知名影视/动漫角色名（例如奥特曼、皮卡丘）。用户这么要求时，",
+    "  改写成不含风险词但观感相近的描述：用体型、装甲质感、光源、能量特效、",
+    "  环境氛围、镜头运动来表达，例如「巨大的银色装甲身影矗立在城市天际线上，",
+    "  胸口能量核心亮起，镜头缓慢环绕」。",
+].join("\n");
+
+/**
+ * 拼装 API 模式的 system prompt，顺序固定：
+ * AGENT_PROMPT → 本地记忆 → Skill 目录 → 本轮 Skill 正文 → API 补充要求。
+ */
+export function apiSystemPrompt(input: { memoryPrefix?: string; skills?: ApiSkillContext }) {
+    const { memoryPrefix, skills } = input;
+    return [
+        AGENT_PROMPT,
+        ...(memoryPrefix ? ["", memoryPrefix] : []),
+        ...(skills?.directory ? ["", skills.directory] : []),
+        ...(skills?.active ? ["", `【本轮启用 Skill：${skills.active.name}】以下是这个 Skill 的完整执行说明，本轮必须按它执行：`, skillInstructions(skills.active.name, skills.active.instructions)] : []),
+        "",
+        API_BACKEND_SUPPLEMENT,
+    ].join("\n");
 }
 
 /**
@@ -237,36 +304,7 @@ export async function runApiAgentTurn(input: {
     // 本地记忆（配置页里维护的长期偏好）：与 Codex / Claude 两条后端同一个文件、同一个工作区。
     const memory = await new MemoryStore(ensureSiteWorkspace(loadConfig()).workspacePath).promptPrefix();
     const messages: ChatMessage[] = [
-        {
-            role: "system",
-            content: [
-                AGENT_PROMPT,
-                ...(memory.prefix ? ["", memory.prefix] : []),
-                ...(skills?.directory ? ["", skills.directory] : []),
-                ...(skills?.active ? ["", `【本轮启用 Skill：${skills.active.name}】以下是这个 Skill 的完整执行说明，本轮必须按它执行：`, skillInstructions(skills.active.name, skills.active.instructions)] : []),
-                "",
-                "补充要求（API 模式）：",
-                "- 用户说的「画布」就是网页当前打开的那一个，直接用画布工具操作，不要去找项目列表。",
-                "- 需要了解现状时调用 canvas_get_state；要落笔就直接调用 canvas_create_text_node 等工具。",
-                "- 任务完成后用一两句中文说明你做了什么，不要罗列工具名。",
-                "- 生成类节点一次只能接一个提示词：不要把多个不同镜头的提示词接到同一个生成节点上，",
-                "  那样只会产出其中一个镜头的画面。用户要多个镜头/多段画面时，走两条路之一：",
-                "  (1) 把这些镜头写成一段连续描述放进同一个提示词；",
-                "  (2) 每个镜头各建一个文本节点和一个生成节点，生成完成后用合成节点把片段拼起来。",
-                "  用户要求多镜头短片时优先用 (2)，并明确告诉用户需要逐个生成再合成。",
-                "- 节点要克制：每个镜头只建「一个文本提示词节点 + 一个生成节点」并连线，",
-                "  不要再附带配置节点、素材节点或其它占位节点，节点总数越少越好。",
-                "- 多个生成任务必须串行：一次只触发一个节点的生成，等它结束后再触发下一个。",
-                "  同时触发多个会撞上服务商限流（HTTP 429 速率限制），反而全部失败。",
-                "- 尽量做最小改动：只需要生成节点就只建生成节点（可用 canvas_create_node 或 canvas_apply_ops 的 add_node），",
-                "  需要提示词就再单独建一个文本节点并连线；不要创建用不到的空节点（例如空白素材节点）。",
-                "- 写生成用的提示词时避开内容审核风险：不要使用暴力、战斗、血腥、武器，",
-                "  也不要直接使用知名影视/动漫角色名（例如奥特曼、皮卡丘）。用户这么要求时，",
-                "  改写成不含风险词但观感相近的描述：用体型、装甲质感、光源、能量特效、",
-                "  环境氛围、镜头运动来表达，例如「巨大的银色装甲身影矗立在城市天际线上，",
-                "  胸口能量核心亮起，镜头缓慢环绕」。",
-            ].join("\n"),
-        },
+        { role: "system", content: apiSystemPrompt({ memoryPrefix: memory.prefix, skills }) },
         { role: "user", content: prompt },
     ];
     emit("agent_bootstrap", { type: `${agent}.preparing` });

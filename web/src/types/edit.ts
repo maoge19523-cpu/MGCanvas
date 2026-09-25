@@ -108,6 +108,20 @@ export type EditOutput = {
     subtitleSize: "small" | "medium" | "large";
 };
 
+/**
+ * 一条**独立字幕**：按成片时间轴（秒）给绝对起止时间，不挂在任何片段上。
+ * 导入的 SRT / WebVTT 就是一份「时间段 + 文本」的列表，片段上那种「一段一句、铺满整段」的表达不了它，
+ * 所以单独存一条字幕轨：跨片段、落在接缝上、甚至超出某个片段的区间都能照原样保留。
+ */
+export type EditSubtitle = {
+    id: string;
+    /** 成片时间轴上的起点（秒）。 */
+    start: number;
+    /** 终点（秒），只会大于 start。 */
+    end: number;
+    text: string;
+};
+
 export type EditProject = {
     id: string;
     name: string;
@@ -116,6 +130,11 @@ export type EditProject = {
     media: EditMedia[];
     clips: EditClip[];
     audioTracks: EditAudioTrack[];
+    /**
+     * 导入进来的独立字幕轨。缺省（undefined）= 没有导入过，语义与改动前完全一致
+     * （导出侧不下发 subtitles 字段，成片里只有片段上那句字幕）。
+     */
+    subtitles?: EditSubtitle[];
     output: EditOutput;
 };
 

@@ -8,7 +8,7 @@ import { localForageStorage } from "@/lib/localforage-storage";
 import { EMPTY_EDIT_HISTORY, editHistoryFlags, editHistoryLabels, editSnapshot, pushEditHistory, redoEditHistory, sameEditSnapshot, undoEditHistory, type EditHistoryEntry, type EditHistoryStack } from "@/lib/edit/history";
 import { buildEditClips } from "@/lib/edit/timeline";
 import { deleteEditClip, splitEditClip } from "@/lib/edit/timeline-edit";
-import { EDIT_DEFAULT_OUTPUT, type EditAudioTrack, type EditClip, type EditMedia, type EditOutput, type EditProject } from "@/types/edit";
+import { EDIT_DEFAULT_OUTPUT, type EditAudioTrack, type EditClip, type EditMedia, type EditOutput, type EditProject, type EditSubtitle } from "@/types/edit";
 
 type EditStore = {
     hydrated: boolean;
@@ -39,6 +39,11 @@ type EditStore = {
     addAudioTrack: (projectId: string, mediaId: string) => void;
     updateAudioTrack: (projectId: string, trackId: string, patch: Partial<EditAudioTrack>) => void;
     removeAudioTrack: (projectId: string, trackId: string) => void;
+    /** 导入 SRT / WebVTT：追加到已有字幕之后，一次调用一条历史。 */
+    importSubtitles: (projectId: string, cues: Omit<EditSubtitle, "id">[]) => void;
+    updateSubtitle: (projectId: string, subtitleId: string, patch: Partial<EditSubtitle>) => void;
+    removeSubtitle: (projectId: string, subtitleId: string) => void;
+    clearSubtitles: (projectId: string) => void;
     updateOutput: (projectId: string, patch: Partial<EditOutput>) => void;
     undoEdit: (projectId: string) => void;
     redoEdit: (projectId: string) => void;
@@ -210,6 +215,25 @@ export const useEditStore = create<EditStore>()(
                     ),
                 removeAudioTrack: (projectId, trackId) =>
                     patchProject(projectId, i18n.t("editor.history.audioTrack"), (project) => ({ ...project, audioTracks: project.audioTracks.filter((track) => track.id !== trackId) })),
+                importSubtitles: (projectId, cues) =>
+                    patchProject(projectId, i18n.t("editor.history.subtitles"), (project) => ({
+                        ...project,
+                        subtitles: [...(project.subtitles ?? []), ...cues.map((cue) => ({ ...cue, id: nanoid() }))],
+                    })),
+                updateSubtitle: (projectId, subtitleId, patch) =>
+                    patchProject(
+                        projectId,
+                        i18n.t("editor.history.subtitle"),
+                        (project) => ({ ...project, subtitles: (project.subtitles ?? []).map((cue) => (cue.id === subtitleId ? { ...cue, ...patch } : cue)) }),
+                        `subtitle:${subtitleId}:${Object.keys(patch).join(",")}`,
+                    ),
+                removeSubtitle: (projectId, subtitleId) =>
+                    patchProject(projectId, i18n.t("editor.history.subtitle"), (project) => {
+                        // 删到一条不剩时把字段去掉（回缺省），落盘的数据里不留空数组。
+                        const left = (project.subtitles ?? []).filter((cue) => cue.id !== subtitleId);
+                        return { ...project, subtitles: left.length ? left : undefined };
+                    }),
+                clearSubtitles: (projectId) => patchProject(projectId, i18n.t("editor.history.subtitle"), (project) => ({ ...project, subtitles: undefined })),
                 updateOutput: (projectId, patch) =>
                     patchProject(projectId, i18n.t("editor.history.output"), (project) => ({ ...project, output: { ...project.output, ...patch } }), `output:${Object.keys(patch).join(",")}`),
                 undoEdit: (projectId) => applyHistory(projectId, undoEditHistory, "before"),

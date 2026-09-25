@@ -22,10 +22,14 @@ export function setFfmpegPath(path: string) {
 
 export type ComposeSegmentInput = { path: string; start?: number; end?: number; volume?: number; transition?: string; transitionDuration?: number; subtitle?: string; fadeIn?: number; fadeOut?: number; muted?: boolean };
 export type ComposeAudioTrackInput = { path: string; volume?: number; fadeIn?: number; fadeOut?: number; loop?: boolean; start?: number };
+/** 独立字幕：按成片时间轴的绝对秒数给起止时间（与片段无关，可跨片段、可超出片段区间）。 */
+export type ComposeSubtitleInput = { start: number; end: number; text: string };
 export type ComposeVideoRequest = {
     ffmpegPath?: string;
     segments: ComposeSegmentInput[];
     tracks?: ComposeAudioTrackInput[];
+    /** 独立字幕轨；没有字幕时不下发这个字段。 */
+    subtitles?: ComposeSubtitleInput[];
     longEdge?: number;
     fps?: number;
     fadeIn?: number;

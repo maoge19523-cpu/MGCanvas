@@ -1,12 +1,12 @@
-import type { EditAudioTrack, EditClip, EditMedia, EditOutput, EditProject } from "@/types/edit";
+import type { EditAudioTrack, EditClip, EditMedia, EditOutput, EditProject, EditSubtitle } from "@/types/edit";
 
 /**
- * 一次可撤销改动只保存会被改动的四个切片。
+ * 一次可撤销改动只保存会被改动的五个切片。
  * store 的更新本来就是不可变更新（`{ ...project, clips: [...] }`），
  * 所以这里存的是**旧数组的引用**，不是深拷贝——一次拖拽不会 clone 整份 project，
  * 内存占用只跟撤销栈长度有关。
  */
-export type EditSnapshot = { media: EditMedia[]; clips: EditClip[]; audioTracks: EditAudioTrack[]; output: EditOutput };
+export type EditSnapshot = { media: EditMedia[]; clips: EditClip[]; audioTracks: EditAudioTrack[]; subtitles: EditSubtitle[] | undefined; output: EditOutput };
 
 export type EditHistoryEntry = {
     label: string;
@@ -27,8 +27,8 @@ export const EDIT_HISTORY_LIMIT = 100;
 /** 同一个 mergeKey 在这个时间窗内视为同一次编辑。 */
 export const EDIT_HISTORY_MERGE_MS = 600;
 
-export function editSnapshot(project: Pick<EditProject, "media" | "clips" | "audioTracks" | "output">): EditSnapshot {
-    return { media: project.media, clips: project.clips, audioTracks: project.audioTracks, output: project.output };
+export function editSnapshot(project: Pick<EditProject, "media" | "clips" | "audioTracks" | "subtitles" | "output">): EditSnapshot {
+    return { media: project.media, clips: project.clips, audioTracks: project.audioTracks, subtitles: project.subtitles, output: project.output };
 }
 
 function sameClip(left: EditClip, right: EditClip) {
@@ -70,6 +70,11 @@ function sameTrack(left: EditAudioTrack, right: EditAudioTrack) {
     );
 }
 
+function sameSubtitle(left: EditSubtitle, right: EditSubtitle) {
+    // 缺省与空数组是同一个意思（没有导入过字幕），不能让「undefined → []」被判成一次真改动。
+    return left === right || (left.id === right.id && left.start === right.start && left.end === right.end && left.text === right.text);
+}
+
 function sameList<T>(left: T[], right: T[], equals: (a: T, b: T) => boolean) {
     if (left === right) return true;
     if (left.length !== right.length) return false;
@@ -83,6 +88,7 @@ export function sameEditSnapshot(left: EditSnapshot, right: EditSnapshot) {
         left.media === right.media &&
         sameList(left.clips, right.clips, sameClip) &&
         sameList(left.audioTracks, right.audioTracks, sameTrack) &&
+        sameList(left.subtitles ?? [], right.subtitles ?? [], sameSubtitle) &&
         left.output === right.output
     );
 }

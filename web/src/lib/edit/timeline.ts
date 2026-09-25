@@ -1,4 +1,4 @@
-import type { ComposeAudioTrackInput, ComposeSegmentInput, ComposeVideoRequest } from "@/services/platform/desktop-ffmpeg";
+import type { ComposeAudioTrackInput, ComposeSegmentInput, ComposeSubtitleInput, ComposeVideoRequest } from "@/services/platform/desktop-ffmpeg";
 import { resolveAudibleTracks } from "./audio-mix";
 import { normalizeEditTransition, type EditClip, type EditMedia, type EditProject } from "@/types/edit";
 
@@ -199,12 +199,27 @@ export function buildComposeTracks({ project, paths }: EditComposeInput): Compos
     });
 }
 
+/** 独立字幕轨 → compose_video 的 subtitles：按成片时间轴给绝对起止时间，与片段无关。 */
+export function buildComposeSubtitles(project: EditProject): ComposeSubtitleInput[] | undefined {
+    const cues = (project.subtitles ?? []).flatMap((cue) => {
+        const text = cue.text.trim();
+        // 空文本与读不出来的时间不进请求体：它们本来就不该在成片里出现（界面上也建不出这种条目）。
+        if (!text || !Number.isFinite(cue.start) || !Number.isFinite(cue.end) || cue.end <= cue.start) return [];
+        return [{ start: Math.max(0, cue.start), end: cue.end, text }];
+    });
+    // 一条都没有时**不下发这个字段**：请求体与改动前逐字一致，Rust 侧也就不进字幕分支。
+    return cues.length ? cues : undefined;
+}
+
 /** 剪辑台项目 → compose_video 的完整入参：纯数据映射，不涉及画布节点或 compositeSettings。 */
 export function buildComposeRequest(input: EditComposeInput): ComposeVideoRequest {
     const { project } = input;
+    const subtitles = buildComposeSubtitles(project);
     return {
         segments: buildComposeSegments(input),
         tracks: buildComposeTracks(input),
+        // 没有字幕时**整个键都不出现**：请求体与改动前逐字一致，Rust 侧也就不进字幕分支。
+        ...(subtitles ? { subtitles } : {}),
         longEdge: project.output.longEdge,
         fps: project.output.fps,
         fadeIn: project.output.fadeIn,

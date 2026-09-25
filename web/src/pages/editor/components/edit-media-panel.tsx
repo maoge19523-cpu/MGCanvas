@@ -1,26 +1,30 @@
 import { App, Button, Empty, Modal, Tooltip } from "antd";
-import { Film, FolderOpen, Images, Music2, Plus, TimerOff, Trash2, Upload } from "lucide-react";
+import { Captions, Film, FolderOpen, Images, Music2, Plus, TimerOff, Trash2, Upload } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { formatEditTime } from "@/lib/edit/timeline";
+import { decodeSubtitleBytes, parseSubtitleFile, summarizeSubtitleImport, type SubtitleIssue, type SubtitleIssueReason } from "@/lib/edit/subtitles";
+import { buildEditClips, formatEditTime } from "@/lib/edit/timeline";
 import { importAssetToEditMedia, importLocalMediaFiles, probeEditMediaDuration, resolveEditMediaUrl } from "@/services/edit-media";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { createEditClip, useEditState } from "@/stores/use-edit-store";
-import type { EditMedia } from "@/types/edit";
+import type { EditClip, EditMedia } from "@/types/edit";
 
 // 项目不存在时用固定引用兜底，避免每次渲染都产生新数组导致 zustand 误判状态变化。
 const EMPTY_MEDIA: EditMedia[] = [];
+const EMPTY_CLIPS: EditClip[] = [];
 
 /** 素材区（左）：当前项目的素材列表，以及本地文件 / 我的资产 / 画布发送三条来源的入口。 */
 export function EditMediaPanel({ projectId }: { projectId: string }) {
     const { t } = useTranslation();
     const { message } = App.useApp();
-    const { projects, addMedia, updateMedia, removeMedia, addClip, addAudioTrack } = useEditState();
-    const media = projects.find((project) => project.id === projectId)?.media ?? EMPTY_MEDIA;
+    const { projects, addMedia, updateMedia, removeMedia, addClip, addAudioTrack, importSubtitles } = useEditState();
+    const project = projects.find((item) => item.id === projectId);
+    const media = project?.media ?? EMPTY_MEDIA;
     const assets = useAssetStore((state) => state.assets);
     const videoAssets = useMemo(() => assets.filter((asset) => asset.kind === "video"), [assets]);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const subtitleInputRef = useRef<HTMLInputElement>(null);
     const [pickerOpen, setPickerOpen] = useState(false);
     const [importing, setImporting] = useState(false);
 
@@ -35,6 +39,52 @@ export function EditMediaPanel({ projectId }: { projectId: string }) {
             message.error(error instanceof Error ? error.message : String(error));
         } finally {
             setImporting(false);
+        }
+    };
+
+    /** 跳过原因按类别合并计数：用户要能看清「跳过了几条、每条为什么」。 */
+    const describeIssues = (issues: SubtitleIssue[]) => {
+        const counts = new Map<SubtitleIssueReason, number>();
+        issues.forEach((issue) => counts.set(issue.reason, (counts.get(issue.reason) ?? 0) + 1));
+        return [...counts].map(([reason, count]) => t("editor.subtitleIssueCount", { count, reason: t(`editor.subtitleIssueReasons.${reason}`) })).join("、");
+    };
+
+    /**
+     * 导入 SRT / WebVTT。解析是纯函数、绝不抛异常：畸形条目跳过并计数，
+     * 导入后按成片时间轴逐条核算「会怎样」并原话告诉用户——不静默丢弃、也不静默合并。
+     */
+    const importSubtitleFile = async (file: File) => {
+        try {
+            const parsed = parseSubtitleFile(decodeSubtitleBytes(new Uint8Array(await file.arrayBuffer())));
+            if (!parsed.cues.length) {
+                message.warning(t("editor.subtitleImportNone"));
+                return;
+            }
+            const views = buildEditClips(media, project?.clips ?? EMPTY_CLIPS);
+            const summary = summarizeSubtitleImport(parsed.cues, views);
+            importSubtitles(projectId, parsed.cues);
+            const notes = [
+                views.length ? null : t("editor.subtitleImportEmptyTimeline"),
+                summary.beyondEnd ? t("editor.subtitleImportBeyondEnd", { count: summary.beyondEnd }) : null,
+                summary.truncated ? t("editor.subtitleImportTruncated", { count: summary.truncated }) : null,
+                summary.crossingSeams ? t("editor.subtitleImportSeams", { count: summary.crossingSeams }) : null,
+                summary.overlapping ? t("editor.subtitleImportOverlap", { count: summary.overlapping }) : null,
+            ].filter((note): note is string => Boolean(note));
+            message.success({
+                // 停留久一点：这几行是用户唯一能知道「到底导入了什么、丢了什么」的地方。
+                duration: 6,
+                content: (
+                    <div className="flex flex-col gap-0.5 text-[12px] leading-5">
+                        <span>{t("editor.subtitleImportDone", { count: parsed.cues.length, format: t(`editor.subtitleFormats.${parsed.format}`), total: (project?.subtitles?.length ?? 0) + parsed.cues.length })}</span>
+                        {parsed.issues.length ? <span>{t("editor.subtitleImportSkipped", { count: parsed.issues.length, reasons: describeIssues(parsed.issues) })}</span> : null}
+                        {notes.map((note) => (
+                            <span key={note}>{note}</span>
+                        ))}
+                    </div>
+                ),
+            });
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : String(error));
         }
     };
 
@@ -77,6 +127,9 @@ export function EditMediaPanel({ projectId }: { projectId: string }) {
                     <Tooltip title={t("editor.importLocalHint")}>
                         <Button type="text" size="small" loading={importing} icon={<Upload className="size-3.5" />} aria-label={t("editor.importLocal")} onClick={() => fileInputRef.current?.click()} />
                     </Tooltip>
+                    <Tooltip title={t("editor.importSubtitleHint")}>
+                        <Button data-edit-import-subtitle-button type="text" size="small" icon={<Captions className="size-3.5" />} aria-label={t("editor.subtitleImport")} onClick={() => subtitleInputRef.current?.click()} />
+                    </Tooltip>
                     <Tooltip title={t("editor.importAssetHint")}>
                         <Button type="text" size="small" icon={<Images className="size-3.5" />} aria-label={t("editor.importAsset")} onClick={() => setPickerOpen(true)} />
                     </Tooltip>
@@ -88,12 +141,17 @@ export function EditMediaPanel({ projectId }: { projectId: string }) {
                     <Upload className="size-3.5" />
                     {t("editor.importLocal")}
                 </button>
+                <button type="button" className="td-workspace-action" onClick={() => subtitleInputRef.current?.click()}>
+                    <Captions className="size-3.5" />
+                    {t("editor.subtitleImport")}
+                </button>
                 <button type="button" className="td-workspace-action" onClick={() => setPickerOpen(true)}>
                     <Images className="size-3.5" />
                     {t("editor.importAsset")}
                 </button>
             </div>
 
+            <p className="px-3 pb-2 text-[10px] leading-4 text-stone-400 dark:text-zinc-600">{t("editor.importSubtitleHint")}</p>
             <p className="px-3 pb-2 text-[10px] leading-4 text-stone-400 dark:text-zinc-600">{t("editor.importCanvasHint")}</p>
 
             <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-3">
@@ -158,6 +216,21 @@ export function EditMediaPanel({ projectId }: { projectId: string }) {
                     const files = Array.from(event.target.files || []);
                     event.target.value = "";
                     void importFiles(files);
+                }}
+            />
+
+            {/* 字幕文件必须走 WebView 自己的 <input type="file">：Tauri 侧的 fs:allow-read-file
+                只授权到媒体缓存目录，用户随手放在桌面上的 .srt 读不了（与本地素材导入同一条路）。 */}
+            <input
+                ref={subtitleInputRef}
+                type="file"
+                data-edit-import-subtitle
+                accept=".srt,.vtt,text/vtt,application/x-subrip"
+                className="hidden"
+                onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (file) void importSubtitleFile(file);
                 }}
             />
 

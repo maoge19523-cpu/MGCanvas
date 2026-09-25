@@ -430,6 +430,55 @@ describe("剪辑台导出：项目数据 → compose_video 入参", () => {
         expect(request.segments[0]).toMatchObject({ transition: "fade", transitionDuration: 1 });
         assertNoEmptyTransition(request);
     });
+
+    /**
+     * 导入的字幕真的会被下发：独立字幕轨按成片时间轴的绝对秒数进请求体（可跨片段、可落在片段之外），
+     * 而**没有字幕时不下发这个字段**——请求体与改动前逐字一致，Rust 侧也就不进字幕分支。
+     */
+    describe("导入的字幕直接进交给 FFmpeg 的请求体", () => {
+        const withSubtitles = (subtitles: EditProject["subtitles"]) => project({ subtitles });
+
+        it("每条字幕的起止时间与文本原样带过去，顺序照旧", () => {
+            const request = buildComposeRequest({
+                project: withSubtitles([
+                    { id: "s1", start: 0.5, end: 2.25, text: "第一句" },
+                    { id: "s2", start: 3, end: 5, text: "跨接缝的第二句" },
+                    { id: "s3", start: 30, end: 32, text: "落在成片之外的句子" },
+                ]),
+                paths,
+            });
+
+            expect(request.subtitles).toEqual([
+                { start: 0.5, end: 2.25, text: "第一句" },
+                { start: 3, end: 5, text: "跨接缝的第二句" },
+                { start: 30, end: 32, text: "落在成片之外的句子" },
+            ]);
+            expect(JSON.stringify(request)).toContain('"text":"跨接缝的第二句"');
+        });
+
+        it("没有导入过字幕时请求体里没有 subtitles 字段（与改动前逐字一致）", () => {
+            const request = buildComposeRequest({ project: project(), paths });
+
+            // 连键都不出现：项目里没导入过字幕时，整份请求体与改动前逐字一致。
+            expect("subtitles" in request).toBe(false);
+            expect(request.subtitles).toBeUndefined();
+            expect(JSON.stringify(request)).not.toContain("subtitles");
+        });
+
+        it("空文本、倒序与读不出来的时间不进请求体；负起点夹到 0", () => {
+            const request = buildComposeRequest({
+                project: withSubtitles([
+                    { id: "s1", start: 1, end: 2, text: "   " },
+                    { id: "s2", start: 5, end: 5, text: "零长度" },
+                    { id: "s3", start: -3, end: 1, text: "负起点" },
+                    { id: "s4", start: Number.NaN, end: 4, text: "坏时间" },
+                ]),
+                paths,
+            });
+
+            expect(request.subtitles).toEqual([{ start: 0, end: 1, text: "负起点" }]);
+        });
+    });
 });
 
 describe("剪辑台转场白名单：归一化", () => {

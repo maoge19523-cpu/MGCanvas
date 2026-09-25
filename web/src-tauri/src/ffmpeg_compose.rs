@@ -59,12 +59,25 @@ pub struct ComposeAudioTrack {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ComposeSubtitle {
+    // 成片时间轴上的绝对秒数：起点 / 终点。
+    start: f64,
+    end: f64,
+    text: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ComposeVideoRequest {
     ffmpeg_path: Option<String>,
     segments: Vec<ComposeSegment>,
     // 附加音轨（配音、背景音乐等），各自音量与淡入淡出，按顺序混进成片。
     #[serde(default)]
     tracks: Vec<ComposeAudioTrack>,
+    // 导入进来的独立字幕轨（SRT / WebVTT）：按成片时间轴的绝对时间定位，与片段无关。
+    // 为空时整条链与改动前逐字一致（不进字幕分支）。
+    #[serde(default)]
+    subtitles: Vec<ComposeSubtitle>,
     long_edge: Option<f64>,
     fps: Option<f64>,
     fade_in: Option<f64>,
@@ -348,6 +361,41 @@ fn describe_exit_code(code: i32) -> String {
     }
 }
 
+/// 要写进那份 .srt 的全部字幕行，两类来源合成一个列表：
+/// ① 片段自己的「一段一句」字幕（时间由该段在成片时间轴上的位置算出来）；
+/// ② 导入进来的独立字幕轨（前端给的就是成片时间轴上的绝对秒数，可跨片段、也可落在片段之外的区间）。
+/// 独立字幕只是往同一个列表里追加，所以烧字那条滤镜链一个字都不用改（那条链上出过尾逗号事故）。
+fn collect_subtitle_lines(
+    segments: &[ComposeSegment],
+    subtitles: &[ComposeSubtitle],
+    durations: &[f64],
+    transitions: &[(String, f64)],
+) -> Vec<(f64, f64, String)> {
+    let mut lines: Vec<(f64, f64, String)> = segments
+        .iter()
+        .enumerate()
+        .filter_map(|(index, segment)| {
+            let text = segment.subtitle.as_deref().map(str::trim).filter(|text| !text.is_empty())?;
+            let dropped = transitions[..index].iter().map(|(_, seconds)| *seconds).sum::<f64>();
+            let start = (durations[..index].iter().sum::<f64>() - dropped).max(0.0);
+            let cut = transitions.get(index).map(|(_, seconds)| *seconds).unwrap_or(0.0);
+            let end = (start + durations[index] - cut).max(start + 0.2);
+            Some((start, end, text.to_owned()))
+        })
+        .collect();
+    for cue in subtitles {
+        let text = cue.text.trim();
+        if text.is_empty() {
+            continue;
+        }
+        // NaN 会被 max 换成本侧的另一个操作数，所以下面两行不会把 NaN 写进 SRT。
+        let start = cue.start.max(0.0);
+        let end = cue.end.max(start + 0.2);
+        lines.push((start, end, text.to_owned()));
+    }
+    lines
+}
+
 fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<ComposeVideoResult, String> {
     let executable = detect_ffmpeg_path(request.ffmpeg_path.as_deref())
         .ok_or_else(|| "未检测到 FFmpeg：请安装 FFmpeg 或加入 PATH，或在设置 → 本地 FFmpeg 中手动指定路径".to_owned())?;
@@ -526,19 +574,7 @@ fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<Co
         let millis = (value.max(0.0) * 1000.0).round() as u64;
         format!("{:02}:{:02}:{:02},{:03}", millis / 3_600_000, millis / 60_000 % 60, millis / 1000 % 60, millis % 1000)
     };
-    let subtitle_lines: Vec<(f64, f64, String)> = request
-        .segments
-        .iter()
-        .enumerate()
-        .filter_map(|(index, segment)| {
-            let text = segment.subtitle.as_deref().map(str::trim).filter(|text| !text.is_empty())?;
-            let dropped = transitions[..index].iter().map(|(_, seconds)| *seconds).sum::<f64>();
-            let start = (durations[..index].iter().sum::<f64>() - dropped).max(0.0);
-            let cut = transitions.get(index).map(|(_, seconds)| *seconds).unwrap_or(0.0);
-            let end = (start + durations[index] - cut).max(start + 0.2);
-            Some((start, end, text.to_owned()))
-        })
-        .collect();
+    let subtitle_lines = collect_subtitle_lines(&request.segments, &request.subtitles, &durations, &transitions);
 
     let mut video_label = "cv".to_string();
     if !subtitle_lines.is_empty() {
@@ -1336,6 +1372,7 @@ mod tests {
                     .iter()
                     .map(|(path, start)| ComposeAudioTrack { path: (*path).to_owned(), volume: None, fade_in: None, fade_out: None, looped: None, start: *start })
                     .collect(),
+                subtitles: Vec::new(),
                 long_edge: Some(320.0),
                 fps: Some(30.0),
                 // 整体淡入淡出必须开着：它才是上次「尾逗号 ⇒ 空滤镜名 ⇒ 拒绝出片」的那段代码。
@@ -1440,6 +1477,7 @@ mod tests {
                     muted: muted.then_some(true),
                 }],
                 tracks: Vec::new(),
+                subtitles: Vec::new(),
                 long_edge: Some(320.0),
                 fps: Some(30.0),
                 // 整体淡入淡出同样开着：它才是上次「尾逗号 ⇒ 空滤镜名 ⇒ 拒绝出片」的那段代码。
@@ -1474,6 +1512,7 @@ mod tests {
                 ffmpeg_path: None,
                 segments: vec![segment(first, Some("fade"), false), segment(second, None, muted_second)],
                 tracks: Vec::new(),
+                subtitles: Vec::new(),
                 long_edge: Some(320.0),
                 fps: Some(30.0),
                 fade_in: Some(0.2),
@@ -1641,6 +1680,166 @@ mod tests {
             assert!((result.duration_ms as i64 - 3_000).abs() <= 400, "{name}的成片时长应当仍按片段长度算：{}ms", result.duration_ms);
             assert!(result.bytes > 0, "{name}必须真的出片");
         }
+    }
+
+    // ── 导入字幕（SRT / WebVTT）的真实 FFmpeg 冒烟 ────────────────────────────────
+    // 导入的字幕与片段上那句字幕走的是同一条路：都写进同一份 .srt、用同一条 subtitles 滤镜烧进画面。
+    // 这组测试真的跑一遍 FFmpeg，验证三件事：① 独立字幕轨的条目**真的被烧进了画面**（按像素判定，
+    // 不是只看「命令成功」）；② 字幕区间之外的那几秒仍然是干净的黑底（没有整片糊上字）；
+    // ③ 带独立字幕时整条滤镜链语法成立、真能出片（那条链上出过尾逗号事故）。
+    // 默认忽略，用 `cargo test --offline --lib -- --ignored` 执行。
+
+    /// 单个片段 + 指定的独立字幕，跑一次真实合成。
+    fn compose_subtitle_smoke(cache: &Path, segment: &str, subtitles: Vec<ComposeSubtitle>) -> ComposeVideoResult {
+        compose_blocking(
+            cache,
+            ComposeVideoRequest {
+                ffmpeg_path: None,
+                segments: vec![ComposeSegment {
+                    path: segment.to_owned(),
+                    start: None,
+                    end: None,
+                    volume: None,
+                    transition: None,
+                    transition_duration: None,
+                    subtitle: None,
+                    fade_in: None,
+                    fade_out: None,
+                    muted: None,
+                }],
+                tracks: Vec::new(),
+                subtitles,
+                long_edge: Some(320.0),
+                fps: Some(30.0),
+                // 整体淡入淡出开着：字幕滤镜与它同在一条链上。
+                fade_in: Some(0.1),
+                fade_out: Some(0.1),
+                title: Some("导入字幕冒烟".to_owned()),
+                subtitle_style: None,
+                subtitle_size: None,
+            },
+        )
+        .expect("带独立字幕的真实合成应当成功（滤镜链语法必须成立）")
+    }
+
+    /// 抽一帧、按灰度读回最亮的那个像素：黑底素材上的白字就是「有没有亮像素」。
+    fn brightest_pixel(executable: &Path, video: &str, at: &str) -> u8 {
+        let output = run_captured(executable, &["-hide_banner", "-v", "error", "-ss", at, "-i", video, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-"])
+            .expect("应当能抽出这一帧");
+        assert!(output.status.success(), "抽帧失败：{}", String::from_utf8_lossy(&output.stderr));
+        output.stdout.iter().copied().max().unwrap_or(0)
+    }
+
+    #[test]
+    #[ignore]
+    fn imported_subtitle_cues_really_get_burned_into_the_frame() {
+        let Some(executable) = detect_ffmpeg_path(None) else {
+            return;
+        };
+        let dir = std::env::temp_dir().join(format!("mgcanvas-subtitle-smoke-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("应当能建临时目录");
+        let video = dir.join("black.mp4").to_string_lossy().into_owned();
+
+        // 4 秒纯黑、无音轨的素材：画面里出现的任何亮像素只可能来自烧进去的字幕。
+        let generated = run_captured(
+            &executable,
+            &["-hide_banner", "-y", "-f", "lavfi", "-i", "color=c=black:size=320x240:rate=30:duration=4", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", &video],
+        )
+        .expect("应当能生成测试视频");
+        assert!(generated.status.success(), "生成测试视频失败：{}", String::from_utf8_lossy(&generated.stderr));
+
+        let cue = |start: f64, end: f64, text: &str| ComposeSubtitle { start, end, text: text.to_owned() };
+        // ① 导入两条字幕（1.0–2.0 与 2.5–3.5）。② 完全不带字幕的同素材对照。
+        let with_cues = compose_subtitle_smoke(&dir, &video, vec![cue(1.0, 2.0, "IMPORTED ONE"), cue(2.5, 3.5, "IMPORTED TWO")]);
+        let without = compose_subtitle_smoke(&dir, &video, Vec::new());
+
+        // 1.5s 落在第一条里，3.0s 落在第二条里，0.3s 与 3.8s 都在字幕之外。
+        let inside_first = brightest_pixel(&executable, &with_cues.absolute_path, "1.5");
+        let inside_second = brightest_pixel(&executable, &with_cues.absolute_path, "3.0");
+        let outside_before = brightest_pixel(&executable, &with_cues.absolute_path, "0.3");
+        let outside_after = brightest_pixel(&executable, &with_cues.absolute_path, "3.8");
+        let control = brightest_pixel(&executable, &without.absolute_path, "1.5");
+
+        println!("① 第一条字幕区间内（1.5s）最亮像素 {inside_first}；② 第二条（3.0s）{inside_second}；③ 字幕之外（0.3s）{outside_before} / （3.8s）{outside_after}；④ 不带字幕的对照（1.5s）{control}");
+        println!("成片：带字幕 {}ms / {} 字节；不带字幕 {}ms / {} 字节", with_cues.duration_ms, with_cues.bytes, without.duration_ms, without.bytes);
+
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // 字幕真的烧进了画面：两条字幕的区间内都出现了白色文字像素。
+        assert!(inside_first > 100, "第一条导入字幕应当烧进画面，实测最亮像素只有 {inside_first}");
+        assert!(inside_second > 100, "第二条导入字幕应当烧进画面，实测最亮像素只有 {inside_second}");
+        // 字幕区间之外仍然是干净的黑底（没有整片糊上字）。
+        assert!(outside_before < 40, "字幕开始之前不该有文字像素，实测最亮像素 {outside_before}");
+        assert!(outside_after < 40, "字幕结束之后不该有文字像素，实测最亮像素 {outside_after}");
+        // 对照：不带字幕的同素材黑底应当没有亮像素——否则上面那条断言什么也证明不了。
+        assert!(control < 40, "不带字幕时画面应当是黑的（这条是对照组），实测最亮像素 {control}");
+        assert!(with_cues.bytes > 0 && without.bytes > 0, "两种情况都必须真的出片");
+        assert!((with_cues.duration_ms as i64 - 4_000).abs() <= 400, "字幕不该改变成片时长：{}ms", with_cues.duration_ms);
+    }
+
+    /// 独立字幕进入 .srt 的方式（纯计算，不跑 FFmpeg）：与片段字幕并进同一个列表，
+    /// 空文本丢掉、倒序 / 零长度被抬到 0.2 秒，而**没有字幕时列表逐字与改动前一致**。
+    #[test]
+    fn imported_cues_are_appended_to_the_burned_srt_without_touching_segment_subtitles() {
+        let segment = |subtitle: Option<&str>| ComposeSegment {
+            path: "a.mp4".to_owned(),
+            start: None,
+            end: None,
+            volume: None,
+            transition: None,
+            transition_duration: None,
+            subtitle: subtitle.map(str::to_owned),
+            fade_in: None,
+            fade_out: None,
+            muted: None,
+        };
+        let segments = vec![segment(Some("片段上的句子")), segment(None)];
+        let durations = [4.0, 3.0];
+        let no_transitions: Vec<(String, f64)> = vec![(String::new(), 0.0), (String::new(), 0.0)];
+
+        // 没有独立字幕时：只有片段那一句，起点 0、终点铺满该段（4s，且不受后面接缝影响）。
+        let plain = collect_subtitle_lines(&segments, &[], &durations, &no_transitions);
+        assert_eq!(plain, vec![(0.0, 4.0, "片段上的句子".to_owned())]);
+
+        // 加上导入的两条：追加在后面，时间就是前端给的绝对秒数（跨片段、落在片段之外都原样带着）。
+        let cues = vec![
+            ComposeSubtitle { start: 1.0, end: 2.5, text: "  导入的第一句  ".to_owned() },
+            ComposeSubtitle { start: 6.5, end: 8.0, text: "落在成片之外的句子".to_owned() },
+        ];
+        let merged = collect_subtitle_lines(&segments, &cues, &durations, &no_transitions);
+        assert_eq!(
+            merged,
+            vec![
+                (0.0, 4.0, "片段上的句子".to_owned()),
+                (1.0, 2.5, "导入的第一句".to_owned()),
+                (6.5, 8.0, "落在成片之外的句子".to_owned()),
+            ]
+        );
+
+        // 空文本不进 SRT；倒序 / 零长度抬到 0.2 秒的最小显示时长；负起点夹到 0。
+        let edge = collect_subtitle_lines(
+            &segments,
+            &[
+                ComposeSubtitle { start: 1.0, end: 2.0, text: "   ".to_owned() },
+                ComposeSubtitle { start: 3.0, end: 3.0, text: "零长度".to_owned() },
+                ComposeSubtitle { start: -2.0, end: 1.0, text: "负起点".to_owned() },
+            ],
+            &durations,
+            &no_transitions,
+        );
+        assert_eq!(
+            edge,
+            vec![
+                (0.0, 4.0, "片段上的句子".to_owned()),
+                (3.0, 3.2, "零长度".to_owned()),
+                (0.0, 1.0, "负起点".to_owned()),
+            ]
+        );
+
+        // 转场会把后面片段的片段字幕整体前移（这条口径一个字都没动）。
+        let transitions = vec![("fade".to_owned(), 1.0), (String::new(), 0.0)];
+        let crossed = collect_subtitle_lines(&[segment(Some("第一段")), segment(Some("第二段"))], &[], &durations, &transitions);
+        assert_eq!(crossed, vec![(0.0, 3.0, "第一段".to_owned()), (3.0, 6.0, "第二段".to_owned())]);
     }
 }
 

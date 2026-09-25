@@ -1,5 +1,5 @@
 import { App, Button, Empty, Input, InputNumber, Select, Switch, Tooltip } from "antd";
-import { FolderOpen, Lock, LockOpen, Music2, Scissors, Trash2, Volume2, VolumeX } from "lucide-react";
+import { Captions, FolderOpen, Lock, LockOpen, Music2, Scissors, Trash2, Volume2, VolumeX } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -7,8 +7,13 @@ import { buildEditClips, editOutputSeconds, formatEditTime } from "@/lib/edit/ti
 import { editTrackStartLimit } from "@/lib/edit/timeline-edit";
 import { isTauriRuntime } from "@/services/platform/desktop-runtime";
 import { useEditState } from "@/stores/use-edit-store";
-import { EDIT_TRANSITIONS } from "@/types/edit";
+import { EDIT_TRANSITIONS, type EditSubtitle } from "@/types/edit";
 import { exportEditProject, openOutputDirectory, pickOutputDirectory, type EditExportResult } from "../export";
+
+// 项目不存在时用固定引用兜底，避免每次渲染都产生新数组导致 zustand 误判状态变化。
+const EMPTY_SUBTITLES: EditSubtitle[] = [];
+/** 属性区最多列这么多条字幕：几千条逐条渲染成输入框会把页面拖死；导入与导出都不受这个上限影响。 */
+const SUBTITLE_LIST_LIMIT = 50;
 
 function clampNumber(value: number | null, minimum: number, maximum: number, fallback: number) {
     const parsed = Number(value);
@@ -20,7 +25,7 @@ function clampNumber(value: number | null, minimum: number, maximum: number, fal
 export function EditInspector({ projectId, clipId }: { projectId: string; clipId: string | null }) {
     const { t } = useTranslation();
     const { message } = App.useApp();
-    const { projects, updateClip, removeClip, updateAudioTrack, removeAudioTrack, updateOutput } = useEditState();
+    const { projects, updateClip, removeClip, updateAudioTrack, removeAudioTrack, updateSubtitle, removeSubtitle, clearSubtitles, updateOutput } = useEditState();
     const project = projects.find((item) => item.id === projectId);
     const [exporting, setExporting] = useState(false);
     const [result, setResult] = useState<EditExportResult | null>(null);
@@ -31,6 +36,11 @@ export function EditInspector({ projectId, clipId }: { projectId: string; clipId
     const view = views.find((item) => item.id === clipId) || null;
     const outputSeconds = editOutputSeconds(views);
     const locked = clip?.locked === true;
+    const subtitles = project.subtitles ?? EMPTY_SUBTITLES;
+    // 属性区只列前若干条（见 SUBTITLE_LIST_LIMIT）：列表被截断时必须说出来，不能让人以为只有这些。
+    const listed = subtitles.slice(0, SUBTITLE_LIST_LIMIT);
+    // 落在成片末尾之后的字幕导出里一个字都不会出现：在这里常驻提示，别让用户以为它没生效。
+    const beyondEnd = outputSeconds > 0 ? subtitles.filter((cue) => cue.start >= outputSeconds).length : 0;
 
     /** 锁定（片段或音轨）的编辑一律拒绝，并给出同一句可理解的反馈，绝不静默失效。 */
     const refuseLocked = (locked: boolean) => {
@@ -146,6 +156,54 @@ export function EditInspector({ projectId, clipId }: { projectId: string; clipId
             ) : (
                 <div className="px-3 py-6 text-[11px] leading-5 text-stone-500 dark:text-zinc-500">{views.length ? t("editor.pickClipHint") : t("editor.emptyClipsHint")}</div>
             )}
+
+            <div className="border-t border-black/[0.07] px-3 py-3 dark:border-white/[0.07]">
+                <div className="flex items-center gap-1.5 text-[11px] font-medium text-stone-700 dark:text-zinc-300">
+                    <Captions className="size-3.5" />
+                    {t("editor.importedSubtitles")}
+                    <span data-edit-subtitle-count={subtitles.length} className="text-[10px] tabular-nums text-stone-400 dark:text-zinc-600">
+                        {t("editor.subtitleCount", { count: subtitles.length })}
+                    </span>
+                    {subtitles.length ? (
+                        <Tooltip title={t("editor.clearSubtitlesHint")}>
+                            <Button size="small" type="text" className="ml-auto self-start" icon={<Trash2 className="size-3.5" />} aria-label={t("editor.clearSubtitles")} onClick={() => clearSubtitles(projectId)}>
+                                {t("editor.clearSubtitles")}
+                            </Button>
+                        </Tooltip>
+                    ) : null}
+                </div>
+                {beyondEnd ? <div data-edit-subtitle-beyond className="mt-1.5 text-[10px] leading-4 text-amber-600 dark:text-amber-500/90">{t("editor.subtitleBeyondEndNote", { count: beyondEnd })}</div> : null}
+                {subtitles.length ? (
+                    <ul className="mt-2 flex flex-col gap-2">
+                        {listed.map((cue, index) => (
+                            <li key={cue.id} data-edit-subtitle={cue.id} className="rounded-[10px] bg-black/[0.025] p-2 dark:bg-white/[0.03]">
+                                <div className="flex items-center gap-2 text-[10px] tabular-nums text-stone-400 dark:text-zinc-600">
+                                    <span className="shrink-0">{index + 1}</span>
+                                    {/* 起止时间是只读的：它按成片时间轴定位，改它在这里没有可信的参照，先让用户看清楚。 */}
+                                    <span data-edit-subtitle-time={cue.id}>
+                                        {formatEditTime(cue.start)} → {formatEditTime(cue.end)}
+                                    </span>
+                                    <Button size="small" type="text" danger className="ml-auto" icon={<Trash2 className="size-3.5" />} aria-label={t("editor.removeSubtitle")} onClick={() => removeSubtitle(projectId, cue.id)} />
+                                </div>
+                                <Input
+                                    size="small"
+                                    className="mt-1"
+                                    value={cue.text}
+                                    aria-label={t("editor.subtitle")}
+                                    onChange={(event) => updateSubtitle(projectId, cue.id, { text: event.target.value })}
+                                />
+                            </li>
+                        ))}
+                    </ul>
+                ) : (
+                    <div className="mt-1.5 text-[10px] leading-4 text-stone-400 dark:text-zinc-600">{t("editor.emptySubtitles")}</div>
+                )}
+                {listed.length < subtitles.length ? (
+                    <div data-edit-subtitle-capped className="mt-1.5 text-[10px] leading-4 text-stone-400 dark:text-zinc-600">
+                        {t("editor.subtitleListCapped", { shown: listed.length, count: subtitles.length })}
+                    </div>
+                ) : null}
+            </div>
 
             <div className="border-t border-black/[0.07] px-3 py-3 dark:border-white/[0.07]">
                 <div className="flex items-center gap-1.5 text-[11px] font-medium text-stone-700 dark:text-zinc-300">

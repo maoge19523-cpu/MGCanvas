@@ -81,6 +81,10 @@ describe("剪辑台撤销栈：快照只存会被改动的切片", () => {
 
         const clipWith = (patch: Partial<EditClip>) => ({ ...base, clips: [{ ...base.clips[0]!, ...patch }] });
         expect(sameEditSnapshot(editSnapshot(base), editSnapshot(clipWith({ locked: true })))).toBe(false);
+        // 片段级的「关闭原声」同理：漏了它，轨道头与属性区的开关都会点了不生效。
+        expect(sameEditSnapshot(editSnapshot(base), editSnapshot(clipWith({ muted: true })))).toBe(false);
+        const clipMuted = clipWith({ muted: true });
+        expect(sameEditSnapshot(editSnapshot(clipMuted), editSnapshot(clipWith({ muted: undefined })))).toBe(false);
     });
 });
 

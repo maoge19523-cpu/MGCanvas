@@ -20,6 +20,8 @@ export type EditClipView = {
     transition?: string;
     transitionDuration: number;
     subtitle?: string;
+    /** 关闭原声：这一段视频自带的声音不出声（画面照旧），预览与成片一致。 */
+    muted: boolean;
     /** 锁定：拖动换序、两端裁剪、拆分、删除都会被拒绝（只影响编辑，不影响导出）。 */
     locked: boolean;
     /** 素材自身时长（秒），0 表示没探测到。 */
@@ -62,6 +64,7 @@ export function buildEditClips(media: EditMedia[], clips: EditClip[], urls: Reco
             transition: normalizeEditTransition(clip.transition),
             transitionDuration: clip.transitionDuration ?? 0.5,
             subtitle: clip.subtitle,
+            muted: clip.muted === true,
             locked: clip.locked === true,
             sourceSeconds,
             hasDuration: sourceSeconds > 0,
@@ -105,7 +108,8 @@ export function resolveEditPlayback(clips: EditClipView[], index: number, curren
         local,
         seconds: clip.offset + local,
         // 浏览器音量上限是 1，属性区允许的 400% 只能在 FFmpeg 侧生效。
-        volume: Math.min(1, Math.max(0, clip.volume * Math.min(1, fadeIn, fadeOut))),
+        // 关闭原声的片段直接给 0：预览必须与成片同一声（成片侧见 compose_video 的静音源分支）。
+        volume: clip.muted ? 0 : Math.min(1, Math.max(0, clip.volume * Math.min(1, fadeIn, fadeOut))),
         finished: local >= clip.length - 0.03,
     };
 }
@@ -161,6 +165,9 @@ export function buildComposeSegments({ project, paths }: EditComposeInput): Comp
                     subtitle: clip.subtitle?.trim() || undefined,
                     fadeIn: clip.fadeIn,
                     fadeOut: clip.fadeOut,
+                    // 关闭原声的片段照旧进拼接（它有画面），只是音频侧改用静音源；
+                    // 非静音时不下发这个字段，请求体与改动前完全一致。
+                    muted: clip.muted === true || undefined,
                 },
             ];
         });

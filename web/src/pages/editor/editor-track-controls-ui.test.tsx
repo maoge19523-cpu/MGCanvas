@@ -216,3 +216,98 @@ describe("剪辑台轨道头：静音 / 独奏 / 锁定三个开关的产物读�
         expect(markup).toContain("ant-select-disabled");
     });
 });
+
+/**
+ * 视频轨的轨道头：视频片段的**自带原声**以前在时间线上没有任何开关（属性区也只有音量），
+ * 用户报「加载的视频应该也带静音」，所以这条轨的轨道头只放一个真正生效的开关。
+ * 同时守住另一半：**不渲染点了没反应的按钮**——独奏（单条视频轨没有语义）、可见性、锁定
+ * 都不在这条轨道头上出现，宁可少一个也不要留一个假的。
+ */
+describe("剪辑台视频轨轨道头：只有一个真的能用的开关（关 / 开原声）", () => {
+    const withMutedClips = (muted: boolean): EditProject => ({
+        ...DEMO,
+        clips: DEMO.clips.map((clip) => ({ ...clip, muted: muted ? true : undefined })),
+    });
+
+    it("视频轨渲染出轨道头与「关闭原声」开关，产物里带 data / aria 状态", () => {
+        const markup = render(withMutedClips(false), "editor-track-controls-video-head");
+
+        expect(markup).toContain("data-edit-video-track");
+        expect(markup).toContain("data-edit-video-track-head");
+        expect(markup).toContain("视频轨");
+        const button = tagOf(markup, "data-edit-video-track-mute");
+        expect(button.startsWith("<button")).toBe(true);
+        expect(button).toContain('aria-label="关闭原声"');
+        expect(button).toContain('aria-pressed="false"');
+        expect(button).toContain('title="关闭整条视频轨的原声');
+        expect(button).toContain(TOGGLE_OFF);
+    });
+
+    it("本轨片段全部关闭原声后开关是激活态，且时间线上的片段条被标出来", () => {
+        const markup = render(withMutedClips(true), "editor-track-controls-video-muted");
+
+        const button = tagOf(markup, "data-edit-video-track-mute");
+        expect(button).toContain('aria-pressed="true"');
+        expect(button).toContain('aria-label="开启原声"');
+        expect(button).toContain(TOGGLE_ON);
+        // 每个关闭原声的片段条都带标记，成片里听不到原声时能看出是设置。
+        expect((markup.match(/data-edit-clip-muted="true"/g) || []).length).toBe(DEMO.clips.length);
+    });
+
+    it("只关闭其中一段时轨道头不算全关，被关的那一段单独带标记", () => {
+        const half: EditProject = { ...DEMO, clips: [{ ...DEMO.clips[0]!, muted: true }, DEMO.clips[1]!] };
+        const markup = render(half, "editor-track-controls-video-half");
+
+        expect(tagOf(markup, "data-edit-video-track-mute")).toContain('aria-pressed="false"');
+        expect((markup.match(/data-edit-clip-muted="true"/g) || []).length).toBe(1);
+    });
+
+    it("视频轨轨道头上没有点了没反应的按钮：不渲染独奏 / 可见性 / 锁定", () => {
+        const markup = render(withMutedClips(false), "editor-track-controls-video-no-fakes");
+
+        // 独奏在只有一条视频轨时没有任何语义，可见性（眼睛）与整轨锁定也都不是这条轨的能力，
+        // 所以一个都不渲染——四类控件在产物里都查不到，杜绝「点了没反应」。
+        expect(markup).not.toContain("data-edit-video-track-solo");
+        expect(markup).not.toContain("data-edit-video-track-visible");
+        expect(markup).not.toContain("data-edit-video-track-lock");
+        // 视频轨轨道头只有这一个开关：从轨道头开始到片段行之前，整段里只有一个 <button>。
+        const from = markup.indexOf("data-edit-video-track-head");
+        const head = markup.slice(from, markup.indexOf('data-edit-clip="', from));
+        expect((head.match(/<button/g) || []).length).toBe(1);
+        // 音轨轨道头上的三个开关没有跟着变成四个（它们的语义仍然只属于音轨）。
+        expect((markup.match(/data-edit-track-mute=/g) || []).length).toBe(DEMO.audioTracks.length);
+        expect((markup.match(/data-edit-track-solo=/g) || []).length).toBe(DEMO.audioTracks.length);
+        expect((markup.match(/data-edit-track-lock=/g) || []).length).toBe(DEMO.audioTracks.length);
+    });
+
+    it("属性区的片段开关与实际状态一致：已关闭的片段给「开启原声」，未关闭的给「关闭原声」", () => {
+        useEditStore.setState({ hydrated: true, projects: [withMutedClips(false)], history: {} });
+        useAssetStore.setState({ assets: [], hydrated: true });
+        const open = dump(
+            "editor-track-controls-clip-mute-off",
+            renderToStaticMarkup(
+                <App>
+                    <EditInspector projectId={DEMO.id} clipId="c1" />
+                </App>,
+            ),
+        );
+        const openButton = tagOf(open, 'data-edit-clip-mute="c1"');
+        expect(openButton.startsWith("<button")).toBe(true);
+        expect(openButton).toContain('aria-label="关闭原声"');
+        expect(openButton).toContain('aria-pressed="false"');
+        expect(openButton).toContain("关闭原声");
+
+        useEditStore.setState({ hydrated: true, projects: [withMutedClips(true)], history: {} });
+        const muted = dump(
+            "editor-track-controls-clip-mute-on",
+            renderToStaticMarkup(
+                <App>
+                    <EditInspector projectId={DEMO.id} clipId="c1" />
+                </App>,
+            ),
+        );
+        const mutedButton = tagOf(muted, 'data-edit-clip-mute="c1"');
+        expect(mutedButton).toContain('aria-label="开启原声"');
+        expect(mutedButton).toContain('aria-pressed="true"');
+    });
+});

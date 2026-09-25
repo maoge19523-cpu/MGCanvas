@@ -29,6 +29,8 @@ type EditStore = {
     /** 时间线换序 / 裁剪 / 属性区编辑都走这里，一次性提交整份片段列表。 */
     updateClips: (projectId: string, clips: EditClip[]) => void;
     updateClip: (projectId: string, clipId: string, patch: Partial<EditClip>) => void;
+    /** 视频轨整轨关闭 / 恢复原声：一次把本轨全部片段的 muted 设成同一个值，只压一条历史。 */
+    setVideoTrackMuted: (projectId: string, muted: boolean) => void;
     removeClip: (projectId: string, clipId: string) => void;
     /** 在播放头处拆分，返回新产生的右半段 id（无法拆分时返回 null）。 */
     splitClip: (projectId: string, clipId: string, seconds: number) => string | null;
@@ -175,6 +177,12 @@ export const useEditStore = create<EditStore>()(
                         (project) => ({ ...project, clips: project.clips.map((clip) => (clip.id === clipId ? { ...clip, ...patch } : clip)) }),
                         `clip:${clipId}:${Object.keys(patch).join(",")}`,
                     ),
+                setVideoTrackMuted: (projectId, muted) =>
+                    patchProject(projectId, i18n.t("editor.history.clipMute"), (project) => ({
+                        ...project,
+                        // 取消静音时把字段去掉（回缺省），落盘的数据里不留一堆 muted: false。
+                        clips: project.clips.map((clip) => ({ ...clip, muted: muted || undefined })),
+                    })),
                 removeClip: (projectId, clipId) =>
                     patchProject(projectId, i18n.t("editor.history.delete"), (project) => ({ ...project, clips: deleteEditClip(project.clips, clipId, "cut") })),
                 splitClip: (projectId, clipId, seconds) => {

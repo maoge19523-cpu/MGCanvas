@@ -114,6 +114,17 @@ describe("剪辑台时间线：播放头与顺序连播", () => {
         expect(resolveEditPlayback(loud, 0, 2)?.volume).toBe(1);
     });
 
+    /** 预览必须与成片同一声：关闭原声的片段在预览里也必须是 0，否则「导出后才发现还有声」。 */
+    it("关闭原声的片段预览音量恒为 0，音量设成 400% 或正在淡入淡出都不例外", () => {
+        const muted = buildEditClips([media("a", 4)], [clip("c1", "a", { volume: 4, fadeIn: 2, muted: true })]);
+        expect(muted[0]!.muted).toBe(true);
+        for (const seconds of [0, 1, 2, 3, 4]) expect(resolveEditPlayback(muted, 0, seconds)?.volume).toBe(0);
+        // 未关闭原声的片段照旧按音量与淡入淡出算。
+        const normal = buildEditClips([media("a", 4)], [clip("c1", "a", { fadeIn: 2 })]);
+        expect(normal[0]!.muted).toBe(false);
+        expect(resolveEditPlayback(normal, 0, 2)?.volume).toBe(1);
+    });
+
     it("播放中定位：全局秒数能反查成第几段与段内媒体时间", () => {
         expect(resolveEditSeek(views, 0)).toEqual({ index: 0, currentTime: 1 });
         expect(resolveEditSeek(views, 4)).toEqual({ index: 1, currentTime: 0 });
@@ -283,6 +294,33 @@ describe("剪辑台导出：项目数据 → compose_video 入参", () => {
 
         it("锁定的轨仍然正常导出（锁定只影响编辑，不参与导出）", () => {
             expect(trackPaths({ audioTracks: threeTracks.audioTracks.map((item) => (item.id === "t1" ? { ...item, locked: true } : item)) })).toHaveLength(3);
+        });
+    });
+
+    /**
+     * 关闭原声真的影响导出：请求体里把该段标成 muted，FFmpeg 侧据此把这一段的音频接静音源
+     * （片段照旧进拼接，因为它带着画面）。没关闭时**不下发这个字段**，请求体与改动前逐字一致。
+     */
+    describe("视频片段关闭原声直接改的是交给 FFmpeg 的片段参数", () => {
+        it("关闭原声的片段带 muted: true，其余片段不带这个字段", () => {
+            const request = buildComposeRequest({ project: project({ clips: [clip("c1", "a", { start: 1, end: 5 }), clip("c2", "b", { muted: true }), clip("c3", "c", { start: 0.5, end: 3.5 })] }), paths });
+
+            expect(request.segments.map((segment) => segment.muted)).toEqual([undefined, true, undefined]);
+            // 片段本身照旧全部进拼接（画面不能丢），只是音频侧被静音。
+            expect(request.segments.map((segment) => segment.path)).toEqual(["C:\\tmp\\a.mp4", "C:\\tmp\\b.mp4", "C:\\tmp\\c.mp4"]);
+            expect(JSON.stringify(request)).not.toContain('"muted":false');
+        });
+
+        it("全部关闭原声时每一段都带 muted: true，请求里仍然有全部片段", () => {
+            const request = buildComposeRequest({ project: project({ clips: [clip("c1", "a", { muted: true }), clip("c2", "b", { muted: true })] }), paths });
+
+            expect(request.segments.map((segment) => segment.muted)).toEqual([true, true]);
+            expect(request.tracks).toEqual([]);
+        });
+
+        it("缺省的片段不进 muted 字段（旧项目语义与改动前完全一致）", () => {
+            const segments = buildComposeSegments({ project: project(), paths });
+            expect(segments.every((segment) => !("muted" in segment) || segment.muted === undefined)).toBe(true);
         });
     });
 

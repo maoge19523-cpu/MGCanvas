@@ -1,5 +1,5 @@
 import { App, Button, Empty, Input, InputNumber, Select, Switch, Tooltip } from "antd";
-import { FolderOpen, Lock, LockOpen, Music2, Scissors, Trash2, VolumeX } from "lucide-react";
+import { FolderOpen, Lock, LockOpen, Music2, Scissors, Trash2, Volume2, VolumeX } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -104,6 +104,24 @@ export function EditInspector({ projectId, clipId }: { projectId: string; clipId
                         <Input disabled={locked} size="small" placeholder={t("editor.subtitlePlaceholder")} value={clip.subtitle ?? ""} onChange={(event) => updateClip(projectId, clip.id, { subtitle: event.target.value || undefined })} />
                     </div>
                     <div className="flex items-center gap-1">
+                        {/* 关闭原声：把这一段视频自带的声音整段去掉（画面照旧），预览与成片一起生效。
+                            与「音量」是两件事：音量是电平，关闭原声由这个开关说了算（音量调到 0 同样是静音）。 */}
+                        <Tooltip title={t("editor.clipMuteHint")}>
+                            <Button
+                                data-edit-clip-mute={clip.id}
+                                disabled={locked}
+                                size="small"
+                                type="text"
+                                className="self-start"
+                                title={t("editor.clipMuteHint")}
+                                aria-pressed={clip.muted === true}
+                                aria-label={clip.muted ? t("editor.clipUnmute") : t("editor.clipMute")}
+                                icon={clip.muted ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}
+                                onClick={() => updateClip(projectId, clip.id, { muted: clip.muted ? undefined : true })}
+                            >
+                                {clip.muted ? t("editor.clipUnmute") : t("editor.clipMute")}
+                            </Button>
+                        </Tooltip>
                         <Tooltip title={t("editor.trackLockHint")}>
                             <Button
                                 data-edit-clip-lock={clip.id}

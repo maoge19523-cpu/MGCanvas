@@ -38,6 +38,8 @@ pub struct ComposeSegment {
     // 这一段自己的淡入淡出（秒），与接缝上的转场互不影响。
     fade_in: Option<f64>,
     fade_out: Option<f64>,
+    // 关闭原声：这一段的画面照旧进拼接，但它自带的声音不出现（音频侧接静音源）。
+    muted: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -270,6 +272,13 @@ fn clamp(value: f64, minimum: f64, maximum: f64) -> f64 {
     value.clamp(minimum, maximum)
 }
 
+/// 这一段的音频要不要接静音源：素材本来没有音频流，或者这一段被「关闭原声」。
+/// 两种情况走**同一条既有的**静音分支（anullsrc 输入 + atrim），所以 concat 的流数量、
+/// 滤镜链的形状与顺序都不会变——只是把 [aN] 的来源换个输入，避免动那条出过事故的链。
+fn segment_needs_silence(has_audio: bool, muted: bool) -> bool {
+    muted || !has_audio
+}
+
 /// 成片整体淡入淡出的滤镜串；没有任何整体淡入淡出时返回 None。
 /// 逐条滤镜之间只能用逗号连接，**末尾绝不能留逗号**：留了就等于给 FFmpeg 一个空滤镜名，
 /// 它会直接报 `No such filter: ""` 并拒绝出片，退出码还会变成一个巨大的负数（见 describe_exit_code）。
@@ -366,7 +375,14 @@ fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<Co
     let total: f64 = durations.iter().sum::<f64>() - transitions.iter().map(|(_, seconds)| *seconds).sum::<f64>();
 
     let track_index = request.segments.len() as u32;
-    let needs_silence = probes.iter().any(|probe| !probe.has_audio);
+    // 哪些片段接静音源、哪些用自己的原声：判定只在这一个地方做，下面加输入与拼滤镜都读它。
+    let silent: Vec<bool> = request
+        .segments
+        .iter()
+        .zip(&probes)
+        .map(|(segment, probe)| segment_needs_silence(probe.has_audio, segment.muted.unwrap_or(false)))
+        .collect();
+    let needs_silence = silent.iter().any(|value| *value);
     let silence_index = track_index + request.tracks.len() as u32;
 
     let mut arguments: Vec<String> = vec!["-hide_banner".to_owned(), "-y".to_owned()];
@@ -388,7 +404,7 @@ fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<Co
 
     let mut filters: Vec<String> = Vec::new();
     let mut concat_inputs = String::new();
-    for (index, ((start, end), probe)) in ranges.iter().zip(&probes).enumerate() {
+    for (index, (start, end)) in ranges.iter().enumerate() {
         let duration = end - start;
         // 片段自身的淡入淡出接在缩放之后：此时时间戳已归零，所以 st 直接从 0 与段尾算。
         let segment_fade_in = clamp(request.segments[index].fade_in.unwrap_or(0.0), 0.0, 5.0);
@@ -409,7 +425,7 @@ fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<Co
         }
         video_chain.push_str(&format!("[v{index}]"));
         filters.push(video_chain);
-        if probe.has_audio {
+        if !silent[index] {
             let volume = clamp(request.segments[index].volume.unwrap_or(1.0), 0.0, 4.0);
             let mut audio_chain = format!(
                 "[{index}:a]atrim=start={}:end={},asetpts=PTS-STARTPTS,aformat=sample_rates=44100:channel_layouts=stereo,volume={}",
@@ -426,6 +442,8 @@ fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<Co
             audio_chain.push_str(&format!("[a{index}]"));
             filters.push(audio_chain);
         } else {
+            // 素材没有音频流，或者这一段被「关闭原声」：这一段照旧占一个音频流（concat 要求成对），
+            // 但接的是静音源，所以成片里这一段只剩画面。
             filters.push(format!(
                 "[{silence_index}:a]atrim=end={},asetpts=PTS-STARTPTS,aformat=sample_rates=44100:channel_layouts=stereo[a{index}]",
                 seconds(duration)
@@ -1027,6 +1045,16 @@ mod tests {
         assert_eq!(describe_exit_code(-12_345), "FFmpeg 内部错误 0xFFFFCFC7");
     }
 
+    /// 「这一段接静音源还是自己的原声」的判定：素材没有音频流，或者这一段被关闭原声。
+    /// 两种情况走同一条既有的静音分支，所以这里只要真值表对，滤镜链就是改动前那条。
+    #[test]
+    fn silence_source_is_used_for_missing_or_muted_audio() {
+        assert!(!segment_needs_silence(true, false), "有音频流且没关闭原声时应保留原声");
+        assert!(segment_needs_silence(true, true), "关闭原声的片段必须接静音源");
+        assert!(segment_needs_silence(false, false), "素材没有音频流时照旧接静音源");
+        assert!(segment_needs_silence(false, true), "既没有音频流又关闭原声同样是静音源");
+    }
+
     // ── 波形峰值包络 ──────────────────────────────────────────────────────────
     // i16 / 32768 的商是二进制有限小数，能被 f32 精确表示，所以这些断言可以直接比相等。
 
@@ -1229,6 +1257,7 @@ mod tests {
                     subtitle: None,
                     fade_in: None,
                     fade_out: None,
+                    muted: None,
                 }],
                 tracks: tracks
                     .iter()
@@ -1310,6 +1339,152 @@ mod tests {
         assert!(muted_peak < 0.02, "静音轨被跳过之后成片应当安静，实测峰值 {muted_peak}");
         assert!(all_muted_peak < 0.02, "全部音轨被排除之后成片应当安静，实测峰值 {all_muted_peak}");
         assert!(both.bytes > 0 && muted.bytes > 0 && all_muted.bytes > 0, "三种情况都必须真的出片");
+    }
+
+    // ── 视频片段自带原声「关闭原声」的真实 FFmpeg 冒烟 ──────────────────────────────
+    // 与音轨不同：片段不能整条跳过（它带着画面），所以关闭原声走的是「这一段照旧占一个音频流，
+    // 但接 anullsrc 静音源」的既有分支。这组测试真的跑一遍 FFmpeg，验证三件事：
+    // ① 默认（不关闭原声）成片里确实有这一段自己的声音；② 关闭原声后成片彻底安静，且画面不丢；
+    // ③ 整条滤镜链（含尾逗号事故所在的整体淡入淡出）语法成立、真能出片。
+    // 默认忽略，用 `cargo test --offline --lib -- --ignored` 执行。
+
+    /// 跑一次真实合成：单个带音轨的视频片段，`muted` 就是「关闭原声」。
+    fn compose_clip_smoke(cache: &Path, segment: &str, muted: bool) -> ComposeVideoResult {
+        compose_blocking(
+            cache,
+            ComposeVideoRequest {
+                ffmpeg_path: None,
+                segments: vec![ComposeSegment {
+                    path: segment.to_owned(),
+                    start: None,
+                    end: None,
+                    volume: None,
+                    transition: None,
+                    transition_duration: None,
+                    subtitle: None,
+                    fade_in: None,
+                    fade_out: None,
+                    muted: muted.then_some(true),
+                }],
+                tracks: Vec::new(),
+                long_edge: Some(320.0),
+                fps: Some(30.0),
+                // 整体淡入淡出同样开着：它才是上次「尾逗号 ⇒ 空滤镜名 ⇒ 拒绝出片」的那段代码。
+                fade_in: Some(0.2),
+                fade_out: Some(0.2),
+                title: Some("原声静音冒烟".to_owned()),
+                subtitle_style: None,
+                subtitle_size: None,
+            },
+        )
+        .expect("真实合成应当成功（滤镜链语法必须成立）")
+    }
+
+    /// 两个片段 + 段间转场：关闭原声的片段一旦有转场，音频走的是 acrossfade 分支（不是 concat），
+    /// 这条分支与 concat 是两套滤镜代码，必须单独验一次「关闭原声的片段接进转场仍然出片」。
+    fn compose_transition_smoke(cache: &Path, first: &str, second: &str, muted_second: bool) -> ComposeVideoResult {
+        let segment = |path: &str, transition: Option<&str>, muted: bool| ComposeSegment {
+            path: path.to_owned(),
+            start: None,
+            end: None,
+            volume: None,
+            transition: transition.map(str::to_owned),
+            transition_duration: transition.map(|_| 0.5),
+            subtitle: None,
+            fade_in: None,
+            fade_out: None,
+            muted: muted.then_some(true),
+        };
+        compose_blocking(
+            cache,
+            ComposeVideoRequest {
+                ffmpeg_path: None,
+                segments: vec![segment(first, Some("fade"), false), segment(second, None, muted_second)],
+                tracks: Vec::new(),
+                long_edge: Some(320.0),
+                fps: Some(30.0),
+                fade_in: Some(0.2),
+                fade_out: Some(0.2),
+                title: Some("转场原声静音冒烟".to_owned()),
+                subtitle_style: None,
+                subtitle_size: None,
+            },
+        )
+        .expect("带转场的真实合成应当成功（滤镜链语法必须成立）")
+    }
+
+    #[test]
+    #[ignore]
+    fn muted_clip_really_drops_its_own_audio_in_the_final_cut() {
+        let Some(executable) = detect_ffmpeg_path(None) else {
+            return;
+        };
+        let dir = std::env::temp_dir().join(format!("mgcanvas-clip-mute-smoke-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("应当能建临时目录");
+        let video = dir.join("with-audio.mp4").to_string_lossy().into_owned();
+
+        // 一段**自带原声**的视频：画面是 testsrc，原声是满幅 660Hz 正弦（sine 默认只有约 1/8 满幅）。
+        // 这正是用户报的场景——「加载的视频」本身就带着声音。
+        let generated = run_captured(
+            &executable,
+            &[
+                "-hide_banner",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=320x240:rate=30:duration=3",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=660:duration=3:sample_rate=44100",
+                "-filter:a",
+                "volume=8",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-shortest",
+                &video,
+            ],
+        )
+        .expect("应当能生成带原声的测试视频");
+        assert!(generated.status.success(), "生成测试视频失败：{}", String::from_utf8_lossy(&generated.stderr));
+        // 生成出来的素材必须真的有音频流，否则后面的对比毫无意义。
+        let probe = probe_media(&executable, &video).expect("应当能探测生成的视频");
+        assert!(probe.has_audio, "生成的测试视频必须带音频流");
+
+        // ① 默认（不关闭原声）：成片里能听到这一段自己的声音。
+        let kept = compose_clip_smoke(&dir, &video, false);
+        let kept_peak = peak_of(&kept.absolute_path);
+        // ② 关闭原声：同一段素材、同一套参数，成片应当彻底安静（画面照旧）。
+        let muted = compose_clip_smoke(&dir, &video, true);
+        let muted_peak = peak_of(&muted.absolute_path);
+        // ③ 两段 + 段间转场，第二段关闭原声：转场分支（xfade / acrossfade）同样必须出片，
+        //    且第一段自己的声音还在（前 2.5 秒有声），说明关闭原声只影响被关的那一段。
+        let crossed = compose_transition_smoke(&dir, &video, &video, true);
+        let crossed_peak = peak_of(&crossed.absolute_path);
+
+        let _ = std::fs::remove_dir_all(&dir);
+
+        println!("① 默认（保留原声）：峰值 {kept_peak}，时长 {}ms，{}x{}，{} 字节", kept.duration_ms, kept.width, kept.height, kept.bytes);
+        println!("② 关闭原声：峰值 {muted_peak}，时长 {}ms，{}x{}，{} 字节", muted.duration_ms, muted.width, muted.height, muted.bytes);
+        println!("③ 两段 + 0.5s 转场、第二段关闭原声：峰值 {crossed_peak}，时长 {}ms，{} 字节", crossed.duration_ms, crossed.bytes);
+
+        assert!(kept_peak > 0.5, "默认情况下成片里应当有视频自带的声音，实测峰值 {kept_peak}");
+        assert!(muted_peak < 0.02, "关闭原声之后成片应当安静，实测峰值 {muted_peak}");
+        assert!(crossed_peak > 0.5, "只关第二段时第一段的原声应当照旧出声，实测峰值 {crossed_peak}");
+        assert!((crossed.duration_ms as i64 - 5_500).abs() <= 400, "两段 3s 加 0.5s 转场应约为 5.5s：{}", crossed.duration_ms);
+        // 时长与画面不受关闭原声影响：只掉声音，不掉帧、不缩时长。
+        assert!((kept.duration_ms as i64 - 3_000).abs() <= 400, "成片时长应按片段长度算：{}", kept.duration_ms);
+        assert!((muted.duration_ms as i64 - 3_000).abs() <= 400, "关闭原声不该改变成片时长：{}", muted.duration_ms);
+        assert_eq!((kept.width, kept.height), (muted.width, muted.height), "关闭原声不该改变画面尺寸");
+        assert!(kept.bytes > 0 && muted.bytes > 0, "两种情况都必须真的出片");
+        // peak_of 走的是音频解码，能读出包络就说明成片里仍然有一条音频流（不是把音频整条丢掉）。
     }
 }
 

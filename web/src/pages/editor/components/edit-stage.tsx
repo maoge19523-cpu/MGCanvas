@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { App, Button, Popover, Tooltip, theme } from "antd";
-import { Clapperboard, Info, Lock, Magnet, Music2, Pause, Play, Redo2, Undo2 } from "lucide-react";
+import { Clapperboard, Info, Lock, Magnet, Music2, Pause, Play, Redo2, Undo2, Volume2, VolumeX } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -31,7 +31,7 @@ import { timelinePlacements, timeToPercent } from "@/lib/timeline-scale";
 import { createEditClip, useEditState } from "@/stores/use-edit-store";
 import type { EditClip, EditMedia } from "@/types/edit";
 import { useEditMediaUrls } from "../use-edit-media-urls";
-import { EditAudioTrackRow } from "./edit-audio-track";
+import { EditAudioTrackRow, TRACK_TOGGLE_OFF, TRACK_TOGGLE_ON } from "./edit-audio-track";
 
 // 素材没探测到时长的片段长度为 0：按百分比算宽度就是 0，既看不见也抓不住。
 // 只给它一个最小抓取宽度——绝对定位下它不会推动任何别的元素，因此不会重新引入累积偏移。
@@ -78,13 +78,15 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
     const { t } = useTranslation();
     const { message } = App.useApp();
     const { token } = theme.useToken();
-    const { projects, updateClips, updateClip, addClips, removeClip, rippleRemoveClip, splitClip, undoEdit, redoEdit, historyFlags, historyLabels } = useEditState();
+    const { projects, updateClips, updateClip, addClips, removeClip, rippleRemoveClip, splitClip, setVideoTrackMuted, undoEdit, redoEdit, historyFlags, historyLabels } = useEditState();
     const project = projects.find((item) => item.id === projectId);
     const media = project?.media ?? EMPTY_MEDIA;
     const clips = project?.clips ?? EMPTY_CLIPS;
     const urls = useEditMediaUrls(media);
     const views = useMemo(() => buildEditClips(media, clips, urls), [media, clips, urls]);
     const totalSeconds = editPlaybackSeconds(views);
+    // 视频轨只有一条：轨道头上的「关闭原声」作用于本轨全部片段，状态就是「本轨是不是全都关了」。
+    const videoMuted = views.length > 0 && views.every((view) => view.muted);
 
     // ── 播放头与预览：全部过程量放 ref，播放/暂停这一个低频开关才用 state ──────────────
     const [playing, setPlaying] = useState(false);
@@ -294,6 +296,9 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
             return;
         }
         const landing = seekTo ?? view.start;
+        // 换源时先把「关闭原声」落到 0：等播放心跳纠正的话，起播会有一瞬间的满音量。
+        // 其余音量（电平、淡入淡出）照旧全部由心跳逐帧算，这里不多插手。
+        if (view.muted) video.volume = 0;
         if (!view.src) {
             // 素材被移除 / 没有可播地址：不阻塞主时钟，等它自然被跳过。
             detachHandlers(video);
@@ -951,12 +956,36 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
                                 <span className="absolute bottom-0 right-0 text-[9px] leading-none text-stone-400 dark:text-zinc-600">{t("editor.seconds")}</span>
                             </div>
 
+                            {/* 视频轨的轨道头：这条轨是「一条轨 + 若干片段」的结构，所以轨道头上的开关
+                                作用于**本轨全部片段**（单个片段的原声在右侧属性区单独设置）。
+                                做法与音轨行一致——绝对定位浮在行左端、**不占任何宽度**，标尺 / 片段条 /
+                                波形条 / 播放头仍共用同一个定位宽度（见文件顶部的时间轴对齐纪律）。 */}
+                            <div data-edit-video-track className="relative mt-0.5 h-5">
+                                <span data-edit-video-track-head className="absolute left-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1 rounded-[7px] py-0.5 pl-1.5 pr-0.5" style={{ background: token.colorBgElevated, border: `1px solid ${token.colorBorderSecondary}` }}>
+                                    <span className="text-[10px] text-stone-500 dark:text-zinc-400">{t("editor.videoTrack")}</span>
+                                    <Tooltip title={t("editor.videoTrackMuteHint")}>
+                                        <Button
+                                            data-edit-video-track-mute="true"
+                                            type="text"
+                                            size="small"
+                                            className={`!h-5 !w-5 !min-w-5 !p-0 ${videoMuted ? TRACK_TOGGLE_ON : TRACK_TOGGLE_OFF}`}
+                                            title={t("editor.videoTrackMuteHint")}
+                                            aria-label={videoMuted ? t("editor.clipUnmute") : t("editor.clipMute")}
+                                            aria-pressed={videoMuted}
+                                            icon={videoMuted ? <VolumeX className="size-3" style={{ color: token.colorError }} /> : <Volume2 className="size-3" style={{ color: token.colorTextTertiary }} />}
+                                            onClick={() => setVideoTrackMuted(projectId, !videoMuted)}
+                                        />
+                                    </Tooltip>
+                                </span>
+                            </div>
+
                             <div className="relative h-12" onPointerMove={handleTimelineMove} onPointerUp={endTimelineDrag} onPointerCancel={endTimelineDrag} onPointerLeave={endTimelineDrag}>
                                 {views.map((view, index) => (
                                     <div
                                         key={view.id}
                                         data-edit-clip={view.id}
                                         data-edit-clip-locked={view.locked ? "true" : undefined}
+                                        data-edit-clip-muted={view.muted ? "true" : undefined}
                                         className={`absolute inset-y-0 touch-none select-none overflow-hidden rounded-[8px] border transition-colors ${view.locked ? "cursor-not-allowed" : "cursor-grab active:cursor-grabbing"} ${view.id === clipId ? "border-[#756bff]" : "border-black/[0.09] hover:bg-black/[0.03] dark:border-white/[0.09] dark:hover:bg-white/[0.04]"}`}
                                         // 片段条按真实时长占位：left / width 都是「秒数 / 总秒数」的百分比，
                                         // 与标尺刻度、播放头、波形条同一套换算，第 k 段的右边缘就是前 k 段时长之和。
@@ -971,6 +1000,8 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
                                         <span className="pointer-events-none absolute inset-y-0 left-[2px] right-[2px] rounded-[6px] bg-black/[0.03] dark:bg-white/[0.04]" />
                                         <span data-clip-label className="pointer-events-none absolute inset-0 flex items-center gap-1 truncate px-2 text-[10px] text-stone-500 dark:text-zinc-400">
                                             {view.hasDuration ? clipLabel(view, index, view.length) : t("editor.clipNoDuration", { index: index + 1 })}
+                                            {/* 关闭原声的片段在时间线上直接标出来：成片里听不到它的原声时能一眼看出是设置，而不是素材坏了。 */}
+                                            {view.muted ? <VolumeX className="size-3 shrink-0" /> : null}
                                             {/* 锁定片段在时间线上直接标出来：拖不动时能一眼看出是「锁着」而不是坏了。 */}
                                             {view.locked ? <Lock className="size-3 shrink-0" /> : null}
                                         </span>

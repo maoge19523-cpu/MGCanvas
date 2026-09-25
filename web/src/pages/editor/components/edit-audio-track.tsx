@@ -19,9 +19,10 @@ const EMPTY_PEAKS = new Float32Array(0);
 /**
  * 轨道头开关的两套类名：激活态给一层双主题都看得清的底色，未激活态保持透明。
  * 底色只用既有 Tailwind 双主题类（不写死颜色），状态色另外走 antd token（见下面的图标 style）。
+ * 视频轨的轨道头（edit-stage）也用同一套，避免两处各写一份后悄悄漂移。
  */
-const TRACK_TOGGLE_ON = "bg-black/[0.09] dark:bg-white/[0.14]";
-const TRACK_TOGGLE_OFF = "bg-transparent";
+export const TRACK_TOGGLE_ON = "bg-black/[0.09] dark:bg-white/[0.14]";
+export const TRACK_TOGGLE_OFF = "bg-transparent";
 
 /** 一条音轨的波形状态：数据没到手前 pending，到手后按有没有信号分 ready / silent，出错是 failed。 */
 type WaveformStatus = "pending" | "ready" | "silent" | "failed";

@@ -84,6 +84,25 @@ describe("剪辑台 store：撤销 / 重做接线", () => {
         expect(useEditStore.getState().historyFlags(PROJECT_ID).canUndo).toBe(false);
     });
 
+    /** 视频轨整轨关闭原声：一次提交改全部片段，只压一条历史，撤销能一次性还原。 */
+    it("视频轨关闭原声作用于本轨全部片段，只压一条记录且可撤销", () => {
+        useEditStore.getState().setVideoTrackMuted(PROJECT_ID, true);
+        expect(project().clips.map((clip) => clip.muted)).toEqual([true, true]);
+        expect(history().past.length).toBe(1);
+        expect(useEditStore.getState().historyLabels(PROJECT_ID).undo).toBe("关闭原声");
+
+        useEditStore.getState().undoEdit(PROJECT_ID);
+        expect(project().clips.map((clip) => clip.muted)).toEqual([undefined, undefined]);
+
+        // 再关一次后恢复：字段被去掉（回缺省），不是留下一堆 muted: false。
+        useEditStore.getState().setVideoTrackMuted(PROJECT_ID, true);
+        useEditStore.getState().setVideoTrackMuted(PROJECT_ID, false);
+        expect(project().clips.map((clip) => clip.muted)).toEqual([undefined, undefined]);
+        // 重复关闭同一次状态不再压新记录：关 → 开 两次真实改动各留一条，再关一次也是「值没变」。
+        useEditStore.getState().setVideoTrackMuted(PROJECT_ID, false);
+        expect(history().past.length).toBe(2);
+    });
+
     it("没有可撤销的记录时 undo 是空操作", () => {
         useEditStore.getState().undoEdit(PROJECT_ID);
         expect(project().clips.map((clip) => clip.id)).toEqual(["c1", "c2"]);

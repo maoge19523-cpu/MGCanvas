@@ -45,7 +45,9 @@ function sameClip(left: EditClip, right: EditClip) {
             left.transitionDuration === right.transitionDuration &&
             left.subtitle === right.subtitle &&
             // 锁定必须参与比较：漏了它，切换锁定会被判成「值没变」而整条状态更新被丢掉（轨道头的开关就点不动了）。
-            left.locked === right.locked)
+            left.locked === right.locked &&
+            // 同理：关闭原声也是「点一下切状态」，不参与比较就会点了不生效。
+            left.muted === right.muted)
     );
 }
 

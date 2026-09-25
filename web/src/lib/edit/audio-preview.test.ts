@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { editAudioGainShape } from "@/lib/edit/audio-gain";
 import { editTrackAudibility, resolveAudibleTracks } from "@/lib/edit/audio-mix";
-import { EDIT_AUDIO_DRIFT_TOLERANCE, editAudioDriftSeconds, editAudioPreviewElementVolume, editAudioPreviewGain, editAudioPreviewPlan, editAudioPreviewState, type EditAudioPreviewTrack } from "@/lib/edit/audio-preview";
+import { EDIT_AUDIO_DRIFT_TOLERANCE, editAudioDriftSeconds, editAudioPreviewElementVolume, editAudioPreviewGain, editAudioPreviewPlan, editAudioPreviewSilence, editAudioPreviewState, type EditAudioPreviewTrack } from "@/lib/edit/audio-preview";
 import { editDriftAction } from "@/lib/edit/playback-clock";
-import type { EditAudioTrack, EditMedia } from "@/types/edit";
+import { buildComposeTracks } from "@/lib/edit/timeline";
+import { EDIT_DEFAULT_OUTPUT, type EditAudioTrack, type EditMedia, type EditProject } from "@/types/edit";
 
 /**
  * 预览混音的纯计算：给一个播放时刻，算出每条音轨此刻以多大增益出声、处于素材内的哪个位置。
@@ -263,8 +264,132 @@ describe("预览音轨：跳转之后的重对齐（素材内位置）", () => {
     });
 });
 
-describe("预览音轨：与音轨可视化（lib/edit/audio-gain）画出的坡度同源", () => {
-    it("淡出的锚点：可视化画出的「与导出一致」那一档，正是预览增益真正开始下降的时刻", () => {
+describe("预览音轨：本来会「不出声也没有任何提示」的那条路（本次用户端故障的观测点）", () => {
+    it("素材上既没有地址也没有存储键：确定拿不到，记进 gaps 的 missing 让界面直说", () => {
+        const orphan = audioMedia({ id: "m9", url: "" });
+        const plan = editAudioPreviewPlan([track({ id: "t1", mediaId: "m9" })], [orphan], {}, TOTAL);
+
+        expect(plan.tracks).toEqual([]);
+        // 关键：它不在 unavailable 里（素材还在），而是单独记成「拿不到可播放地址」。
+        expect(plan.unavailable).toEqual([]);
+        expect(plan.gaps).toEqual([{ name: "m9", reason: "missing" }]);
+    });
+
+    it("地址还在解析（有存储键、urls 里还没这一项）算 pending：一瞬间的中间态，不该报给用户", () => {
+        const pending = audioMedia({ id: "m9", url: "", storageKey: "edit-audio:1" });
+
+        expect(editAudioPreviewPlan([track({ id: "t1", mediaId: "m9" })], [pending], {}, TOTAL).gaps).toEqual([{ name: "m9", reason: "pending" }]);
+        // 解析完成、结果就是一个空串：这时才是真的拿不到。
+        expect(editAudioPreviewPlan([track({ id: "t1", mediaId: "m9" })], [pending], { m9: "" }, TOTAL).gaps).toEqual([{ name: "m9", reason: "missing" }]);
+    });
+
+    it("解析出来的地址为空但素材自己记了地址：回退到素材地址，照样出声、不算缺口", () => {
+        const plan = editAudioPreviewPlan([track({ id: "t1" })], [audioMedia({ id: "m1", storageKey: "edit-audio:1" })], { m1: "" }, TOTAL);
+
+        expect(plan.tracks[0]!.src).toBe("blob:m1");
+        expect(plan.gaps).toEqual([]);
+    });
+
+    it("静音轨不报缺口：它不是坏了，是用户自己关的", () => {
+        const plan = editAudioPreviewPlan([track({ id: "t1", mediaId: "m9", muted: true })], [audioMedia({ id: "m9", url: "" })], {}, TOTAL);
+
+        expect(plan.gaps).toEqual([]);
+        expect(plan.unavailable).toEqual([]);
+    });
+});
+
+describe("预览音轨：不出声时到底是哪一环（预览区状态行的唯一口径）", () => {
+    // 用户端那条真实工程：素材 7.419s、起点 0、非循环，成片 22.509s（两段 7.41 + 15.099）。
+    const media = [audioMedia({ id: "m1", durationMs: 7419, name: "女声 截取视频.mp3" }), audioMedia({ id: "m2", durationMs: 30000 })];
+
+    it("与 editAudioPreviewState 严格互补：state 说该出声就一个字都不说，state 说 null 就必须给得出理由", () => {
+        const cases = [
+            planned([track({ id: "t1", start: 0, mediaId: "m1" })], media, "t1", 22.509),
+            planned([track({ id: "t1", start: 2, loop: true, mediaId: "m1" })], media, "t1", 22.509),
+            planned([track({ id: "t1", start: 30, mediaId: "m1" })], media, "t1", 22.509),
+        ];
+        for (const item of cases) {
+            for (const seconds of [0, 1.5, 7.4, 8, 15, 22.5]) {
+                const state = editAudioPreviewState(item, seconds, item.sourceSeconds);
+                const silence = editAudioPreviewSilence(item, seconds, item.sourceSeconds);
+                expect(silence === null, `t=${seconds} 时 state 与理由必须同时有 / 同时无`).toBe(state !== null);
+            }
+        }
+        // 播放头还没建立（NaN）时不分类：界面宁可不说，也不说错。
+        expect(editAudioPreviewSilence(cases[0]!, Number.NaN)).toBeNull();
+    });
+
+    it("用户那条轨前 7.419 秒该出声、之后是 past-source：素材放完，不是坏了", () => {
+        const userTrack = planned([track({ id: "t1", start: 0, mediaId: "m1" })], media, "t1", 22.509);
+
+        expect(editAudioPreviewSilence(userTrack, 3, 7.419)).toBeNull();
+        expect(editAudioPreviewSilence(userTrack, 7.418, 7.419)).toBeNull();
+        // 一过素材末尾：状态行会说「素材只到 0:07.4，非循环时之后不再出声」。
+        expect(editAudioPreviewSilence(userTrack, 7.42, 7.419)).toBe("past-source");
+        expect(editAudioPreviewSilence(userTrack, 20, 7.419)).toBe("past-source");
+        // 这正是「没有循环的 7.4 秒素材铺在 22.5 秒成片上」的固有行为（导出侧一样）：
+        // 开着循环时整片都有声音，理由也就不再成立。
+        const looped = planned([track({ id: "t1", start: 0, loop: true, mediaId: "m1" })], media, "t1", 22.509);
+        expect(editAudioPreviewSilence(looped, 20, 7.419)).toBeNull();
+    });
+
+    it("起点还没到 → before-start；起点落在成片末尾 → start-past-end；超出成片总长 → past-film", () => {
+        const late = planned([track({ id: "t1", start: 5, mediaId: "m2" })], media, "t1", TOTAL);
+        expect(editAudioPreviewSilence(late, 4.999, 30)).toBe("before-start");
+        expect(editAudioPreviewSilence(late, 5, 30)).toBeNull();
+
+        const outside = planned([track({ id: "t1", start: 12, mediaId: "m2" })], media, "t1", TOTAL);
+        expect(outside.span).toBe(0);
+        expect(editAudioPreviewSilence(outside, 3, 30)).toBe("start-past-end");
+        expect(editAudioPreviewSilence(outside, TOTAL, 30)).toBe("start-past-end");
+
+        const looped = planned([track({ id: "t1", start: 0, loop: true, mediaId: "m2" })], media, "t1", TOTAL);
+        expect(editAudioPreviewSilence(looped, 9.999, 30)).toBeNull();
+        expect(editAudioPreviewSilence(looped, TOTAL, 30)).toBe("past-film");
+    });
+});
+
+describe("预览音轨：单条独奏轨不该把自己排除（导出与预览共用判定）", () => {
+    it("只有一条轨、它自己开着独奏：判定是 audible，预览进混音、导出也照发", () => {
+        const tracks = [track({ id: "t1", solo: true })];
+        const media = [audioMedia({ id: "m1" })];
+
+        expect(editTrackAudibility(tracks)).toEqual({ t1: "audible" });
+        expect(editAudioPreviewPlan(tracks, media, {}, TOTAL).tracks.map((item) => item.id)).toEqual(["t1"]);
+        // 导出侧读的是同一份 resolveAudibleTracks：这条轨必须真的进 FFmpeg 的 tracks。
+        const project: EditProject = {
+            id: "p1",
+            name: "独奏",
+            createdAt: "2024-01-01T00:00:00.000Z",
+            updatedAt: "2024-01-01T00:00:00.000Z",
+            media,
+            clips: [],
+            audioTracks: tracks,
+            output: { ...EDIT_DEFAULT_OUTPUT },
+        };
+        expect(buildComposeTracks({ project, paths: { m1: "C:/media/a.mp3" } }).map((item) => item.path)).toEqual(["C:/media/a.mp3"]);
+    });
+
+    it("两轨一独奏：未独奏的那条预览与导出都不出声（这条才是独奏的本意）", () => {
+        const tracks = [track({ id: "t1", solo: true }), track({ id: "t2", mediaId: "m2" })];
+        const media = [audioMedia({ id: "m1" }), audioMedia({ id: "m2" })];
+
+        expect(editAudioPreviewPlan(tracks, media, {}, TOTAL).tracks.map((item) => item.id)).toEqual(["t1"]);
+        const project: EditProject = {
+            id: "p1",
+            name: "独奏",
+            createdAt: "2024-01-01T00:00:00.000Z",
+            updatedAt: "2024-01-01T00:00:00.000Z",
+            media,
+            clips: [],
+            audioTracks: tracks,
+            output: { ...EDIT_DEFAULT_OUTPUT },
+        };
+        expect(buildComposeTracks({ project, paths: { m1: "C:/media/a.mp3", m2: "C:/media/b.mp3" } }).map((item) => item.path)).toEqual(["C:/media/a.mp3"]);
+    });
+});
+
+describe("预览音轨：与音轨可视化（lib/edit/audio-gain）画出的坡度同源", () => {    it("淡出的锚点：可视化画出的「与导出一致」那一档，正是预览增益真正开始下降的时刻", () => {
         const media = [audioMedia({ id: "m1" })];
         const fade = planned([track({ id: "t1", volume: 0.8, fadeIn: 1, fadeOut: 2, start: 1, loop: true })], media, "t1");
         // 画出来的几何：起点 1s、能占 9s（loop 铺满成片剩余部分）、淡入 1s、淡出 2s。

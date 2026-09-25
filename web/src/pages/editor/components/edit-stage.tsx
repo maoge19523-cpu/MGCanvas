@@ -16,7 +16,7 @@ import {
     resolveEditTrackStart,
     type EditSnapPoint,
 } from "@/lib/edit/timeline-edit";
-import { EDIT_AUDIO_DRIFT_TOLERANCE, editAudioDriftSeconds, editAudioPreviewElementVolume, editAudioPreviewPlan, editAudioPreviewState, type EditAudioPreviewTrack } from "@/lib/edit/audio-preview";
+import { EDIT_AUDIO_DRIFT_TOLERANCE, editAudioDriftSeconds, editAudioPreviewElementVolume, editAudioPreviewPlan, editAudioPreviewSilence, editAudioPreviewState, type EditAudioPreviewTrack } from "@/lib/edit/audio-preview";
 import {
     EditPlaybackClock,
     editDesiredMediaSeconds,
@@ -166,6 +166,12 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
     // 被自动播放策略拦下的闸门：拦下后暂停重试（免得每帧 reject 一次并刷屏），再点播放时打开。
     const audioBlockedRef = useRef(false);
     const lastAudioCorrectionRef = useRef(0);
+    // 预览区那条音轨状态行的过程量：静态那半句由 React 渲染（下面 audioProblems），实时那半句由心跳直写。
+    // 与 readoutRef / activeLabelRef 同一套纪律：文字与显隐都直接改 DOM，播放路径里一次都不写 state。
+    const audioStatusRef = useRef<HTMLSpanElement | null>(null);
+    const audioStatusLiveRef = useRef<HTMLSpanElement | null>(null);
+    const audioStatusStaticRef = useRef(0);
+    const audioStatusTextRef = useRef("");
 
     const flags = historyFlags(projectId);
     const labels = historyLabels(projectId);
@@ -350,9 +356,73 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
         if (playingRef.current && element.paused) playAudio(track, element);
     };
 
+    /**
+     * 「这条轨为什么没声音」翻成人话：出口只有 editAudioPreviewSilence 那一个判定，
+     * 这里只负责把它的结论配上秒数讲清楚（用户端听不到声音时，这一句就是唯一的线索）。
+     */
+    const audioSilenceText = (track: EditAudioPreviewTrack, seconds: number, duration: number) => {
+        const reason = editAudioPreviewSilence(track, seconds, duration);
+        if (reason === "before-start") return t("editor.previewAudioBeforeStart", { name: track.name, at: formatEditTime(track.start) });
+        if (reason === "start-past-end") return t("editor.previewAudioStartPastEnd", { name: track.name, at: formatEditTime(track.start) });
+        if (reason === "past-film") return t("editor.previewAudioPastFilm", { name: track.name, at: formatEditTime(track.start + track.span) });
+        if (reason === "past-source") return t("editor.previewAudioPastSource", { name: track.name, at: formatEditTime(duration) });
+        return "";
+    };
+
+    /**
+     * 预览区那条音轨状态行的**实时那一半**：只在「此刻该出声却没出声」时说话，
+     * 正常播放时它整条收起来（不打扰用户）。四种卡点分开说清：
+     * 还没到它的出声区间 / 素材已经放完 / 元素停着（附载入状态与元素音量）/ 与播放头差了多久。
+     *
+     * 只写 DOM（textContent + hidden），一次都不写 state：它每帧都在跑，写 state 就是逐帧重渲染。
+     * 文字没变时一个字都不动 DOM（含秒数的句子按 0.1s 变化，不至于每帧刷）。
+     */
+    const paintAudioStatus = (seconds: number) => {
+        const live = audioStatusLiveRef.current;
+        if (!live) return;
+        const parts: string[] = [];
+        if (playingRef.current) {
+            for (const track of audioTracksRef.current) {
+                const element = audioRefs.current.get(track.id);
+                if (!element || brokenAudioRef.current.has(audioKey(track))) continue;
+                const duration = audioDuration(element, track);
+                const state = editAudioPreviewState(track, seconds, duration);
+                if (!state) {
+                    parts.push(audioSilenceText(track, seconds, duration));
+                    continue;
+                }
+                // 被自动播放策略拦下：用户在界面上看到的必须是「再点一次播放」，不是一句「没声音」。
+                if (audioBlockedRef.current) {
+                    parts.push(t("editor.previewAudioBlocked"));
+                    continue;
+                }
+                if (element.paused) {
+                    parts.push(t("editor.previewAudioStalled", {
+                        name: track.name,
+                        ready: t(element.readyState >= 1 ? "editor.previewAudioLoaded" : "editor.previewAudioLoading"),
+                        volume: Math.round(editAudioPreviewElementVolume(state.gain) * 100),
+                    }));
+                    continue;
+                }
+                const drift = editAudioDriftSeconds(state.offsetSeconds, element.currentTime, duration, track.loop);
+                if (editDriftAction(drift, frameSecondsRef.current, EDIT_AUDIO_DRIFT_TOLERANCE) !== "ok") parts.push(t("editor.previewAudioDrift", { name: track.name, delta: Math.abs(drift).toFixed(1) }));
+            }
+        }
+        const text = parts.filter(Boolean).join(" · ");
+        const bar = audioStatusRef.current;
+        if (text !== audioStatusTextRef.current) {
+            audioStatusTextRef.current = text;
+            live.textContent = text;
+            live.hidden = text === "";
+        }
+        // 整条的显隐由这里统一裁定：React 渲染那半句只管静态问题，实时的这半句归心跳。
+        if (bar) bar.hidden = audioStatusStaticRef.current === 0 && text === "";
+    };
+
     /** 全部音轨重新对位：起播、跳转、片段数据变化时调用（播放中的逐帧校正见 stepAudio）。 */
     const alignAudio = (seconds: number) => {
         for (const track of audioTracksRef.current) alignAudioTrack(track.id, seconds);
+        paintAudioStatus(seconds);
     };
 
     /** 停播时把每条音轨都停住：暂停之后还在后台出声是最难察觉的一类问题。 */
@@ -361,6 +431,8 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
             if (!element.paused) element.pause();
             element.volume = 0;
         }
+        // 暂停之后「不出声」是应该的：状态行随之收起，不把播放中的结论留在画面上。
+        paintAudioStatus(secondsRef.current);
     };
 
     /**
@@ -396,6 +468,8 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
             lastAudioCorrectionRef.current = now;
             element.currentTime = state.offsetSeconds;
         }
+        // 状态行每帧刷新一次读数：它是用户端唯一能看出「卡在哪一环」的地方（纯 DOM 写入，无重渲染）。
+        paintAudioStatus(seconds);
     };
 
     const stopPreview = () => {
@@ -668,9 +742,25 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
         if (!playingRef.current) requestPausedFrame(clamped);
     }, [views, totalSeconds, project?.output.fps, audioPlan]);
 
+    // 预览里听不到的音轨：素材被移除 / 不是音频 / 拿不到可播放地址（静态数据就判定得出来），
+    // 或元素加载失败（运行时才知道）。坏掉的键按 id|src 存，换了素材就重新算，所以这里只把
+    // **当前还在这份计划里**的报出来。地址还在解析（gaps 里的 pending）是中间态，不报。
+    const audioProblems = [
+        ...audioPlan.unavailable.map((name) => t("editor.previewAudioMissing", { name })),
+        ...audioPlan.gaps.filter((gap) => gap.reason === "missing").map((gap) => t("editor.previewAudioNoUrl", { name: gap.name })),
+        ...audioPlan.tracks.filter((track) => brokenAudio.includes(audioKey(track))).map((track) => t("editor.previewAudioFailed", { name: track.name })),
+    ];
+    const audioProblemText = audioProblems.join(" · ");
+
+    // 状态行的静态那半句由 React 渲染，实时那半句归播放心跳：这里把「现在有几个静态问题」同步给心跳，
+    // 并在每次数据变化后重画一次——否则 React 重渲染会把带实时结论的整条状态行重新 hidden 掉。
+    useEffect(() => {
+        audioStatusStaticRef.current = audioProblems.length;
+        paintAudioStatus(secondsRef.current);
+    }, [audioProblemText]);
+
     useEffect(
-        () => () => {
-            stopPreview();
+        () => () => {            stopPreview();
             if (frameRef.current) cancelAnimationFrame(frameRef.current);
             if (scrubFrameRef.current) cancelAnimationFrame(scrubFrameRef.current);
             // 两个句柄都要归零：开发模式的 StrictMode 会先跑一遍清理再重挂，
@@ -1043,12 +1133,6 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
     // 接缝标记的位置与上面的片段条同源（左段的右边缘）；片段少于 2 段时一条接缝都没有。
     const seams = useMemo(() => editTimelineSeams(views, totalSeconds), [views, totalSeconds]);
     const empty = views.length === 0;
-    // 预览里听不到的音轨：素材被移除 / 不是音频（静态数据就能判定），或元素加载失败（运行时才知道）。
-    // 坏掉的键按 id|src 存，换了素材就重新算，所以这里只把**当前还在这份计划里**的报出来。
-    const audioProblems = [
-        ...audioPlan.unavailable.map((name) => t("editor.previewAudioMissing", { name })),
-        ...audioPlan.tracks.filter((track) => brokenAudio.includes(audioKey(track))).map((track) => t("editor.previewAudioFailed", { name: track.name })),
-    ];
 
     // 时间线空状态的一键引导：把已探测到时长的视频素材按素材顺序一次排上时间线（一次写入）。
     const addAllToTimeline = () => {
@@ -1137,12 +1221,25 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
                             onError={() => reportAudioProblem(track, audioRefs.current.get(track.id))}
                         />
                     ))}
-                    {/* 有不发声的音轨时在预览区直说一句：不能让它悄悄变成「我按了播放却没声音」。 */}
-                    {audioProblems.length ? (
-                        <span data-edit-preview-audio-hint className="pointer-events-none absolute inset-x-2 bottom-1 truncate text-center text-[10px] text-white/60">
-                            {audioProblems.join(" · ")}
-                        </span>
-                    ) : null}
+                    {/* 预览区的音轨状态行：预览区里**唯一**说明「这条音轨为什么没声音」的地方，
+                        用户按下播放却听不到声音时，这里就是他唯一能看出卡在哪一环的线索。
+                        它分两半句、只有一半由 React 渲染：
+                        - 静态那半句（素材被移除 / 拿不到可播放地址 / 元素加载失败）由 React 渲染，
+                          一个问题都没有时整条 hidden（不占位、不打扰）；
+                        - 实时那半句（此刻该出声却停着 / 素材已经放完 / 还没到它的出声区间 / 与播放头差了多久）
+                          由播放心跳直写 DOM，因此播放路径里一次 state 都不写。
+                        底色走 antd token：此前那句是压在画面上的 10px 白字（text-white/60），
+                        浅色主题下几乎读不到，用户报「界面上一句话都没有」时其实未必真的没有话。 */}
+                    <span
+                        ref={audioStatusRef}
+                        data-edit-preview-audio-status
+                        hidden={audioProblemText === ""}
+                        className="pointer-events-none absolute inset-x-2 bottom-1 z-[2] flex flex-col gap-0.5 rounded-[6px] border px-2 py-1 text-center text-[11px] leading-4"
+                        style={{ background: token.colorWarningBg, color: token.colorWarningText, borderColor: token.colorWarningBorder }}
+                    >
+                        {audioProblemText ? <span data-edit-preview-audio-hint>{audioProblemText}</span> : null}
+                        <span ref={audioStatusLiveRef} data-edit-preview-audio-live hidden />
+                    </span>
                 </div>
             </div>
 

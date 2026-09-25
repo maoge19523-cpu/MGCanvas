@@ -191,6 +191,40 @@ describe("剪辑台预览：音轨的声音载体真的渲染出来了", () => {
         expect(markup).toContain('data-edit-track-mute="t1"');
         expect(markup).toContain('data-edit-clip="c1"');
     });
+
+    it("音轨状态行：一切正常时整条 hidden，一个字都不显示（不打扰用户）", () => {
+        const markup = render(DEMO, "editor-preview-audio-status-quiet");
+        const preview = previewArea(markup);
+        const bar = around(preview, "data-edit-preview-audio-status");
+
+        // 状态行始终在产物里（实时那半句要由播放心跳直写），但整条是收起的。
+        expect(bar.slice(0, bar.indexOf(">"))).toContain("hidden");
+        // 静态那半句只在真有问题时才渲染出来。
+        expect(markup).not.toContain("data-edit-preview-audio-hint");
+        // 实时那半句（心跳直写）先占好位置：它是空的、也 hidden。
+        expect(around(preview, "data-edit-preview-audio-live").slice(0, 60)).toContain("hidden");
+    });
+
+    it("音轨状态行：素材拿不到可播放地址时直说是哪一环（不再「不出声也没有一句话」）", () => {
+        // 素材还在、也没静音，但既没有地址也没有存储键：解析永远不会给出可播地址。
+        const noUrl: EditProject = {
+            ...DEMO,
+            media: [...DEMO.media, { id: "m9", name: "女声 截取视频.mp3", kind: "audio", source: "local", url: "", durationMs: 7419, createdAt: "2024-01-01T00:00:00.000Z" }],
+            audioTracks: [{ id: "t9", mediaId: "m9", volume: 1, fadeIn: 0, fadeOut: 0, loop: false, solo: true }],
+        };
+        const markup = render(noUrl, "editor-preview-audio-status-no-url");
+        const preview = previewArea(markup);
+
+        // 没有元素（它没进混音），但状态行必须说得出来是哪一环断了。
+        expect((markup.match(/<audio/g) || []).length).toBe(0);
+        expect(preview).toContain("data-edit-preview-audio-status");
+        const bar = around(preview, "data-edit-preview-audio-status", 600);
+        expect(bar.slice(0, bar.indexOf(">"))).not.toContain("hidden");
+        const hint = around(preview, "data-edit-preview-audio-hint", 200);
+        expect(hint).toContain("女声 截取视频.mp3");
+        expect(hint).toContain("可播放");
+        expect(preview).toContain("data-edit-preview-video");
+    });
 });
 
 describe("剪辑台预览：文案与「预览包含什么」一致", () => {
@@ -227,5 +261,22 @@ describe("剪辑台预览：文案与「预览包含什么」一致", () => {
     it("中英两份文案成对存在：新增的音轨提示两边都有", () => {
         for (const text of [zhCN.editor.previewAudioMissing, zhCN.editor.previewAudioFailed, zhCN.editor.previewAudioBlocked]) expect(text.length).toBeGreaterThan(0);
         for (const text of [enUS.editor.previewAudioMissing, enUS.editor.previewAudioFailed, enUS.editor.previewAudioBlocked]) expect(text.length).toBeGreaterThan(0);
+    });
+
+    it("状态行新增的每一句两边都有，且都带得出「是哪条轨、卡在哪一环」", () => {
+        const keys = ["previewAudioNoUrl", "previewAudioBeforeStart", "previewAudioStartPastEnd", "previewAudioPastFilm", "previewAudioPastSource", "previewAudioStalled", "previewAudioDrift"] as const;
+        for (const key of keys) {
+            expect(zhCN.editor[key].length, `zh 缺 ${key}`).toBeGreaterThan(0);
+            expect(enUS.editor[key].length, `en 缺 ${key}`).toBeGreaterThan(0);
+            // 音轨名一定要出现在句子里：用户看到的第一件事是「哪条轨」。
+            expect(zhCN.editor[key]).toContain("{{name}}");
+            expect(enUS.editor[key]).toContain("{{name}}");
+        }
+        // 「停着」那句还要能看出素材载入到哪一步、元素音量是多少。
+        for (const text of [zhCN.editor.previewAudioStalled, enUS.editor.previewAudioStalled]) {
+            expect(text).toContain("{{ready}}");
+            expect(text).toContain("{{volume}}");
+        }
+        for (const text of [zhCN.editor.previewAudioLoaded, zhCN.editor.previewAudioLoading, enUS.editor.previewAudioLoaded, enUS.editor.previewAudioLoading]) expect(text.length).toBeGreaterThan(0);
     });
 });

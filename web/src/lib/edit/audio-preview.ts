@@ -44,11 +44,26 @@ export type EditAudioPreviewTrack = {
     sourceSeconds: number;
 };
 
+/**
+ * 一条音轨「素材还在、也没被静音，却拿不到可播放地址」的缺口。
+ * 这类轨过去是**静默跳过**的：没有元素、没有提示，用户看到的正是「按了播放却没声音、界面上一个字都没有」。
+ * 两种缺口必须分开，否则要么刷屏、要么漏报：
+ * - `pending`：地址还在解析（`useEditMediaUrls` 那一轮异步解析，通常一瞬间）——静默跳过，不打扰用户；
+ * - `missing`：**已经能确定**拿不到地址（素材上既没有地址也没有存储键，或者解析完就是一个空串）——
+ *   预览里真的听不到它，必须让界面说得出来。
+ */
+export type EditAudioPreviewGap = {
+    name: string;
+    reason: "pending" | "missing";
+};
+
 export type EditAudioPreviewPlan = {
     /** 会在预览里出声的音轨（已按可听性过滤，且有可播放地址）。 */
     tracks: EditAudioPreviewTrack[];
     /** 素材已被移除 / 不是音频：预览里听不到它，调用方据此给出可理解的提示。 */
     unavailable: string[];
+    /** 有素材、可听、但没有可播放地址：调用方只对 `missing` 那一类给出提示。 */
+    gaps: EditAudioPreviewGap[];
 };
 
 /**
@@ -78,6 +93,7 @@ export function editAudioPreviewPlan(tracks: EditAudioTrack[], media: EditMedia[
     const total = Number.isFinite(totalSeconds) && totalSeconds > 0 ? totalSeconds : 0;
     const list: EditAudioPreviewTrack[] = [];
     const unavailable: string[] = [];
+    const gaps: EditAudioPreviewGap[] = [];
     for (const track of tracks) {
         if (!audible.has(track.id)) continue;
         const source = byId.get(track.mediaId);
@@ -86,7 +102,13 @@ export function editAudioPreviewPlan(tracks: EditAudioTrack[], media: EditMedia[
             continue;
         }
         const src = urls[track.mediaId] || source.url || "";
-        if (!src) continue;
+        if (!src) {
+            // 素材上什么都没得解析（既没有地址也没有存储键）时是**确定**拿不到，不必等解析那一轮；
+            // 反过来，有得解析但解析结果还没落到 urls 里时只是一瞬间的中间态，报出来只会刷屏。
+            const resolvable = Boolean(source.storageKey) || Boolean(source.url);
+            gaps.push({ name: source.name, reason: resolvable && !(track.mediaId in urls) ? "pending" : "missing" });
+            continue;
+        }
         const start = clamp(track.start ?? 0, 0, total);
         list.push({
             id: track.id,
@@ -103,7 +125,7 @@ export function editAudioPreviewPlan(tracks: EditAudioTrack[], media: EditMedia[
             sourceSeconds: (source.durationMs || 0) / 1000,
         });
     }
-    return { tracks: list, unavailable };
+    return { tracks: list, unavailable, gaps };
 }
 
 /**
@@ -143,6 +165,30 @@ export function editAudioPreviewState(track: EditAudioPreviewTrack, seconds: num
     if (!track.loop && duration > 0 && local >= duration) return null;
     // loop 对应导出的 -stream_loop -1：素材从头再来，所以素材内的位置就是本地时间对素材时长取模。
     return { offsetSeconds: track.loop && duration > 0 ? local % duration : local, gain: editAudioPreviewGain(track, seconds) };
+}
+
+/**
+ * 这条轨此刻**为什么不出声**，供界面把「没声音」翻成一句人话。
+ *
+ * 它不另造一套出声判定：`editAudioPreviewState` 返回非 null 时这里一律返回 null
+ * （有一条不变式测试把两者绑在一起），只有 state 说「此刻不该出声」时才继续分类：
+ * - `before-start`：播放头还没到这条轨的起点（导出里就是 adelay 的前置静音）；
+ * - `start-past-end`：起点落在成片末尾，成片里一秒都听不到；
+ * - `past-film`：本地时间到达 `span`（超出成片总长，amix 截掉）；
+ * - `past-source`：非循环素材已经放完（导出那边此时也是静音，一直等到成片结束）。
+ *
+ * 秒数不是有限值时（播放头还没建立）不分类，返回 null：界面宁可不说，也不说错。
+ */
+export type EditAudioPreviewSilence = "before-start" | "start-past-end" | "past-film" | "past-source";
+
+export function editAudioPreviewSilence(track: EditAudioPreviewTrack, seconds: number, sourceSeconds = track.sourceSeconds): EditAudioPreviewSilence | null {
+    if (!Number.isFinite(seconds)) return null;
+    if (editAudioPreviewState(track, seconds, sourceSeconds) !== null) return null;
+    const local = seconds - track.start;
+    if (track.span <= 0) return "start-past-end";
+    if (local < 0) return "before-start";
+    if (local >= track.span) return "past-film";
+    return "past-source";
 }
 
 /**

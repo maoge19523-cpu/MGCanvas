@@ -111,9 +111,13 @@ describe("剪辑台字幕导入：入口与导入后的读回", () => {
         expect(markup).not.toContain("倒序的坏条目");
         expect(markup).toContain('data-edit-subtitle-count="2"');
         // 导入的字幕确实渲染在属性区（右侧）里：条目、时间与文本都在属性区起始位置之后。
+        // 注意：加字幕块之后同一条文案在时间线上也会出现（块里就是这句摘要），所以这里按
+        // **属性区那一段产物**来核对，而不是拿整份产物里的第一次出现——否则量到的是时间线上的块。
         const inspector = markup.indexOf('data-edit-area="inspector"');
+        const inInspector = markup.slice(inspector);
         expect(markup.indexOf("data-edit-subtitle-count")).toBeGreaterThan(inspector);
-        expect(markup.indexOf("跨接缝的第二句")).toBeGreaterThan(inspector);
+        expect(inInspector).toContain("跨接缝的第二句");
+        expect(inInspector).toContain("第一句");
     });
 
     it("落在成片末尾之后的字幕给常驻提示，不静默当成生效", () => {
@@ -144,8 +148,10 @@ describe("剪辑台字幕导入：入口与导入后的读回", () => {
         expect((markup.match(/data-edit-subtitle="/g) || []).length).toBe(50);
         expect(markup).toContain("data-edit-subtitle-capped");
         expect(markup).toContain("属性区只列出前 50 条（共 60 条）");
-        expect(markup).toContain("第 49 条");
-        expect(markup).not.toContain("第 50 条");
+        // 「列了哪些」只在属性区那一段产物里量：同一份文案在时间线的字幕块上也会出现（块里是摘要）。
+        const inInspector = markup.slice(markup.indexOf('data-edit-area="inspector"'));
+        expect(inInspector).toContain("第 49 条");
+        expect(inInspector).not.toContain("第 50 条");
     });
 });
 

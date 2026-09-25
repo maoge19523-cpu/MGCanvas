@@ -29,11 +29,13 @@ import {
 import { EDIT_SHORTCUTS, editShortcutDisplay, editShortcutHints, isEditShortcutTargetBlocked, matchEditShortcut, type EditShortcutAction } from "@/lib/edit/shortcuts";
 import { buildEditClips, editPlaybackSeconds, editTickLabel, editTickStep, formatEditTime, resolveEditPlayback, resolveEditSeek, type EditClipView } from "@/lib/edit/timeline";
 import { editTimelineSeams } from "@/lib/edit/timeline-seams";
+import { resolveEditSubtitleEdge } from "@/lib/edit/subtitle-blocks";
 import { timelinePlacements, timeToPercent } from "@/lib/timeline-scale";
 import { createEditClip, useEditState } from "@/stores/use-edit-store";
 import type { EditClip, EditMedia } from "@/types/edit";
 import { useEditMediaUrls } from "../use-edit-media-urls";
 import { EditAudioTrackRow, TRACK_TOGGLE_OFF, TRACK_TOGGLE_ON, type EditTrackDrag } from "./edit-audio-track";
+import { EditSubtitleTrack, type EditSubtitleDrag } from "./edit-subtitle-track";
 import { EditTransitionSeam } from "./edit-transition-seam";
 
 // 素材没探测到时长的片段长度为 0：按百分比算宽度就是 0，既看不见也抓不住。
@@ -43,8 +45,11 @@ const EDIT_CLIP_MIN_PX = 14;
 type EditStageProps = {
     projectId: string;
     clipId: string | null;
+    /** 时间线上选中的那条字幕（与选中片段互斥），属性区据此高亮并滚动定位过去。 */
+    subtitleId: string | null;
     hasMedia: boolean;
     onSelectClip: (clipId: string | null) => void;
+    onSelectSubtitle: (subtitleId: string | null) => void;
 };
 
 // 项目还没水合完成时用固定引用兜底：写成 `?? []` 会每次渲染都产生新数组，
@@ -61,9 +66,14 @@ const EMPTY_CLIPS: EditClip[] = [];
  * 松手时（pointerup / pointercancel / pointerleave）才一次性提交到剪辑台 store。
  *
  * 时间轴几何只有一套换算（lib/timeline-scale）：标尺刻度、播放头、吸附导引线、波形条、片段条
- * 都用「秒数 / 总秒数」的百分比定位。片段条不再用 flex + gap 分配宽度（间隙会吃掉容器像素，
+ * 与**字幕块**都用「秒数 / 总秒数」的百分比定位。片段条不再用 flex + gap 分配宽度（间隙会吃掉容器像素，
  * 片段一多就与严格百分比的标尺 / 播放头 / 波形错开），片段之间的视觉缝改由边框与内层色块
  * 在片段**内部**留出，不占轨道像素。
+ *
+ * 两类新增元素的**性质不同，不要混**：
+ * - 接缝上的转场标记是**覆盖层**（绝对定位、只写 left、不写 width），压在分界线上，不参与宽度分配；
+ * - 字幕块与片段条、波形条同属**按时间定位的内容**，left / width **都**由同一套换算给出
+ *   （见 lib/edit/subtitle-blocks 的 editSubtitlePlacement）。给它省掉 width 就再也对不上时间轴。
  *
  * 轨道头（视频轨一个开关、音轨三个开关）一律**绝对定位浮在各自行的左端、不占任何宽度**：它们是覆盖层，
  * 不是排版列。视频轨头与音轨头同处 left-1，于是视频轨头、视频片段行、各音轨头在左侧竖直对齐成一列；
@@ -81,11 +91,11 @@ const EMPTY_CLIPS: EditClip[] = [];
  * 设过 src 与 currentTime，暂停后没人再管这个 <video>，所以暂停态必须自己把播放头那一帧取回来，
  * 否则预览区只能是黑屏。取帧同样遵循上面的纪律：只写 ref 与 <video> 属性，一次都不写 store / setState。
  */
-export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditStageProps) {
+export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectClip, onSelectSubtitle }: EditStageProps) {
     const { t } = useTranslation();
     const { message } = App.useApp();
     const { token } = theme.useToken();
-    const { projects, updateClips, updateClip, addClips, removeClip, rippleRemoveClip, splitClip, setVideoTrackMuted, updateAudioTrack, undoEdit, redoEdit, historyFlags, historyLabels } = useEditState();
+    const { projects, updateClips, updateClip, addClips, removeClip, rippleRemoveClip, splitClip, setVideoTrackMuted, updateAudioTrack, updateSubtitle, removeSubtitle, undoEdit, redoEdit, historyFlags, historyLabels } = useEditState();
     const project = projects.find((item) => item.id === projectId);
     const media = project?.media ?? EMPTY_MEDIA;
     const clips = project?.clips ?? EMPTY_CLIPS;
@@ -591,6 +601,28 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
         refuse: () => message.warning(t("editor.trackLockedNotice")),
     };
 
+    /**
+     * 字幕块拖动的共用上下文：吸附候选点、阈值、导引线与提交入口同样取自时间线容器这一份
+     * （与片段拖动、音轨拖动共用 snapActive / snapPointsFor / snapThreshold / paintGuide，
+     * 字幕行不另造第二套吸附）。拖块身时把「本段时长」一起交给 resolveEditSnap，
+     * 于是首尾两条边都可能吸附到 0 秒 / 播放头 / 片段边界，且**时长不变**；
+     * 拖两端时只吸附被拖的那一条边。
+     *
+     * 拖动过程一次都不写 store：begin 只播种指针速度、placeBody / placeEdge 只算落点、
+     * guide 只写导引线的 style，只有松手时的那一次 commit 才提交（React #185 的对策）。
+     */
+    const subtitleDrag: EditSubtitleDrag = {
+        begin: (event) => {
+            velocityRef.current = { x: event.clientX, at: performance.now() };
+        },
+        // snapActive 只调一次：它内部要用指针速度更新 velocityRef，调两次会把两次采样之间的
+        // 零位移算成「速度 0」，于是「快拖不吸附」永远失效（与音轨拖动同一写法）。
+        placeBody: (event, rawStart, durationSeconds) => (snapActive(event) ? resolveEditSnap(rawStart, durationSeconds, snapPointsFor(), snapThreshold()) : resolveEditSnap(rawStart, durationSeconds, [], 0)),
+        placeEdge: (event, rawSeconds, edge, start, end) => (snapActive(event) ? resolveEditSubtitleEdge(rawSeconds, edge, start, end, snapPointsFor(), snapThreshold()) : resolveEditSubtitleEdge(rawSeconds, edge, start, end, [], 0)),
+        guide: paintGuide,
+        commit: (subtitleId, patch) => updateSubtitle(projectId, subtitleId, patch),
+    };
+
     const startReorder = (event: ReactPointerEvent<HTMLDivElement>, index: number) => {
         event.stopPropagation();
         // 锁定片段直接拒绝：连 dragRef 都不建，拖动过程一次都不会发生。
@@ -787,6 +819,21 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
         return true;
     };
 
+    /**
+     * 快捷键 Del：先删**时间线上选中的那条字幕**（字幕没有「涟漪」语义），否则照原逻辑删片段。
+     * Shift + Del（涟漪删除片段）永远只对片段生效——不因为选中了字幕就悄悄换掉它的语义。
+     * 这是字幕的删除入口：不在块上挂小按钮（块本来就窄，按钮会把可拖区域吃掉），
+     * 也不用右键菜单（项目里没有第二处右键菜单，为一条字幕新造一套不划算）。
+     */
+    const deleteSelected = () => {
+        if (subtitleId) {
+            removeSubtitle(projectId, subtitleId);
+            onSelectSubtitle(null);
+            return true;
+        }
+        return deleteAt(false);
+    };
+
     const runShortcut = (action: EditShortcutAction): boolean => {
         switch (action) {
             case "playPause":
@@ -795,7 +842,7 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
             case "split":
                 return splitAtPlayhead();
             case "delete":
-                return deleteAt(false);
+                return deleteSelected();
             case "rippleDelete":
                 return deleteAt(true);
             case "undo":
@@ -1051,6 +1098,15 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
                                     <EditTransitionSeam key={seam.leftClipId} seam={seam} onChange={(patch) => updateClip(projectId, seam.leftClipId, patch)} />
                                 ))}
                             </div>
+
+                            {/* 字幕轨道行：导入的字幕逐条画成可见、可拖的块。
+                                块是**按时间定位的内容**（与片段条、波形条同类），left / width 都由
+                                lib/timeline-scale 的同一套百分比换算得出——**不要**照接缝标记那样做成
+                                「只写 left、不写 width」的覆盖层，那样它就再也对不上时间轴了。
+                                这一行只是共享容器里多出来的一个兄弟行：不加内边距、不套自己的滚动条，
+                                所以标尺 / 片段条 / 波形条 / 播放头的百分比一个都没动。
+                                没有字幕时这一行整个不渲染（见 EditSubtitleTrack）。 */}
+                            <EditSubtitleTrack projectId={projectId} totalSeconds={totalSeconds} selectedId={subtitleId} drag={subtitleDrag} onSelect={onSelectSubtitle} />
 
                             {/* 音轨行：音频只出现在右侧属性区的「音轨」列表里，看不到波形就没法做音画对齐，
                                 所以在这里按同一条时间轴给每条音轨铺一行波形（位置与宽度都用百分比，与标尺、播放头同一套换算）。

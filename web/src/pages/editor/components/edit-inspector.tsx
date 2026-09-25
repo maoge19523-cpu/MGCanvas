@@ -1,6 +1,6 @@
 import { App, Button, Empty, Input, InputNumber, Select, Switch, Tooltip } from "antd";
 import { Captions, FolderOpen, Lock, LockOpen, Music2, Scissors, Trash2, Volume2, VolumeX } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 
 import { buildEditClips, editOutputSeconds, formatEditTime } from "@/lib/edit/timeline";
@@ -21,14 +21,45 @@ function clampNumber(value: number | null, minimum: number, maximum: number, fal
     return Math.min(maximum, Math.max(minimum, parsed));
 }
 
+/**
+ * 一条字幕在属性区里的样子。抽出来是因为有**两个**渲染位置：常规列表里的前 50 条，
+ * 以及「时间线上选中、但排在 50 条之外」的那一条（选中了却在属性区找不到它，等于选中没生效）。
+ * 选中态同时给 data 属性（测试与排查用）与可见的描边（用户用）。
+ */
+function SubtitleEntry({ cue, number, selected, entryRef, onRemove, onText }: { cue: EditSubtitle; number: number; selected: boolean; entryRef?: RefObject<HTMLLIElement | null>; onRemove: () => void; onText: (text: string) => void }) {
+    const { t } = useTranslation();
+    return (
+        <li ref={entryRef} data-edit-subtitle={cue.id} data-edit-subtitle-selected={selected ? "true" : undefined} className={`rounded-[10px] p-2 ${selected ? "bg-[#756bff]/10 ring-1 ring-[#756bff]" : "bg-black/[0.025] dark:bg-white/[0.03]"}`}>
+            <div className="flex items-center gap-2 text-[10px] tabular-nums text-stone-400 dark:text-zinc-600">
+                <span className="shrink-0">{number}</span>
+                {/* 起止时间在这里是只读的：它按成片时间轴定位，改它在这边没有可信的参照，
+                    要改就拖时间线上那个块（拖动 / 拖两端），这里只让用户看清楚。 */}
+                <span data-edit-subtitle-time={cue.id}>
+                    {formatEditTime(cue.start)} → {formatEditTime(cue.end)}
+                </span>
+                {selected ? <span className="truncate text-[#756bff]">{t("editor.subtitleSelected")}</span> : null}
+                <Button size="small" type="text" danger className="ml-auto" icon={<Trash2 className="size-3.5" />} aria-label={t("editor.removeSubtitle")} onClick={onRemove} />
+            </div>
+            <Input size="small" className="mt-1" value={cue.text} aria-label={t("editor.subtitle")} onChange={(event) => onText(event.target.value)} />
+        </li>
+    );
+}
+
 /** 属性区（右）：选中片段的参数、附加音轨、输出参数与导出。 */
-export function EditInspector({ projectId, clipId }: { projectId: string; clipId: string | null }) {
+export function EditInspector({ projectId, clipId, subtitleId = null }: { projectId: string; clipId: string | null; subtitleId?: string | null }) {
     const { t } = useTranslation();
     const { message } = App.useApp();
     const { projects, updateClip, removeClip, updateAudioTrack, removeAudioTrack, updateSubtitle, removeSubtitle, clearSubtitles, updateOutput } = useEditState();
     const project = projects.find((item) => item.id === projectId);
     const [exporting, setExporting] = useState(false);
     const [result, setResult] = useState<EditExportResult | null>(null);
+    const selectedRowRef = useRef<HTMLLIElement | null>(null);
+
+    // 在时间线上点中一条字幕时，把它滚进可见区域——这是「选中 → 属性区对应到那一条」的做法：
+    // 高亮（上面那个描边）＋ 滚动定位，两样都有。只滚到自己那条，不抢走整页滚动。
+    useEffect(() => {
+        selectedRowRef.current?.scrollIntoView?.({ block: "nearest" });
+    }, [subtitleId]);
 
     if (!project) return null;
     const views = buildEditClips(project.media, project.clips);
@@ -39,6 +70,10 @@ export function EditInspector({ projectId, clipId }: { projectId: string; clipId
     const subtitles = project.subtitles ?? EMPTY_SUBTITLES;
     // 属性区只列前若干条（见 SUBTITLE_LIST_LIMIT）：列表被截断时必须说出来，不能让人以为只有这些。
     const listed = subtitles.slice(0, SUBTITLE_LIST_LIMIT);
+    // 时间线上选中的那条排在 50 条之外时，单独再列一条：否则「点中它了、属性区却没有」，
+    // 选中态在属性区就完全落空（这里是高亮，不是第二套数据）。
+    const selectedIndex = subtitles.findIndex((cue) => cue.id === subtitleId);
+    const selectedOutsideList = selectedIndex >= SUBTITLE_LIST_LIMIT ? subtitles[selectedIndex] : undefined;
     // 落在成片末尾之后的字幕导出里一个字都不会出现：在这里常驻提示，别让用户以为它没生效。
     const beyondEnd = outputSeconds > 0 ? subtitles.filter((cue) => cue.start >= outputSeconds).length : 0;
 
@@ -176,24 +211,12 @@ export function EditInspector({ projectId, clipId }: { projectId: string; clipId
                 {subtitles.length ? (
                     <ul className="mt-2 flex flex-col gap-2">
                         {listed.map((cue, index) => (
-                            <li key={cue.id} data-edit-subtitle={cue.id} className="rounded-[10px] bg-black/[0.025] p-2 dark:bg-white/[0.03]">
-                                <div className="flex items-center gap-2 text-[10px] tabular-nums text-stone-400 dark:text-zinc-600">
-                                    <span className="shrink-0">{index + 1}</span>
-                                    {/* 起止时间是只读的：它按成片时间轴定位，改它在这里没有可信的参照，先让用户看清楚。 */}
-                                    <span data-edit-subtitle-time={cue.id}>
-                                        {formatEditTime(cue.start)} → {formatEditTime(cue.end)}
-                                    </span>
-                                    <Button size="small" type="text" danger className="ml-auto" icon={<Trash2 className="size-3.5" />} aria-label={t("editor.removeSubtitle")} onClick={() => removeSubtitle(projectId, cue.id)} />
-                                </div>
-                                <Input
-                                    size="small"
-                                    className="mt-1"
-                                    value={cue.text}
-                                    aria-label={t("editor.subtitle")}
-                                    onChange={(event) => updateSubtitle(projectId, cue.id, { text: event.target.value })}
-                                />
-                            </li>
+                            <SubtitleEntry key={cue.id} cue={cue} number={index + 1} selected={cue.id === subtitleId} entryRef={cue.id === subtitleId ? selectedRowRef : undefined} onRemove={() => removeSubtitle(projectId, cue.id)} onText={(text) => updateSubtitle(projectId, cue.id, { text })} />
                         ))}
+                        {/* 被 50 条上限挡在外面的那一条：只在它正好是时间线上选中的那条时补列出来。 */}
+                        {selectedOutsideList ? (
+                            <SubtitleEntry key={selectedOutsideList.id} cue={selectedOutsideList} number={selectedIndex + 1} selected entryRef={selectedRowRef} onRemove={() => removeSubtitle(projectId, selectedOutsideList.id)} onText={(text) => updateSubtitle(projectId, selectedOutsideList.id, { text })} />
+                        ) : null}
                     </ul>
                 ) : (
                     <div className="mt-1.5 text-[10px] leading-4 text-stone-400 dark:text-zinc-600">{t("editor.emptySubtitles")}</div>

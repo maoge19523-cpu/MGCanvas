@@ -21,7 +21,18 @@ export default function EditProjectPage() {
     const { hydrated, projects, renameProject } = useEditState();
     const project = projects.find((item) => item.id === id);
     const [clipId, setClipId] = useState<string | null>(null);
+    // 时间线上的选中态只有一份：选片段就清字幕、选字幕就清片段，否则会出现两处同时高亮。
+    const [subtitleId, setSubtitleId] = useState<string | null>(null);
     const [name, setName] = useState(project?.name ?? "");
+
+    const selectClip = (next: string | null) => {
+        setClipId(next);
+        if (next) setSubtitleId(null);
+    };
+    const selectSubtitle = (next: string | null) => {
+        setSubtitleId(next);
+        if (next) setClipId(null);
+    };
 
     // 项目名用本地草稿编辑，失焦或回车才提交，避免每敲一个字都写一次项目数据。
     useEffect(() => setName(project?.name ?? ""), [project?.id, project?.name]);
@@ -68,9 +79,9 @@ export default function EditProjectPage() {
                 <div data-edit-area="media" className="flex min-h-0 flex-col border-r border-black/[0.07] dark:border-white/[0.07]">
                     <EditMediaPanel projectId={project.id} />
                 </div>
-                <EditStage projectId={project.id} clipId={clipId} hasMedia={project.media.length > 0} onSelectClip={setClipId} />
+                <EditStage projectId={project.id} clipId={clipId} subtitleId={subtitleId} hasMedia={project.media.length > 0} onSelectClip={selectClip} onSelectSubtitle={selectSubtitle} />
                 <div className="flex min-h-0 flex-col border-l border-black/[0.07] dark:border-white/[0.07]">
-                    <EditInspector projectId={project.id} clipId={clipId} />
+                    <EditInspector projectId={project.id} clipId={clipId} subtitleId={subtitleId} />
                 </div>
             </div>
         </div>

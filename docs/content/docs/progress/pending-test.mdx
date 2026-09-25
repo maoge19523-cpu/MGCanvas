@@ -187,7 +187,33 @@ Status wording as above（「真机已验证」= the user confirmed it by hand i
 状态口径：**已验证**指有人在真实界面里点过并确认；**未验证**指只有代码或自动化测试，没有任何人在真实界面点过；**真机已验证**指由用户在真实桌面客户端里手工操作确认通过，与该功能的自动化覆盖情况无关，一个功能可以「真机已验证」同时「完全没有自动化覆盖」。自动化一栏区分「单元测试」（纯函数 / store 层）、「产物读回」（`renderToStaticMarkup` 静态渲染后读回 HTML 断言）与「无」。剪辑台交互项另有一份可照着点的清单：`docs/content/docs/progress/edit-bench-manual-checklist.md`。
 
 - **变量模板撤回，只保留变量填写（已验证）**：内置风格馆里新增的 5 条「可填空模板」已按反馈全部撤回，`web/src/services/api/builtin-prompt-styles.ts` 逐字节回到加入模板之前，配套测试文件删除。`{{变量}}` 填写能力保留：在提示词详情点「复制提示词」，或从提示词库选中一条带 `{{}}` 的提示词，都会先弹出填写框，**未填写的变量原样保留**。自动化：变量提取与替换有单元测试（`web/src/components/prompts/prompt-variables.test.ts`）；「风格馆里不再出现可填空模板这一类目」没有自动化断言。
-- **API 模式下 Skill 生效 + 新增「Agent 后端」开关（未验证）**：此前 API 模式（DeepSeek / 豆包）的 system prompt 只拼 Agent 指令与本地记忆、完全不注入 Skill，而前端只要 Agent 侧配了 API 模型就自动走 API 模式、界面上没有切换入口，于是装好的 Skill 在 API 模式下全部不生效。现在每轮注入 Skill 目录（名称 + 用途，总上限 6000 字），命中时只注入被界面选中或用 `$skill-name` 点名的那个 Skill 正文（上限 16000 字），目录读不到时降级为无 Skill 并写日志。验证要点：在连接设置里把「Agent 后端」切到 Codex / API 两种模式各发一条消息，选中的 Skill 都应生效；手动选过后端后，重新连接不得被自动切回 API 模式。自动化：**无**（该提交只改了 `canvas-agent` 与两个前端组件，没有新增测试）。
+- **API 模式下 Skill 生效 + 新增「Agent 后端」开关（真机已验证：用户手工确认（2026-09-25））**：此前 API 模式（DeepSeek / 豆包）的 system prompt 只拼 Agent 指令与本地记忆、完全不注入 Skill，而前端只要 Agent 侧配了 API 模型就自动走 API 模式、界面上没有切换入口，于是装好的 Skill 在 API 模式下全部不生效。现在每轮注入 Skill 目录（名称 + 用途，总上限 6000 字），命中时只注入被界面选中或用 `$skill-name` 点名的那个 Skill 正文（上限 16000 字），目录读不到时降级为无 Skill 并写日志。The verification points as originally written: switch「Agent 后端」to Codex and to API in 连接设置 and send one message in each mode — the selected Skill must take effect in both; after choosing a backend by hand, reconnecting must not switch it back to API automatically.
+
+  **真机已验证：用户手工确认（2026-09-25）— this round exercised one path only:「点选技能 + API 后端」.** What the user did: in the Agent panel's「连接设置」they confirmed the「Agent 后端」switch is **on（API 后端）**, with the page showing「已连接」and the local address `http://127.0.0.1:17371`; back on the chat page they **click-selected the Skill「剧本落画布」（`screenplay-writer`）**, then sent this script line:「把这段剧本放到画布上：雨夜，老陈在面馆等一个不会再回来的人。第1场 面馆内 夜。老陈擦着桌子，门开了，风把灯吹得直晃。」What the user actually observed — every criterion hit:
+
+  - **only one text node was created** on the canvas, titled「雨夜面馆（剧本）」, its content structured as **梗概 + 人物小传 + 分场正文**;
+  - the reply **contained the words「AI 导演」** and gave **5 numbered steps**（open the AI 导演 panel → paste 第1场's body and scene heading → pick the target model MiniMax H3 or Seedance 2.0 → fill in duration and aspect ratio → have the panel produce the shot prompts and drop them back onto the canvas, then repeat for the next scene）;
+  - the reply **stated explicitly** that「剧本正文里我特意没有写镜头编号、H3 字段名（`integrated_multimodal_description` 之类）或警示行——这些要由导演面板按目标模型自己生成，预告会让面板产物判成混合语法而报错」;
+  - the reply **quoted「你的默认是 16:9」**（which comes from the local memory entry「画幅默认 16:9，字幕用思源黑体」）;
+  - the reply **volunteered that it had not touched the ComfyUI workflow node** already on the canvas;
+  - **none** of `[Shot 1]`, `=== 镜头 1 ===` or `integrated_multimodal_description` appeared on the canvas, and it did **not** create a pile of one-node-per-shot nodes.
+
+  **What is still unverified — the column this ledger exists for:**
+
+  - **the `$skill-name` path was not tested**: this round used the interface's「点选技能」, so **naming the Skill in the message**（`$screenplay-writer`）has never been exercised by anyone;
+  - **Codex backend behaviour was not tested**: the original verification points asked for one message in each of Codex / API, and only the API backend was used;
+  - **「a hand-picked backend is not switched back automatically」was not tested**: keeping Codex selected by hand and reconnecting to see whether the switch stays on Codex was not tried;
+  - **the log was not looked at**: the user **did not check** the `API agent skill injected` line（with `activeSkill`, `instructionsChars`, `directoryChars`）, so there is no measured figure for how many characters were injected; everything above rests on behaviour-side observation only;
+  - **this is still a one-off manual confirmation with no automated coverage whatsoever**: the fix's commit touched only `canvas-agent` and two frontend components and added no tests, so **a manual pass is not regression protection** — if the per-turn injection, the caps, the backend switch or the directory-read fallback are broken later, no test will catch it.
+
+  **Real problems found in this round's investigation and not yet handled（none of them fixed, none of them verified）:**
+
+  - **the Skill directory injection has a cap and the overflow is dropped silently**: the directory is capped at about **6000 characters**, and of the **50 enabled Skills measured, 9 never make it into the directory and are dropped silently**（including `universal-short-drama-screenwriter`, `wizard`, `skill-creator`, `skill-installer` and every system Skill）; the directory measures about **6073 characters / 12,547 bytes** and is **injected again on every turn**（the API backend is non-streaming and allows up to 24 tool-loop rounds）; the interface tells the user nothing about the dropped Skills.
+  - **the Claude backend injects no Skills at all**: its turn endpoint assembles the memory only; the web client has no call site for it, however, so **the interface cannot reach that backend** and no user-reachable path is affected today.
+  - **API mode injects a copy of the prompt that lives in the repository**: editing the workspace's `AGENTS.md` therefore **has no effect in API mode**（Codex mode reads the workspace copy）.
+
+  Automation: **none**（the commit touched only `canvas-agent` and two frontend components and added no tests）.
+
 - **`AGENTS.md` 补充运行时数据文件规则（文档条目）**：新增「修改 `.mgcanvas` 等隐藏目录下的运行时 JSON / SKILL.md 前必须先完整读回、先备份、改完再读回逐字核对」以及「grep 默认跳过隐藏目录，搜不到不等于不存在」两条执行规则。这是约束文档，不需要界面验收。
 - **独立剪辑台（真机已验证：用户手工确认）**：侧边栏「提示词库」下方新增「剪辑台」入口，有**自己的项目与素材库**，不依赖画布即可导入素材、编排时间线、编辑入出点 / 音量 / 淡入淡出 / 转场 / 字幕并导出成片。已验证的部分：**导出成片成功**（用户已确认）。其余部分——四区布局（素材 / 预览 / 时间线 / 属性）的实际观感、项目列表的新建 / 重命名 / 删除、素材三条来源的真实点击路径——**真机已验证：用户手工确认**（用户于 2026-09-25 一次性确认该项通过，未逐条记录子步骤）。自动化：四区结构、项目列表、项目不存在时的提示有产物读回测试（`web/src/pages/editor/editor.test.tsx`）；真实界面观感与真实点击链路没有自动化覆盖。
 - **剪辑台素材的三条来源（真机已验证：用户手工确认）**：①「导入本地文件」用页面内的 `accept="video/*,audio/*"` 多选文件输入，导入后应探测到真实时长；②「从我的资产选择」只列 `kind === "video"` 的资产，选中即导入并现探一次时长；③ 画布视频 / 音频节点工具条上的「送剪辑」把节点产物登记为剪辑台素材，提示条里的「打开剪辑台」跳转后应带上该素材，**画布上的节点与连线不得有任何改动**。自动化：`canvasNodeToEditMedia()` 的纯函数行为、工具条按钮是否渲染、发送后节点对象逐字未变、发送落进项目，有产物读回 + 单元测试（`web/src/pages/editor/send-to-editor.test.tsx`）；**真实点击链路（三处按钮 → 系统文件选择器 / 资产弹窗 / 工具条）完全没有覆盖**。用户已于 2026-09-25 一次性确认该项通过，未逐条记录子步骤。

@@ -24,6 +24,7 @@ import { editSnapshot, sameEditSnapshot, EDIT_HISTORY_MERGE_MS } from "@/lib/edi
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useEditStore } from "@/stores/use-edit-store";
 import { EDIT_DEFAULT_OUTPUT, type EditProject } from "@/types/edit";
+import { PRE_GAIN_BASE_ROW, PRE_GAIN_MUTED_ROW, PRE_GAIN_OFFSET_ROW } from "./__fixtures__/timeline-pre-gain-overlay";
 import { EditInspector } from "./components/edit-inspector";
 import EditProjectPage from "./project";
 
@@ -179,6 +180,66 @@ describe("剪辑台音轨静音开关：图标必须真的跟着状态换（用�
         // 本项目的既有写法就该是这样：一个开关的两种状态必须是两个图标。
         expect(head).toContain("lucide-volume-2");
         expect(head).not.toContain("lucide-volume-x");
+    });
+});
+
+/**
+ * 同一类问题在同一排按钮里的第二例：**独奏**按钮过去无论开还是关都画同一只 `Headphones`，
+ * 只换颜色与底色（这一排里静音已经修好、锁定本来就是两图标）。用户点完看到的还是那只耳机，
+ * 于是被读成「独奏键没反应」——与静音那次是同一个机制，所以一并修掉并守在这里。
+ */
+describe("剪辑台音轨独奏开关：图标必须真的跟着状态换（与静音、锁定同一写法）", () => {
+    /** 同一份产物里两种状态都在：t1 未独奏、t3 已独奏，比的就是同一个按钮的两种样子。 */
+    const SOLO_DEMO: EditProject = {
+        ...DEMO,
+        audioTracks: [
+            { id: "t1", mediaId: "a1", volume: 1, fadeIn: 0, fadeOut: 0, loop: false },
+            { id: "t3", mediaId: "a1", volume: 1, fadeIn: 0, fadeOut: 0, loop: false, solo: true },
+        ],
+    };
+
+    it("未独奏的轨画斜杠耳机（HeadphoneOff），已独奏的轨才画耳机（Headphones）", () => {
+        const markup = render(SOLO_DEMO, "editor-audio-solo-icon");
+
+        const open = sliceOf(markup, 'data-edit-track-solo="t1"', "</button>");
+        const soloed = sliceOf(markup, 'data-edit-track-solo="t3"', "</button>");
+
+        // 语义状态本来就分得清：未独奏是「独奏」动作、已独奏是「取消独奏」动作。
+        expect(open).toContain('aria-pressed="false"');
+        expect(soloed).toContain('aria-pressed="true"');
+
+        // 未独奏：斜杠耳机；不能还是那只耳机（只换颜色时这里画的仍是 Headphones，
+        // 用户点完（主题色→灰）看到的还是同一只耳机，实测就被读成「独奏键没反应」）。
+        expect(open, `未独奏的独奏按钮仍是耳机：${open}`).toContain("lucide-headphone-off");
+        expect(open, `未独奏的独奏按钮不该出现耳机：${open}`).not.toContain("lucide-headphones");
+        // 已独奏：耳机。
+        expect(soloed).toContain("lucide-headphones");
+        expect(soloed).not.toContain("lucide-headphone-off");
+        // 底色与颜色照旧分得开（激活态一层底色、未激活透明），与静音 / 锁定一致。
+        expect(open).toContain("bg-transparent");
+        expect(soloed).toContain("bg-black/[0.09]");
+        expect(soloed).toContain("color:#1677ff");
+        expect(open).toContain("color:rgba(0,0,0,0.45)");
+    });
+
+    it("独奏按钮仍然走同一个 toggle() → updateAudioTrack：不许为图标另起一套状态路径（静态守护）", () => {
+        const source = readFileSync(new URL("./components/edit-audio-track.tsx", import.meta.url), "utf8");
+
+        // 三个按钮逐字同形：同一个 toggle()，只有字段不同。
+        for (const field of ["muted", "solo", "locked"]) expect(source).toContain(`onClick={() => toggle({ ${field}: !track.${field} })}`);
+        // 图标只看 track.solo（不许改成看 audibility 之类的另一套判定：两处判定一定会分叉）。
+        expect(source).toContain("icon={track.solo ? <Headphones");
+        // 独奏的写入路径整份文件里只有这一处。
+        expect(source.split("solo: !track.solo").length - 1).toBe(1);
+    });
+
+    it("冻结产物跟着重新冻结：独奏按钮那一小段已经是新图标，旧字节不许留在冻结串里", () => {
+        for (const frozen of [PRE_GAIN_BASE_ROW, PRE_GAIN_MUTED_ROW, PRE_GAIN_OFFSET_ROW]) {
+            expect(frozen).toContain("lucide-headphone-off");
+            expect(frozen).not.toContain("lucide-headphones");
+            // 重新冻结只允许动独奏按钮那段字节：其余部分（含结尾的 </span></div>）逐字未变。
+            expect(frozen.endsWith("</div>")).toBe(true);
+        }
     });
 });
 

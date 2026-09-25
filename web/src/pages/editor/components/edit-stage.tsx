@@ -16,6 +16,7 @@ import {
     resolveEditTrackStart,
     type EditSnapPoint,
 } from "@/lib/edit/timeline-edit";
+import { EDIT_AUDIO_DRIFT_TOLERANCE, editAudioDriftSeconds, editAudioPreviewElementVolume, editAudioPreviewPlan, editAudioPreviewState, type EditAudioPreviewTrack } from "@/lib/edit/audio-preview";
 import {
     EditPlaybackClock,
     editDesiredMediaSeconds,
@@ -32,7 +33,7 @@ import { editTimelineSeams } from "@/lib/edit/timeline-seams";
 import { resolveEditSubtitleEdge } from "@/lib/edit/subtitle-blocks";
 import { timelinePlacements, timeToPercent } from "@/lib/timeline-scale";
 import { createEditClip, useEditState } from "@/stores/use-edit-store";
-import type { EditClip, EditMedia } from "@/types/edit";
+import type { EditAudioTrack, EditClip, EditMedia } from "@/types/edit";
 import { useEditMediaUrls } from "../use-edit-media-urls";
 import { EditAudioTrackRow, TRACK_TOGGLE_OFF, TRACK_TOGGLE_ON, type EditTrackDrag } from "./edit-audio-track";
 import { EditSubtitleTrack, type EditSubtitleDrag } from "./edit-subtitle-track";
@@ -56,6 +57,7 @@ type EditStageProps = {
 // zustand 的 Object.is 比较会因此判定「状态变了」而反复重渲染（React #185 的成因之一）。
 const EMPTY_MEDIA: EditMedia[] = [];
 const EMPTY_CLIPS: EditClip[] = [];
+const EMPTY_TRACKS: EditAudioTrack[] = [];
 
 /**
  * 预览区 + 时间线。两块共用一套播放与播放头状态，所以放在同一个组件里：
@@ -87,6 +89,16 @@ const EMPTY_CLIPS: EditClip[] = [];
  * 播放由**主时钟**主导（EditPlaybackClock）：只有它是播放时间的真相，
  * 各段 <video>.currentTime 只是被定期对齐的对象，偏差超过一帧就丢帧追赶 / 补帧等待。
  *
+ * 音轨混音走**同一套主时钟**：每条可听音轨一个 <audio>，位置与增益由 lib/edit/audio-preview 的
+ * 纯函数给出（口径逐项对齐导出侧 ffmpeg_compose.rs 的 track_chain：volume / 两条 afade / adelay / atrim），
+ * 漂移判定复用 editDriftAction + editDriftCooldownReady（只是容差按音频放宽）。
+ * 起播、跳转、片段数据变化时统一走 alignAudio 重新对位，播放中由 stepAudio 每帧校正，
+ * 所以暂停 / 继续 / 拖动播放头之后都不会积累音画错位。
+ * 出声的音轨只有一处判定（lib/edit/audio-mix 的 resolveAudibleTracks，导出请求构造读的也是它）。
+ * 这里用原生 <audio>.volume 而不是 WebAudio 的 MediaElementSource：后者要求素材同源或带 CORS 头，
+ * 而本地导入的素材是 asset:// 地址（跨源、无 CORS），接进 WebAudio 会直接变成静音。
+ * 代价是音量上限为 1（100%），100% 以上的部分只在导出里生效 —— 界面文案里如实写明。
+ *
  * 暂停态另有一条**取帧**路径（requestPausedFrame / paintPausedFrame）：播放路径只在起播与播放心跳里
  * 设过 src 与 currentTime，暂停后没人再管这个 <video>，所以暂停态必须自己把播放头那一帧取回来，
  * 否则预览区只能是黑屏。取帧同样遵循上面的纪律：只写 ref 与 <video> 属性，一次都不写 store / setState。
@@ -99,14 +111,21 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
     const project = projects.find((item) => item.id === projectId);
     const media = project?.media ?? EMPTY_MEDIA;
     const clips = project?.clips ?? EMPTY_CLIPS;
+    const audioTracks = project?.audioTracks ?? EMPTY_TRACKS;
     const urls = useEditMediaUrls(media);
     const views = useMemo(() => buildEditClips(media, clips, urls), [media, clips, urls]);
     const totalSeconds = editPlaybackSeconds(views);
+    // 预览要加载的音轨：「哪条真出声」只由 lib/edit/audio-mix 判定（与导出请求构造同一份），
+    // 这里只把它翻成「元素要什么地址、起点在哪、能占多长」。
+    const audioPlan = useMemo(() => editAudioPreviewPlan(audioTracks, media, urls, totalSeconds), [audioTracks, media, urls, totalSeconds]);
     // 视频轨只有一条：轨道头上的「关闭原声」作用于本轨全部片段，状态就是「本轨是不是全都关了」。
     const videoMuted = views.length > 0 && views.every((view) => view.muted);
 
     // ── 播放头与预览：全部过程量放 ref，播放/暂停这一个低频开关才用 state ──────────────
     const [playing, setPlaying] = useState(false);
+    // 加载 / 解码失败或者被系统拦下的音轨：低频事件，用 state 让预览区多一句能看懂的提示。
+    // 只存 id|src（不是整条轨）：换了素材之后同一 id 会重新尝试播放。
+    const [brokenAudio, setBrokenAudio] = useState<string[]>([]);
     // 吸附开关是低频交互，用 state；拖动过程中只读 ref，不做逐帧读状态。
     const [snapEnabled, setSnapEnabled] = useState(true);
     const snapEnabledRef = useRef(true);
@@ -139,6 +158,14 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
     const frameAppliedRef = useRef(-1);
     const frameFlushRef = useRef<() => void>(() => undefined);
     const brokenSrcRef = useRef("");
+    // ── 音轨混音的过程量：与视频同一条主时钟，元素表 + 已失败的轨 + 上次纠正时间全放 ref ──
+    const audioTracksRef = useRef<EditAudioPreviewTrack[]>([]);
+    const audioRefs = useRef(new Map<string, HTMLAudioElement>());
+    // 已经判定为坏 / 被拦下的轨（键是 id|src）：不再反复 play，也不再刷提示。
+    const brokenAudioRef = useRef(new Set<string>());
+    // 被自动播放策略拦下的闸门：拦下后暂停重试（免得每帧 reject 一次并刷屏），再点播放时打开。
+    const audioBlockedRef = useRef(false);
+    const lastAudioCorrectionRef = useRef(0);
 
     const flags = historyFlags(projectId);
     const labels = historyLabels(projectId);
@@ -271,6 +298,106 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
         brokenSrcRef.current = "";
     };
 
+    // ── 音轨混音：与视频共用主时钟，<audio> 的属性只在这里写 ─────────────────────────
+    // 元素自己报的时长更准（登记时的 durationMs 只是导入时探测的结果）；拿不到就退回登记值。
+    const audioDuration = (element: HTMLAudioElement, track: EditAudioPreviewTrack) => (Number.isFinite(element.duration) && element.duration > 0 ? element.duration : track.sourceSeconds);
+    const audioKey = (track: EditAudioPreviewTrack) => `${track.id}|${track.src}`;
+
+    /**
+     * 音轨加载 / 解码失败，或被自动播放策略拦下：画面照旧播，只给一句能看懂的提示。
+     * 两者分开处理——素材坏了的轨永久跳过（不反复重试）；被策略拦下的只是这一轮不放，
+     * 再点一次播放就会重试（togglePreview 里把闸门打开），不把「点了没反应」留给用户。
+     */
+    const reportAudioProblem = (track: EditAudioPreviewTrack, element: HTMLAudioElement | undefined) => {
+        if (element?.error) {
+            const key = audioKey(track);
+            if (brokenAudioRef.current.has(key)) return;
+            brokenAudioRef.current.add(key);
+            setBrokenAudio((current) => (current.includes(key) ? current : [...current, key]));
+            return;
+        }
+        if (audioBlockedRef.current) return;
+        audioBlockedRef.current = true;
+        message.warning(t("editor.previewAudioBlocked"));
+    };
+
+    /**
+     * 放一条音轨。play() 只有**被自动播放策略拒绝**（NotAllowedError）才算「被拦下」需要提示：
+     * 用户按暂停时 stopPreview 会 pause()，在途的 play() 随即以 AbortError 收场，
+     * 那既不是故障也不该弹提示（这个区别不判清就会把「按了暂停」报成「被系统拦截」）。
+     */
+    const playAudio = (track: EditAudioPreviewTrack, element: HTMLAudioElement) => {
+        void element.play().catch((error: unknown) => {
+            if ((error as { name?: string } | null)?.name === "NotAllowedError") reportAudioProblem(track, element);
+        });
+    };
+
+    /** 一条音轨重新对位：位置、音量、放不放都只在这里决定（重对齐的唯一入口）。 */
+    const alignAudioTrack = (trackId: string, seconds: number) => {
+        const track = audioTracksRef.current.find((item) => item.id === trackId);
+        const element = audioRefs.current.get(trackId);
+        if (!track || !element || brokenAudioRef.current.has(audioKey(track))) return;
+        const state = editAudioPreviewState(track, seconds, audioDuration(element, track));
+        if (!state) {
+            // 此刻不该出声（起点之前 / 非循环素材已经放完 / 超出成片总长）：停住并静音。
+            element.volume = 0;
+            if (!element.paused) element.pause();
+            return;
+        }
+        element.volume = editAudioPreviewElementVolume(state.gain);
+        // 元数据还没到时赋值会被忽略，那一步留给 loadedmetadata（onLoadedMetadata 会再对一次）。
+        if (element.readyState >= 1) element.currentTime = state.offsetSeconds;
+        if (playingRef.current && element.paused) playAudio(track, element);
+    };
+
+    /** 全部音轨重新对位：起播、跳转、片段数据变化时调用（播放中的逐帧校正见 stepAudio）。 */
+    const alignAudio = (seconds: number) => {
+        for (const track of audioTracksRef.current) alignAudioTrack(track.id, seconds);
+    };
+
+    /** 停播时把每条音轨都停住：暂停之后还在后台出声是最难察觉的一类问题。 */
+    const pauseAudio = () => {
+        for (const element of audioRefs.current.values()) {
+            if (!element.paused) element.pause();
+            element.volume = 0;
+        }
+    };
+
+    /**
+     * 播放心跳里的音轨部分（只写 <audio> 的属性，一次都不写 store / setState）。
+     * 漂移判定与视频是同一个 editDriftAction + editDriftCooldownReady，只是容差按音频放宽
+     * （EDIT_AUDIO_DRIFT_TOLERANCE）：音频每次纠正都要重新解码，不该按一帧的精度反复 seek。
+     */
+    const stepAudio = (seconds: number) => {
+        const frameSeconds = frameSecondsRef.current;
+        const now = performance.now();
+        for (const track of audioTracksRef.current) {
+            const element = audioRefs.current.get(track.id);
+            if (!element || brokenAudioRef.current.has(audioKey(track))) continue;
+            const duration = audioDuration(element, track);
+            const state = editAudioPreviewState(track, seconds, duration);
+            if (!state) {
+                element.volume = 0;
+                if (!element.paused) element.pause();
+                continue;
+            }
+            element.volume = editAudioPreviewElementVolume(state.gain);
+            if (element.paused) {
+                // 被自动播放策略拦下之后不再每帧重试（等用户再点一次播放）。
+                if (audioBlockedRef.current) continue;
+                // 该出声却停着（刚起播、刚被重新对位，或刚才还不在出声区间）：重新对位再放。
+                if (element.readyState >= 1) element.currentTime = state.offsetSeconds;
+                playAudio(track, element);
+                continue;
+            }
+            const drift = editAudioDriftSeconds(state.offsetSeconds, element.currentTime, duration, track.loop);
+            if (editDriftAction(drift, frameSeconds, EDIT_AUDIO_DRIFT_TOLERANCE) === "ok") continue;
+            if (!editDriftCooldownReady(lastAudioCorrectionRef.current, now)) continue;
+            lastAudioCorrectionRef.current = now;
+            element.currentTime = state.offsetSeconds;
+        }
+    };
+
     const stopPreview = () => {
         if (frameRef.current) cancelAnimationFrame(frameRef.current);
         frameRef.current = 0;
@@ -279,6 +406,7 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
         waitingRef.current = false;
         clockRef.current?.pause();
         if (videoRef.current) videoRef.current.pause();
+        pauseAudio();
         setPlaying(false);
         // 主时钟与 <video> 之间允许有一帧以内的偏差，停表后按播放头精确对齐一次再取帧。
         frameAppliedRef.current = -1;
@@ -392,6 +520,8 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
         const seconds = Math.min(total, clock.currentTime);
         secondsRef.current = seconds;
         paintPlayhead(seconds, total);
+        // 音轨与画面共用这一个秒数：这里先对一次，后面几处提前 return（换段、等元数据）都不会漏掉它。
+        stepAudio(seconds);
 
         // 末段播完：以主时钟到点为准停表，而不是等某个 <video> 播完。
         if (seconds >= total - 1e-4) {
@@ -446,12 +576,13 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
         frameRef.current = requestAnimationFrame(tick);
     };
 
-    /** 播放中定位：主时钟重新起基准，视频跟着重建，避免两边各自为政。 */
+    /** 播放中定位：主时钟重新起基准，视频跟着重建，音轨一起重新对位，避免各自为政。 */
     const seekPreview = (seconds: number) => {
         if (!playingRef.current) return;
         clockRef.current?.seek(seconds);
         const target = resolveEditSeek(viewsRef.current, seconds);
         if (target) startClip(target.index, target.currentTime);
+        alignAudio(seconds);
     };
 
     /** 播放头定位提交（点标尺 / 松手 / 快捷键）：播放中重新基准主时钟并重建视频，暂停态只把画面取到播放头位置。 */
@@ -498,9 +629,14 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
         playingRef.current = true;
         waitingRef.current = false;
         lastCorrectionRef.current = 0;
+        // 这一下是用户手势：被自动播放策略拦下的音轨在这里重新获得一次机会。
+        audioBlockedRef.current = false;
+        lastAudioCorrectionRef.current = 0;
         setPlaying(true);
         clock.play(from);
         startClip(target.index, target.currentTime);
+        // 音轨与主时钟同一个起点：起播前先对位（等元数据的那几条由 onLoadedMetadata 再对一次）。
+        alignAudio(from);
         if (!frameRef.current) frameRef.current = requestAnimationFrame(tick);
     };
 
@@ -510,6 +646,9 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
         stopPreview();
         secondsRef.current = 0;
         paintGuide(null);
+        // 换项目后这些判定全部作废：新项目的音轨要重新尝试加载。
+        brokenAudioRef.current.clear();
+        audioBlockedRef.current = false;
         const video = videoRef.current;
         if (video) releaseVideo(video);
     }, [projectId]);
@@ -518,13 +657,16 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
     useEffect(() => {
         viewsRef.current = views;
         totalRef.current = totalSeconds;
+        audioTracksRef.current = audioPlan.tracks;
         frameSecondsRef.current = editFrameSeconds(project?.output.fps ?? 30);
         const clamped = Math.min(secondsRef.current, totalSeconds);
         secondsRef.current = clamped;
         paintPlayhead(clamped, totalSeconds);
+        // 播放中改音轨参数（起点 / 音量 / 淡入淡出 / 静音独奏）后当场重新对位，不用先停再播。
+        if (playingRef.current) alignAudio(clamped);
         // 暂停态补一帧：刚进页面、地址刚解析出来、刚改完片段时，预览区都该是播放头这一帧的画面。
         if (!playingRef.current) requestPausedFrame(clamped);
-    }, [views, totalSeconds, project?.output.fps]);
+    }, [views, totalSeconds, project?.output.fps, audioPlan]);
 
     useEffect(
         () => () => {
@@ -901,6 +1043,12 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
     // 接缝标记的位置与上面的片段条同源（左段的右边缘）；片段少于 2 段时一条接缝都没有。
     const seams = useMemo(() => editTimelineSeams(views, totalSeconds), [views, totalSeconds]);
     const empty = views.length === 0;
+    // 预览里听不到的音轨：素材被移除 / 不是音频（静态数据就能判定），或元素加载失败（运行时才知道）。
+    // 坏掉的键按 id|src 存，换了素材就重新算，所以这里只把**当前还在这份计划里**的报出来。
+    const audioProblems = [
+        ...audioPlan.unavailable.map((name) => t("editor.previewAudioMissing", { name })),
+        ...audioPlan.tracks.filter((track) => brokenAudio.includes(audioKey(track))).map((track) => t("editor.previewAudioFailed", { name: track.name })),
+    ];
 
     // 时间线空状态的一键引导：把已探测到时长的视频素材按素材顺序一次排上时间线（一次写入）。
     const addAllToTimeline = () => {
@@ -965,6 +1113,36 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
                     ) : (
                         <video ref={attachVideo} data-edit-preview-video onTimeUpdate={stepPreview} playsInline preload="auto" className="max-h-full max-w-full" />
                     )}
+                    {/* 音轨的声音载体：每条**可听**音轨一个隐藏的 <audio>（判定见 lib/edit/audio-preview）。
+                        它与 <video> 平级、hidden 不参与排版，所以预览区的布局与改动前逐像素相同。
+                        src / loop / data-* 只表达「这一轨要放什么」，播放中的位置与音量由 stepAudio
+                        每帧直接写元素属性（不经过 React，也不写 store）；
+                        data-edit-preview-audio-volume 是夹取后的音量，与纯函数给出的值同源。 */}
+                    {audioPlan.tracks.map((track) => (
+                        <audio
+                            key={track.id}
+                            ref={(element) => {
+                                if (element) audioRefs.current.set(track.id, element);
+                                else audioRefs.current.delete(track.id);
+                            }}
+                            data-edit-preview-audio={track.id}
+                            data-edit-preview-audio-volume={track.volume}
+                            data-edit-preview-audio-start={track.start}
+                            src={track.src}
+                            loop={track.loop || undefined}
+                            preload="auto"
+                            hidden
+                            // 元数据到位前赋 currentTime 会被忽略：这一刻补一次对位，起播不再等下一次漂移纠正。
+                            onLoadedMetadata={() => alignAudioTrack(track.id, secondsRef.current)}
+                            onError={() => reportAudioProblem(track, audioRefs.current.get(track.id))}
+                        />
+                    ))}
+                    {/* 有不发声的音轨时在预览区直说一句：不能让它悄悄变成「我按了播放却没声音」。 */}
+                    {audioProblems.length ? (
+                        <span data-edit-preview-audio-hint className="pointer-events-none absolute inset-x-2 bottom-1 truncate text-center text-[10px] text-white/60">
+                            {audioProblems.join(" · ")}
+                        </span>
+                    ) : null}
                 </div>
             </div>
 

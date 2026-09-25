@@ -120,7 +120,9 @@ describe("剪辑台编辑器：四区结构", () => {
 
         for (const area of ["media", "preview", "timeline", "inspector"]) expect(markup).toContain(`data-edit-area="${area}"`);
         // 预览提示必须写在界面上，而不是只躺在注释里。
-        expect(markup).toContain("预览仅用于对时，成片效果以导出为准");
+        // 文案已随「预览接入音轨混音」改写：原来写的是「预览仅用于对时」，
+        // 音轨进预览之后这句话不再准确（见 editor-preview-audio-ui.test.tsx 的文案断言）。
+        expect(markup).toContain("预览含原声与音轨混音，转场和字幕以导出为准");
         // 时间线的片段条按真实时长排布（入点 1s、出点 5s → 4s 净时长）。
         expect(markup).toContain('data-edit-clip="c1"');
         expect(markup).toContain("片段 1 · 4.0s · 开场.mp4");

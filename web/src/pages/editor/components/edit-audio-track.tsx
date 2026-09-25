@@ -1,5 +1,5 @@
 import { Button, Popover, Tooltip, theme } from "antd";
-import { Headphones, Lock, LockOpen, Plus, Volume2, VolumeX } from "lucide-react";
+import { HeadphoneOff, Headphones, Lock, LockOpen, Plus, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -484,7 +484,12 @@ function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility, d
                         title={t("editor.trackSoloHint")}
                         aria-label={track.solo ? t("editor.trackUnsolo") : t("editor.trackSolo")}
                         aria-pressed={track.solo === true}
-                        icon={<Headphones className="size-3" style={{ color: track.solo ? token.colorPrimary : token.colorTextTertiary }} />}
+                        // 与同一排的静音（Volume2 ↔ VolumeX）、锁定（Lock ↔ LockOpen）逐字同一写法：
+                        // 一个开关的两种状态必须是两个图标。独奏过去无论开还是关都画同一只 Headphones，
+                        // 只换颜色与底色，用户点完看到的还是那只耳机，于是被读成「独奏键没反应」——
+                        // 与静音键那次是同一类问题（外观不变 ⇒ 以为按钮失效）。
+                        // 已独奏＝正在监听（Headphones，主题色）；未独奏＝被划掉的耳机（HeadphoneOff，弱色）。
+                        icon={track.solo ? <Headphones className="size-3" style={{ color: token.colorPrimary }} /> : <HeadphoneOff className="size-3" style={{ color: token.colorTextTertiary }} />}
                         onClick={() => toggle({ solo: !track.solo })}
                     />
                 </Tooltip>

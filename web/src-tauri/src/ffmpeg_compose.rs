@@ -312,22 +312,61 @@ fn global_fade_chain(video_label: &str, fade_in: f64, fade_out: f64, total: f64)
     Some(format!("[{video_label}]{}[vout]", steps.join(",")))
 }
 
+/// 淡出的锚点（**`adelay` 之前的本地时间轴**上的秒数）：从这条音轨自己那一段内容的末尾往回数 `fade_out` 秒。
+///
+/// 本地时间轴上这条轨只占 `0 .. min(素材可用时长, 起点之后剩下的时长)`：`atrim=end` 裁到成片总长，
+/// 而素材本身可能比成片短，所以真正有声音的那一段可能早早就结束了。淡出必须锚在**这段内容的末尾**，
+/// 锚到成片末尾之后（内容早就没了）时这条 afade 在成片里根本不会发生——
+/// 「3 秒音频 + 淡出 1 秒 + 9 秒成片」的旧公式算出 8 秒，而音频在第 3 秒就结束了，实测整段淡出静默失效。
+///
+/// - `delay`（起点）为 0 / 缺省时**逐字沿用改动前的公式** `成片总长 − fade_out`：旧项目的滤镜链一个字符都不变；
+/// - `source_seconds` 未知 / 循环（`-stream_loop -1`，素材被无限拉长）时按「铺满起点之后的剩余时长」算，
+///   结果与改动前的公式相同（音轨真的铺到成片末尾时，两个锚点本来就重合）；
+/// - `fade_out` 比这条轨能听见的内容还长时，锚点夹到内容的起点（本函数的 0）：淡出从这条轨一开口就开始，
+///   到内容结束为止都没有走完——绝不产生负数、也不会把锚点甩到这条轨之外。
+fn track_fade_out_start(total: f64, delay: f64, fade_out: f64, source_seconds: f64) -> f64 {
+    let span = (total - delay).max(0.0);
+    if delay <= 0.0 {
+        return (span - fade_out).max(0.0);
+    }
+    // 素材比「起点之后剩下的时长」长时，能被听见的就只有剩下的这一段（atrim 与 amix 各截一刀）。
+    let content = if source_seconds.is_finite() && source_seconds > 0.0 { clamp(source_seconds, 0.0, span) } else { span };
+    (content - fade_out).max(0.0)
+}
+
+/// 这条音轨素材自身的时长（秒），**只**用于算淡出锚点：
+/// - 起点为 0 / 缺省：不需要（旧公式与素材长度无关），直接返回「未知」，也就不会多跑一次探测；
+/// - `loop`：`-stream_loop -1` 把素材无限拉长，同样算「未知」（等价于铺满剩余时长）；
+/// - 探测失败：仍算「未知」，回落到改动前的公式——不让多出来的一次探测把整次出片搞失败。
+///
+/// 「未知」用 `f64::INFINITY` 表示：它天然大于任何剩余时长，取 min 之后就是剩余时长本身。
+fn track_source_seconds(executable: &Path, track: &ComposeAudioTrack) -> f64 {
+    if track.looped.unwrap_or(false) || track.start.unwrap_or(0.0) <= 0.0 {
+        return f64::INFINITY;
+    }
+    probe_audio_duration(executable, &track.path).unwrap_or(f64::INFINITY)
+}
+
 /// 一条附加音轨的整形链：音量 → 裁到成片时长 → 时间戳归零 → 淡入淡出 → 起始时间（前置静音）。
 ///
 /// - `atrim=end` 仍是**成片总长**（与本改动前逐字相同），起点之后的尾巴交给 amix 的 duration=first 截断；
-/// - 淡出的**绝对**位置必须始终落在成片末尾（total − fade_out），所以在延迟之前的本地时间轴上
-///   它从 `span − fade_out` 开始（`span` 是起点之后剩下的时长；起点为 0 时 span == total，与改动前一致）；
+/// - 淡出的锚点由 `track_fade_out_start` 给出（本地时间轴）：起点为 0 时与改动前的 `span − fade_out`
+///   逐字一致，起点 > 0 时改用**这条音轨自己那一段内容的末尾**（见该函数的说明）；
 /// - 起始时间 > 0 时才在链**末尾**追加一个 adelay（前置静音）。前面每一步的顺序与参数一个都没动，
-///   改动面只有这一条——这条链上出过「末尾多一个逗号 ⇒ 空滤镜名 ⇒ 拒绝出片」的事故，越少动越好。
+///   改动面只有淡出那一个 `st` 的取值——这条链上出过「末尾多一个逗号 ⇒ 空滤镜名 ⇒ 拒绝出片」的事故，
+///   链的**形状 / 顺序 / 参数个数**都没变（仍然只有 afade 的 st 与 d 两个参数），越少动越好。
 ///
 /// 起始时间缺省 / 为 0 时输出的字符串一个字符都不变，所以旧项目的滤镜链与改动前逐字一致。
-fn track_chain(input_index: u32, track: &ComposeAudioTrack, total: f64) -> String {
+///
+/// 淡入一侧没有同类问题，**不需要改**：`afade=t=in:st=0` 锚的是这条链上时间戳归零后的**内容起点**，
+/// 拼在 adelay 之前，所以延迟之后它正好落在这条轨自己开口的那一刻；内容再短也不会有锚点跑出内容之外
+/// （唯一后果是 `fade_in` 比内容还长时淡入走不完，这与前端画出的坡度一致，是既有语义）。
+fn track_chain(input_index: u32, track: &ComposeAudioTrack, total: f64, source_seconds: f64) -> String {
     let volume = clamp(track.volume.unwrap_or(1.0), 0.0, 4.0);
     let fade_in = clamp(track.fade_in.unwrap_or(0.0), 0.0, 5.0);
     let fade_out = clamp(track.fade_out.unwrap_or(0.0), 0.0, 10.0);
     // 起点的合法区间是 [0, 成片总长]：落到末尾之后这条轨在成片里一个字都听不到。
     let delay = clamp(track.start.unwrap_or(0.0), 0.0, total);
-    let span = (total - delay).max(0.0);
     let mut chain = format!(
         "[{input_index}:a]aformat=sample_rates=44100:channel_layouts=stereo,volume={volume},atrim=end={},asetpts=PTS-STARTPTS",
         seconds(total)
@@ -336,7 +375,7 @@ fn track_chain(input_index: u32, track: &ComposeAudioTrack, total: f64) -> Strin
         chain.push_str(&format!(",afade=t=in:st=0:d={}", seconds(fade_in)));
     }
     if fade_out > 0.0 {
-        chain.push_str(&format!(",afade=t=out:st={}:d={}", seconds((span - fade_out).max(0.0)), seconds(fade_out)));
+        chain.push_str(&format!(",afade=t=out:st={}:d={}", seconds(track_fade_out_start(total, delay, fade_out, source_seconds)), seconds(fade_out)));
     }
     if delay > 0.0 {
         // adelay 的位置参数就是 delays：aformat 已经把这条流固定成 stereo，所以 | 两侧各给一个毫秒数。
@@ -614,9 +653,11 @@ fn compose_blocking(cache_dir: &Path, request: ComposeVideoRequest) -> Result<Co
     let mut audio_label = "ca".to_string();
     if !request.tracks.is_empty() {
         // 每条附加音轨单独整形：音量、裁到成片时长、淡入淡出、起始时间（见 track_chain）。
+        // 素材时长只在**起点 > 0**时才会被探测一次（起点为 0 时锚点公式与改动前逐字一致，不需要它）。
         let mut mix_inputs = "[ca]".to_owned();
         for (index, track) in request.tracks.iter().enumerate() {
-            filters.push(format!("{}[mix{index}]", track_chain(track_index + index as u32, track, total)));
+            let source_seconds = track_source_seconds(&executable, track);
+            filters.push(format!("{}[mix{index}]", track_chain(track_index + index as u32, track, total, source_seconds)));
             mix_inputs.push_str(&format!("[mix{index}]"));
         }
         // amix 的 normalize 选项需要 FFmpeg 4.4+，为兼容用户可能存在的旧版本（例如 2016 年的构建），
@@ -1125,28 +1166,33 @@ mod tests {
             looped: Some(true),
             start,
         };
-        let plain = track_chain(1, &track(None), 10.0);
+        // 「素材够长 / 铺满起点之后的剩余时长」：循环轨、或时长探测不到时的取值。
+        // 这种轨的淡出锚点与改动前完全相同（内容真的铺到成片末尾时两个锚点本来就重合）。
+        let long = f64::INFINITY;
+        let plain = track_chain(1, &track(None), 10.0, long);
         // 逐字对照改动前那条链：音量 → atrim（成片总长）→ 时间戳归零 → 淡入 → 淡出（落在成片末尾 10 − 2 = 8）。
         assert_eq!(
             plain,
             "[1:a]aformat=sample_rates=44100:channel_layouts=stereo,volume=0.4,atrim=end=10,asetpts=PTS-STARTPTS,afade=t=in:st=0:d=1,afade=t=out:st=8:d=2"
         );
-        assert_eq!(track_chain(1, &track(Some(0.0)), 10.0), plain, "起始 0 与缺省必须逐字一致");
+        assert_eq!(track_chain(1, &track(Some(0.0)), 10.0, long), plain, "起始 0 与缺省必须逐字一致");
+        // 起点为 0 时**根本不看素材时长**：探测也不会发生，所以短素材也拿不到不同的链。
+        assert_eq!(track_chain(1, &track(Some(0.0)), 10.0, 3.0), plain, "起始 0 时素材时长不参与锚点计算");
         assert!(!plain.contains("adelay"), "起始为 0 时不得出现 adelay");
 
         // 起始 3 秒：只在链尾追加 adelay（毫秒 × 两条声道），同时把淡出挪到延迟之前的本地时间轴上，
         // 于是延迟之后它仍然落在成片末尾：3 + (7 − 2) = 8 = 10 − 2。
         assert_eq!(
-            track_chain(1, &track(Some(3.0)), 10.0),
+            track_chain(1, &track(Some(3.0)), 10.0, long),
             "[1:a]aformat=sample_rates=44100:channel_layouts=stereo,volume=0.4,atrim=end=10,asetpts=PTS-STARTPTS,afade=t=in:st=0:d=1,afade=t=out:st=5:d=2,adelay=3000|3000"
         );
         // 连上输出标签一起看：标签前不能多出逗号（那条链上出过的事故）。
-        assert_no_empty_filter(&format!("{}[mix0]", track_chain(1, &track(Some(3.0)), 10.0)));
-        // 淡出仍然落在成片末尾：延迟之前的本地起点 = (10 − 3) − 2 = 5，延迟之后正好是 10 − 2 = 8。
-        assert_eq!(track_chain(1, &track(Some(3.0)), 10.0).matches("afade=t=out:st=5:d=2").count(), 1);
+        assert_no_empty_filter(&format!("{}[mix0]", track_chain(1, &track(Some(3.0)), 10.0, long)));
+        // 素材够长时淡出仍然落在成片末尾：延迟之前的本地起点 = (10 − 3) − 2 = 5，延迟之后正好是 10 − 2 = 8。
+        assert_eq!(track_chain(1, &track(Some(3.0)), 10.0, long).matches("afade=t=out:st=5:d=2").count(), 1);
 
         // 起点超过成片总长时被夹到总长：链的形状照旧（atrim 仍是总长，不会出现空的裁剪区间）。
-        let off_end = format!("{}[mix0]", track_chain(1, &track(Some(30.0)), 10.0));
+        let off_end = format!("{}[mix0]", track_chain(1, &track(Some(30.0)), 10.0, long));
         assert!(off_end.contains(",adelay=10000|10000"), "起点的上界是成片总长：{off_end}");
         assert_no_empty_filter(&off_end);
 
@@ -1156,11 +1202,64 @@ mod tests {
             track_chain(
                 0,
                 &ComposeAudioTrack { path: "x.mp3".to_owned(), volume: None, fade_in: None, fade_out: None, looped: None, start: Some(0.5) },
-                4.0
+                4.0,
+                long
             )
         );
         assert_eq!(bare, "[0:a]aformat=sample_rates=44100:channel_layouts=stereo,volume=1,atrim=end=4,asetpts=PTS-STARTPTS,adelay=500|500[mix0]");
         assert_no_empty_filter(&bare);
+    }
+
+    /// 淡出锚点：起点为 0 时与改动前逐字一致（旧项目不受影响），起点 > 0 时改成**这条轨自己那一段内容的末尾**。
+    ///
+    /// 用户上报的那一例：3 秒音频 + 淡出 1 秒 + 9 秒成片。旧公式锚在成片末尾（9 − 1 = 8 秒），
+    /// 而音频在第 3 秒（带起点偏移时是 start + 3）就已经结束——adfade 的 st 落在内容之后时 FFmpeg
+    /// 静默不做任何淡出，成片里这段淡出**一次都不会发生**（下面的真实 FFmpeg 冒烟里有用音量测出来的证据）。
+    #[test]
+    fn fade_out_anchor_follows_the_tracks_own_end_only_when_it_starts_late() {
+        // 起点 0 / 缺省：逐字沿用改动前的公式，素材多短都一样（旧项目行为不变的硬约束）。
+        assert_eq!(track_fade_out_start(9.0, 0.0, 1.0, 3.0), 8.0);
+        assert_eq!(track_fade_out_start(9.0, 0.0, 1.0, f64::INFINITY), 8.0);
+        assert_eq!(track_fade_out_start(9.0, 0.0, 20.0, 3.0), 0.0, "锚点不得为负");
+
+        // 起点 3 秒、素材 3 秒：内容在成片时间轴上占 [3, 6]，淡出从 6 − 1 = 5 秒（本地 2 秒）开始。
+        assert_eq!(track_fade_out_start(9.0, 3.0, 1.0, 3.0), 2.0);
+        // 素材比剩余时长长 / 循环轨 / 探测不到：内容铺满剩余时长，锚点与改动前相同。
+        assert_eq!(track_fade_out_start(9.0, 3.0, 1.0, 20.0), 5.0);
+        assert_eq!(track_fade_out_start(9.0, 3.0, 1.0, f64::INFINITY), 5.0);
+        assert_eq!(track_fade_out_start(9.0, 3.0, 1.0, f64::NAN), 5.0, "探测结果缺失时回落到旧公式");
+
+        // 淡出比这条轨能听见的内容还长：锚点夹在内容起点（0），淡出从这条轨一开口就开始，
+        // 到内容结束都没走完——不是负数，也不会被甩到这条轨之外。
+        assert_eq!(track_fade_out_start(9.0, 3.0, 5.0, 3.0), 0.0);
+        // 起点被夹到成片总长时（这条轨一秒都占不到）：锚点同样是 0，不会产生负时间。
+        assert_eq!(track_fade_out_start(9.0, 9.0, 5.0, 3.0), 0.0);
+
+        // 落到链上：链的**形状 / 顺序 / 参数个数**一点没变，只有淡出那个 st 从 8 变成 2。
+        let short = ComposeAudioTrack {
+            path: "music.wav".to_owned(),
+            volume: None,
+            fade_in: None,
+            fade_out: Some(1.0),
+            looped: None,
+            start: Some(3.0),
+        };
+        let chain = track_chain(1, &short, 9.0, 3.0);
+        assert_eq!(
+            chain,
+            "[1:a]aformat=sample_rates=44100:channel_layouts=stereo,volume=1,atrim=end=9,asetpts=PTS-STARTPTS,afade=t=out:st=2:d=1,adelay=3000|3000"
+        );
+        assert_no_empty_filter(&format!("{chain}[mix0]"));
+        assert!(!chain.contains("st=-"), "锚点不得为负数：{chain}");
+
+        // 淡入一侧**没有同类问题**：`afade=t=in:st=0` 锚的是时间戳归零后的内容起点，且拼在 adelay 之前，
+        // 所以延迟之后它正好落在这条轨自己开口的那一刻；内容再短也不会锚到内容之外。
+        // 这里把「淡入在 adelay 之前、且 st 恒为 0」冻住：万一有人把它挪到 adelay 之后，锚点就会变成
+        // 相对**成片**的 0 秒（这条轨在被延迟到 start 之前根本还没出声），那才是同类 bug。
+        let with_in = ComposeAudioTrack { fade_in: Some(1.5), ..short };
+        let chain = track_chain(1, &with_in, 9.0, 3.0);
+        assert!(chain.contains(",afade=t=in:st=0:d=1.5"), "淡入锚点必须仍是本地内容起点 0：{chain}");
+        assert!(chain.find("afade=t=in").unwrap() < chain.find("adelay").unwrap(), "淡入必须拼在 adelay 之前：{chain}");
     }
 
     // ── 波形峰值包络 ──────────────────────────────────────────────────────────
@@ -1680,6 +1779,144 @@ mod tests {
             assert!((result.duration_ms as i64 - 3_000).abs() <= 400, "{name}的成片时长应当仍按片段长度算：{}ms", result.duration_ms);
             assert!(result.bytes > 0, "{name}必须真的出片");
         }
+    }
+
+    // ── 音轨淡出锚点的真实 FFmpeg 冒烟（用户上报的那一例） ────────────────────────────────
+    // 旧公式把淡出锚在**成片末尾**（成片总长 − fade_out）。带起始偏移的短音轨在成片里只占
+    // start .. start + 素材时长，锚点落在内容结束之后时这条 afade **在成片里一次都不会发生**。
+    // 这组测试真的跑一遍 FFmpeg，用**分段平均电平**（volumedetect 的 mean_volume，dBFS）证明淡出
+    // 到底发生没发生——只比时长、只看退出码都证明不了这件事。默认忽略，
+    // 用 `cargo test --offline --lib -- --ignored --nocapture` 执行。
+
+    /// 量成片时间轴上一小段 `[start, end)` 的平均电平（dBFS）。
+    ///
+    /// 用 `atrim` 在滤镜里截，**不用 `-ss`**：`-ss` 作为输出选项时实测量出来的不是这一段的电平
+    /// （同一段静音它也会报 -11 dB），这个坑会让「淡出到底发生没发生」的结论完全反过来。
+    fn window_mean_db(executable: &Path, path: &str, start: f64, end: f64) -> f64 {
+        let filter = format!("atrim=start={}:end={},volumedetect", seconds(start), seconds(end));
+        let output = run_captured(executable, &["-hide_banner", "-i", path, "-vn", "-af", &filter, "-f", "null", "-"]).expect("应当能测量这一段的电平");
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        let line = stderr.lines().find(|line| line.contains("mean_volume:")).unwrap_or_else(|| panic!("volumedetect 没有给出 mean_volume：{stderr}"));
+        let value = line.split("mean_volume:").nth(1).and_then(|rest| rest.split_whitespace().next()).unwrap_or_else(|| panic!("读不出 mean_volume：{line}"));
+        if value.starts_with("-inf") {
+            return f64::NEG_INFINITY;
+        }
+        value.parse::<f64>().unwrap_or_else(|_| panic!("mean_volume 不是数字：{line}"))
+    }
+
+    /// 单个**无声**片段 + 一条满幅音轨：`start` 是起点偏移、`fade_out` 是这条轨的淡出秒数。
+    /// `title` 决定产物文件名，三种情形各写一份、互不覆盖（便于逐样本对比两种实现）。
+    fn compose_fade_smoke(cache: &Path, video: &str, music: &str, start: Option<f64>, fade_out: Option<f64>, title: &str) -> ComposeVideoResult {
+        compose_blocking(
+            cache,
+            ComposeVideoRequest {
+                ffmpeg_path: None,
+                segments: vec![ComposeSegment {
+                    path: video.to_owned(),
+                    start: None,
+                    end: None,
+                    volume: None,
+                    transition: None,
+                    transition_duration: None,
+                    subtitle: None,
+                    fade_in: None,
+                    fade_out: None,
+                    muted: None,
+                }],
+                tracks: vec![ComposeAudioTrack { path: music.to_owned(), volume: None, fade_in: None, fade_out, looped: None, start }],
+                subtitles: Vec::new(),
+                long_edge: Some(320.0),
+                fps: Some(30.0),
+                fade_in: None,
+                fade_out: None,
+                title: Some(title.to_owned()),
+                subtitle_style: None,
+                subtitle_size: None,
+            },
+        )
+        .expect("真实合成应当成功（滤镜链语法必须成立）")
+    }
+
+    /// 用户上报的那一例：3 秒音轨 + 淡出 1 秒 + 9 秒成片，音轨起点 3 秒 ⇒ 内容占 [3, 6]。
+    ///
+    /// - 旧实现（锚在成片末尾 9 − 1 = 8 秒）：[5, 6) 这一段与不淡出时一样响 ⇒ **淡出没有发生**；
+    /// - 新实现（锚在内容末尾 6 − 1 = 5 秒）：[5, 6) 明显变轻、[5.9, 6.0) 接近无声 ⇒ **淡出发生了**。
+    #[test]
+    #[ignore]
+    fn short_track_fade_out_really_happens_at_its_own_end() {
+        let Some(executable) = detect_ffmpeg_path(None) else {
+            return;
+        };
+        let dir = std::env::temp_dir().join(format!("mgcanvas-track-fade-smoke-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("应当能建临时目录");
+        let video = dir.join("segment.mp4").to_string_lossy().into_owned();
+        let music = dir.join("music.wav").to_string_lossy().into_owned();
+
+        // 9 秒无声片段（没有音轨）：成片里剩下的声音只可能来自附加音轨。
+        let generated = run_captured(
+            &executable,
+            &["-hide_banner", "-y", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30:duration=9", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", &video],
+        )
+        .expect("应当能生成测试视频");
+        assert!(generated.status.success(), "生成测试视频失败：{}", String::from_utf8_lossy(&generated.stderr));
+
+        // 3 秒满幅 440Hz：sine 默认只有约 1/8 满幅，这里拉到满幅，电平才量得准。
+        let made = run_captured(
+            &executable,
+            &["-hide_banner", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=3:sample_rate=44100", "-filter:a", "volume=8", "-c:a", "pcm_s16le", &music],
+        )
+        .expect("应当能生成测试音频");
+        assert!(made.status.success(), "生成测试音频失败：{}", String::from_utf8_lossy(&made.stderr));
+
+        // ① 起点 3 秒 + 淡出 1 秒（新公式锚在内容末尾 5 秒）；② 同一条轨**不淡出**（对照窗口本身没问题）；
+        // ③ 起点 0 + 淡出 1 秒（旧公式锚在成片末尾 8 秒：这条是「起步为 0 时行为不变」的现场证据）。
+        let faded = compose_fade_smoke(&dir, &video, &music, Some(3.0), Some(1.0), "fade-at-own-end");
+        let plain = compose_fade_smoke(&dir, &video, &music, Some(3.0), None, "fade-control");
+        let not_at_zero = compose_fade_smoke(&dir, &video, &music, None, Some(1.0), "fade-start-zero");
+
+        // 按成片时间轴量四段（每段 0.9 秒，最后一档 0.1 秒贴着内容末尾）。
+        let windows = |path: &str| {
+            [
+                window_mean_db(&executable, path, 2.0, 2.9), // 音轨还没开始：应当是静的
+                window_mean_db(&executable, path, 4.0, 4.9), // 内容中段：满电平
+                window_mean_db(&executable, path, 5.0, 5.9), // 新版淡出区 [5,6)
+                window_mean_db(&executable, path, 5.9, 6.0), // 内容末尾前 0.1 秒
+            ]
+        };
+        let faded_db = windows(&faded.absolute_path);
+        let plain_db = windows(&plain.absolute_path);
+        let zero_db = {
+            let path = not_at_zero.absolute_path.clone();
+            [
+                window_mean_db(&executable, path.as_str(), 1.0, 1.9),
+                window_mean_db(&executable, path.as_str(), 2.0, 2.9),
+                window_mean_db(&executable, path.as_str(), 7.0, 7.9),
+                window_mean_db(&executable, path.as_str(), 2.9, 3.0),
+            ]
+        };
+
+        println!("起点 3s + 淡出 1s（内容占 [3,6]，新版锚点 5s）：[2,2.9) {:.2} / [4,4.9) {:.2} / [5,5.9) {:.2} / [5.9,6.0) {:.2} dB", faded_db[0], faded_db[1], faded_db[2], faded_db[3]);
+        println!("起点 3s + 不淡出（对照）：              [2,2.9) {:.2} / [4,4.9) {:.2} / [5,5.9) {:.2} / [5.9,6.0) {:.2} dB", plain_db[0], plain_db[1], plain_db[2], plain_db[3]);
+        println!("起点 0  + 淡出 1s（旧公式锚点 8s）：     [1,1.9) {:.2} / [2,2.9) {:.2} / [7,7.9) {:.2} / [2.9,3.0) {:.2} dB", zero_db[0], zero_db[1], zero_db[2], zero_db[3]);
+        println!("时长：淡出 {}ms / 不淡出 {}ms / 起点 0 {}ms（原片段 9s），各自 {} / {} / {} 字节", faded.duration_ms, plain.duration_ms, not_at_zero.duration_ms, faded.bytes, plain.bytes, not_at_zero.bytes);
+
+        let _ = std::fs::remove_dir_all(&dir);
+
+        for (name, result) in [("起点 3s + 淡出", &faded), ("起点 3s 不淡出", &plain), ("起点 0 + 淡出", &not_at_zero)] {
+            assert!((result.duration_ms as i64 - 9_000).abs() <= 400, "{name}的成片时长应当仍按片段长度算：{}ms", result.duration_ms);
+            assert!(result.bytes > 0, "{name}必须真的出片（滤镜链语法成立，没有 No such filter）");
+        }
+        // 起点偏移本身仍然生效：音轨开始之前是静的，内容中段是满电平。
+        assert!(faded_db[0] <= -60.0 && plain_db[0] <= -60.0, "起点 3 秒之前应当无声：{faded_db:?} / {plain_db:?}");
+        assert!(faded_db[1] >= -12.0 && plain_db[1] >= -12.0, "内容中段应当有满电平：{faded_db:?} / {plain_db:?}");
+        // 对照：不淡出时 [5,6) 与 [4,5) 一样响（说明这两个窗口本身是可比的）。
+        assert!((plain_db[1] - plain_db[2]).abs() <= 1.5, "不淡出时两段电平应当基本一致，实测 {:.2} / {:.2} dB", plain_db[1], plain_db[2]);
+        // ⭐ 关键断言：新实现里淡出**真的发生了**（旧实现锚在 8 秒，这条会失败）。
+        assert!(faded_db[1] - faded_db[2] >= 3.0, "带起点偏移的短音轨必须在内容末尾前 1 秒开始淡出：[4,4.9) {:.2} dB vs [5,5.9) {:.2} dB", faded_db[1], faded_db[2]);
+        assert!(faded_db[1] - faded_db[3] >= 15.0, "内容末尾前 0.1 秒应当接近无声：[4,4.9) {:.2} dB vs [5.9,6.0) {:.2} dB", faded_db[1], faded_db[3]);
+        // 起点为 0 时锚点仍是改动前的「成片末尾 − fadeOut」（8 秒，落在 3 秒内容之后）：
+        // 这是**刻意保留**的旧行为（旧项目不受影响），所以这里量出来的是「不降」而不是「降」。
+        assert!((zero_db[0] - zero_db[1]).abs() <= 1.5, "起点 0 时锚点仍在成片末尾（旧行为不变），实测 {:.2} / {:.2} dB", zero_db[0], zero_db[1]);
     }
 
     // ── 导入字幕（SRT / WebVTT）的真实 FFmpeg 冒烟 ────────────────────────────────

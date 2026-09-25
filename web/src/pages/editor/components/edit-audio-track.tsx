@@ -1,8 +1,9 @@
 import { Button, Popover, Tooltip, theme } from "antd";
 import { Headphones, Lock, LockOpen, Plus, Volume2, VolumeX } from "lucide-react";
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { useTranslation } from "react-i18next";
 
+import { EDIT_VOLUME_MAX, EDIT_VOLUME_MIN, editAudioGainShape, editGainAreaText, editGainHeightPercent, editGainPointsText, editVolumeFromDrag, editVolumeLabel, editVolumeReadout, editVolumeSnap, editVolumeStep } from "@/lib/edit/audio-gain";
 import { editTrackAudibility, type EditTrackAudibility } from "@/lib/edit/audio-mix";
 import { editTrackDraggable, editTrackStartLimit, type EditSnapPoint, type EditSnapResult } from "@/lib/edit/timeline-edit";
 import { editWaveformBuckets, waveformColumns, waveformHasSignal, waveformStripSeconds, waveformY } from "@/lib/edit/waveform";
@@ -55,9 +56,16 @@ export type EditTrackDrag = {
  * 所以波形上的某一秒和视频片段上的同一秒在 x 上一致（详见 waveformStripSeconds 与下面的 style.width）。
  * 起始时间（track.start）同样只由 timeToPercent 换算成 left，不自己写第二套百分比。
  *
+ * 同一行上还画着**音量基准线**与**淡入淡出坡度**（本文件下半部分），两类元素的定位方式按纪律分开：
+ * - 折线是**覆盖层**（整行铺满的 SVG，绝对定位、不参与宽度分配）；
+ * - 音量基准线是**按时间定位的内容**（与波形条 / 字幕块同类），left / width 都由 timeToPercent 给出，
+ *   与同一行波形条的左右边缘严格重合。
+ * 两者都绝对定位、都不从轨道宽度里取像素，所以标尺 / 播放头 / 片段条 / 字幕块的百分比一个都没动。
+ * 音量基准线还能上下拖动改音量：拖动期间只写 ref 与 DOM，松手才提交一次。
+ *
  * 纪律：绘制只在「数据或尺寸变化」时发生，播放与拖动路径里一次都不写 store / setState——
  * 波形的数据进 ref，尺寸进 ref，canvas 的具体像素尺寸与重绘由 ResizeObserver 直接操作 DOM；
- * 左右拖动这条轨时同样只写 ref 与波形条的 style，松手（pointerup / pointercancel）才提交一次。
+ * 左右拖动这条轨、上下拖动音量线时同样只写 ref 与 DOM，松手（pointerup / pointercancel）才提交一次。
  */
 export function EditAudioTrackRow({ projectId, totalSeconds, drag }: { projectId: string; totalSeconds: number; drag: EditTrackDrag }) {
     const { t } = useTranslation();
@@ -160,6 +168,56 @@ function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility, d
     const stripSeconds = waveformStripSeconds(audioSeconds, totalSeconds, track.loop, trackStart);
 
     /**
+     * 音量线与淡入淡出坡度的几何：与同一行的波形条**同一段秒数**（起点 + 这条轨还能占的时长），
+     * 全部由 lib/edit/audio-gain 的纯函数算出来（高度是分贝映射，横轴最后仍走 timeToPercent）。
+     */
+    const gain = editAudioGainShape(track, { start: trackStart, seconds: stripSeconds, total: totalSeconds });
+    // 首屏（React 渲染那一份）的折线与面积坐标：与拖动期间 paintGain 直写 DOM 的值来自同一个纯函数。
+    const gainPoints = editGainPointsText(gain, totalSeconds);
+    const gainArea = editGainAreaText(gain, totalSeconds);
+    const volumeLabel = editVolumeLabel(gain.volume);
+    const volumeReadout = editVolumeReadout(gain.volume);
+    // 成片里一秒都占不到（起点落在成片末尾之后 / 没有时长）时整块可视化不渲染：没有能进成片的音频。
+    const gainVisible = stripSeconds > 0;
+    /**
+     * 淡入淡出与「超出」有关的说明都挂在整行提示里（行上悬停就能看到），不在行里再堆标记：
+     * 这些是「导出会怎么做」的说明，不是每一帧都要看的数字。
+     */
+    const gainNotes = [
+        gain.fadeInClamped || gain.fadeOutClamped ? t("editor.trackFadeClampedNote") : null,
+        gain.overlap ? t("editor.trackFadeOverlapNote") : null,
+        gain.fadeOutAnchor === "unheard" ? t("editor.trackFadeOutUnheardNote", { at: formatEditTime(gain.exportFadeOutStart), end: formatEditTime(gain.end) }) : null,
+        gain.fadeOutAnchor === "shifted" ? t("editor.trackFadeOutShiftedNote", { at: formatEditTime(gain.exportFadeOutStart), start: formatEditTime(gain.end - gain.fadeOut) }) : null,
+    ].filter(Boolean);
+
+    // 拖动音量线的过程量：只进 ref，一次都不写 store / setState（与左右拖动音轨同一套纪律）。
+    const volumeDragRef = useRef<{ y: number; volume: number; rowHeight: number; pending: number } | null>(null);
+    const volumeRef = useRef<HTMLDivElement | null>(null);
+    const gainLineRef = useRef<SVGPolylineElement | null>(null);
+    const gainAreaRef = useRef<SVGPolygonElement | null>(null);
+    const readoutRef = useRef<HTMLSpanElement | null>(null);
+
+    /**
+     * 音量线与折线的画面：**只有这一个地方写**（拖动过程走它；React 那侧的内联样式由同一个纯函数给出，
+     * 所以拖完松手后 React 渲染出来的值与拖动期间直写的值严格一致）。
+     * 左右拖动这条轨时也只写 DOM：起点一变，音量线的 left / width 与整条折线都跟着重算。
+     */
+    const paintGain = (startSeconds: number, volume: number) => {
+        const start = Math.min(editTrackStartLimit(totalSeconds), Math.max(0, Number.isFinite(startSeconds) ? startSeconds : 0));
+        const seconds = waveformStripSeconds(audioSeconds, totalSeconds, track.loop, start);
+        const next = editAudioGainShape({ ...track, volume }, { start, seconds, total: totalSeconds });
+        const line = volumeRef.current;
+        if (line) {
+            line.style.left = `${timeToPercent(start, totalSeconds)}%`;
+            line.style.width = `${timeToPercent(seconds, totalSeconds)}%`;
+            line.style.top = `${editGainHeightPercent(next.ratio)}%`;
+        }
+        gainLineRef.current?.setAttribute("points", editGainPointsText(next, totalSeconds));
+        gainAreaRef.current?.setAttribute("points", editGainAreaText(next, totalSeconds));
+        if (readoutRef.current) readoutRef.current.textContent = editVolumeReadout(next.volume);
+    };
+
+    /**
      * 波形条的定位：left / width **只有这一个地方写**（拖动过程中与松手之后都走它），
      * 所以 DOM 永远等于「已经提交 / 正要提交的那个起始时间」，不会出现视图与数据不一致。
      * 换算仍走 lib/timeline-scale 的 timeToPercent（与标尺、播放头、片段条同一套），
@@ -175,6 +233,8 @@ function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility, d
         // 条长变了，画布上的波形也要按新的秒数重画（ResizeObserver 回调里用的仍是同一个 drawRef）。
         // 这里只写 ref：拖动期间一次状态写入都没有。
         pendingStartRef.current = start;
+        // 音量线与折线横跨的就是这同一段秒数：起点一变，它们跟着一起改（同样只写 DOM）。
+        paintGain(start, track.volume);
     };
 
     const draw = () => {
@@ -311,7 +371,63 @@ function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility, d
         drag.commit(track.id, state.pending);
     };
 
-    const rowTitle = [source ? `${source.name} · ${formatEditTime(audioSeconds)}` : t("editor.mediaRemoved"), trackStart > 0 ? t("editor.trackStartAt", { time: formatEditTime(trackStart) }) : null, track.locked ? t("editor.trackLockHint") : t("editor.trackDragHint")].filter(Boolean).join(" · ");
+    /**
+     * 上下拖动**音量基准线**改音量。与左右拖动这条轨同一套纪律：过程只写 ref 与 DOM
+     * （线的高度、折线的 points、读数文字），一次都不写 store / setState，松手才提交一次。
+     *
+     * 为什么 muted 的轨**也允许**调音量：静音是「暂时不听它」的监听状态，音量是混音参数，
+     * 两者互不取代；禁掉只会逼用户「取消静音 → 调 → 再静音」。它是不是出声仍然一眼可见：
+     * 波形条变淡、折线与基准线画成虚线，轨道头与行尾都写着静音。
+     * 锁定的轨则一律拒绝（连 dragRef 都不建），并给出与其它编辑入口同一句反馈。
+     */
+    const startVolumeDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+        // 这一下是在调音量，不是在拖整行改起点：不让事件冒泡到行上的左右拖动。
+        event.stopPropagation();
+        if (!editTrackDraggable(track)) {
+            drag.refuse();
+            return;
+        }
+        const row = (event.currentTarget as HTMLElement).closest<HTMLElement>("[data-edit-track-row]");
+        const volume = editVolumeSnap(track.volume);
+        volumeDragRef.current = { y: event.clientY, volume, rowHeight: row?.getBoundingClientRect().height ?? 0, pending: volume };
+        // 抓住指针：纵向拖出这一行（甚至拖出窗口）都不会中途丢事件，松手一定提交。
+        event.currentTarget.setPointerCapture(event.pointerId);
+    };
+
+    const moveVolumeDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+        const state = volumeDragRef.current;
+        if (!state) return;
+        event.stopPropagation();
+        // 向上拖为正：位移按「1 像素 = 1/行高」换算，与画出来的高度是同一把尺子。
+        state.pending = editVolumeFromDrag(state.volume, state.y - event.clientY, state.rowHeight);
+        // 起点用「已经提交 / 正要提交」的那个值：左右拖动与音量拖动即使同时发生也不会画错。
+        paintGain(pendingStartRef.current ?? trackStart, state.pending);
+    };
+
+    const endVolumeDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+        const state = volumeDragRef.current;
+        volumeDragRef.current = null;
+        if (!state) return;
+        event.stopPropagation();
+        // 先把 DOM 钉在要提交的值上，再提交一次；值没变就不写 store（不产生一条空的撤销记录）。
+        paintGain(pendingStartRef.current ?? trackStart, state.pending);
+        if (state.pending !== state.volume) updateAudioTrack(projectId, track.id, { volume: state.pending });
+    };
+
+    /**
+     * 键盘可达：音量线本身是 role="slider" 的可聚焦元素，↑ ↓ 每次调一步（5%，与属性区 step 一致）。
+     * 上下箭头不是时间线的快捷键（时间线只占了左右箭头），所以这里不会与全局快捷键打架；
+     * 仍然 stopPropagation，避免日后新增快捷键时被这条线上的按键误触发。
+     */
+    const onVolumeKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+        if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+        event.preventDefault();
+        event.stopPropagation();
+        const next = editVolumeStep(track.volume, event.key === "ArrowUp" ? 1 : -1);
+        if (next !== editVolumeSnap(track.volume)) updateAudioTrack(projectId, track.id, { volume: next });
+    };
+
+    const rowTitle = [source ? `${source.name} · ${formatEditTime(audioSeconds)}` : t("editor.mediaRemoved"), trackStart > 0 ? t("editor.trackStartAt", { time: formatEditTime(trackStart) }) : null, track.locked ? t("editor.trackLockHint") : t("editor.trackDragHint"), ...gainNotes].filter(Boolean).join(" · ");
 
     return (
         <div
@@ -393,6 +509,97 @@ function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility, d
             {!audible ? (
                 <span data-edit-track-excluded={track.id} className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] text-stone-400 dark:text-zinc-500">
                     {audibility === "muted" ? t("editor.trackMute") : t("editor.trackSoloExcluded")}
+                </span>
+            ) : null}
+
+            {/* ── 音量与淡入淡出：画在同一行、同一条时间轴上（两类元素的定位方式不同，别混） ──────────
+                · 折线是**覆盖层**：整行铺满（inset-0）、绝对定位、不参与任何宽度分配，只有它内部的坐标带时间。
+                  纵轴是分贝映射（0 dB = 75% 行高，见 lib/edit/audio-gain），横轴**逐点**走 timeline-scale 的
+                  timeToPercent——与同一行的波形条、标尺刻度、播放头同一把尺子。
+                · 音量基准线是**按时间定位的内容**（与波形条、字幕块同类，不是接缝标记那种零宽覆盖层）：
+                  它横跨的是「这条轨还能占的那段秒数」，两条边都得算，所以 left / width 都由同一个
+                  timeToPercent 给出，与波形条的左右边缘严格重合。
+                两者都绝对定位，不从轨道宽度里取像素：波形条 / 标尺 / 播放头 / 片段条 / 字幕块的百分比一个都没动。
+                没有能进成片的秒数（起点在成片末尾之后 / 没有时长）时整块不渲染——没有可画的区间。 */}
+            {gainVisible ? (
+                <svg
+                    data-edit-track-gain={track.id}
+                    data-edit-track-gain-audible={audible ? "true" : "false"}
+                    data-edit-track-gain-fade-in={gain.fadeIn}
+                    data-edit-track-gain-fade-out={gain.fadeOut}
+                    data-edit-track-gain-overlap={gain.overlap ? "true" : undefined}
+                    data-edit-track-fade-out-anchor={gain.fadeOutAnchor === "none" ? undefined : gain.fadeOutAnchor}
+                    aria-hidden="true"
+                    // viewBox 0 0 100 100 + preserveAspectRatio="none"：x 的 1 个单位就是轨道的 1%，
+                    // y 的 1 个单位就是行高的 1%，与 DOM 那侧的 top / left 百分比完全同一个坐标系。
+                    viewBox="0 0 100 100"
+                    preserveAspectRatio="none"
+                    className={`pointer-events-none absolute inset-0 z-[2] ${audible ? "" : "opacity-50"}`}
+                >
+                    {/* 折线下方那块面积：把「被淡变压下去多少」也画出来，光一条线看不出削掉了多少。 */}
+                    <polygon ref={gainAreaRef} data-edit-track-gain-area={track.id} points={gainArea} style={{ fill: token.colorPrimaryBg }} />
+                    {/* 折线 = 音量 × 淡入系数 × 淡出系数：淡入 / 淡出为 0 时它就是一条与音量线等高的平线，
+                        不会画出零宽的坡度；两条坡度重叠时这里是相乘后的曲线（导出就是两条 afade 串起来）。
+                        被排除的音轨画成虚线并与波形条一起变淡：静音的轨不该看起来和正常一样。 */}
+                    <polyline
+                        ref={gainLineRef}
+                        data-edit-track-gain-line={track.id}
+                        points={gainPoints}
+                        style={{ fill: "none", stroke: token.colorPrimary }}
+                        strokeWidth={2}
+                        vectorEffect="non-scaling-stroke"
+                        strokeDasharray={audible ? undefined : "4 3"}
+                    />
+                </svg>
+            ) : null}
+
+            {gainVisible ? (
+                <div
+                    ref={volumeRef}
+                    data-edit-track-volume={track.id}
+                    data-edit-track-volume-audible={audible ? "true" : "false"}
+                    data-edit-track-volume-locked={track.locked ? "true" : undefined}
+                    // 键盘可达：可聚焦的竖直滑块，↑ ↓ 每次一步（5%）。锁定时不给滑块语义、不进 Tab 序列。
+                    role={track.locked ? undefined : "slider"}
+                    tabIndex={track.locked ? -1 : 0}
+                    aria-orientation="vertical"
+                    aria-label={t("editor.trackVolumeLine", { value: volumeLabel })}
+                    aria-valuemin={EDIT_VOLUME_MIN * 100}
+                    aria-valuemax={EDIT_VOLUME_MAX * 100}
+                    aria-valuenow={Math.round(gain.volume * 100)}
+                    aria-valuetext={volumeReadout}
+                    aria-disabled={track.locked ? true : undefined}
+                    title={[t("editor.trackVolumeHint", { value: volumeReadout }), track.locked ? t("editor.trackLockHint") : null, gainVisible && !audible ? t("editor.trackVolumeMutedNote") : null].filter(Boolean).join(" · ")}
+                    // ns-resize：上下拖才有效，光标先把这件事说出来；锁定的轨给 not-allowed。
+                    className={`absolute z-[3] h-3 -translate-y-1/2 touch-none ${track.locked ? "cursor-not-allowed" : "cursor-ns-resize"}`}
+                    // left / width 与波形条的两条边**同一套换算**（同一个 timeToPercent），top 是分贝高度映射。
+                    style={{ left: `${timeToPercent(trackStart, totalSeconds)}%`, width: `${timeToPercent(stripSeconds, totalSeconds)}%`, top: `${editGainHeightPercent(gain.ratio)}%` }}
+                    onPointerDown={startVolumeDrag}
+                    onPointerMove={moveVolumeDrag}
+                    onPointerUp={endVolumeDrag}
+                    onPointerCancel={endVolumeDrag}
+                    onKeyDown={onVolumeKeyDown}
+                >
+                    <span
+                        aria-hidden="true"
+                        className="absolute inset-x-0 top-1/2 h-[2px] -translate-y-1/2 rounded-full"
+                        style={{ background: audible ? token.colorPrimary : "transparent", backgroundImage: audible ? undefined : `repeating-linear-gradient(90deg, ${token.colorPrimary} 0 5px, transparent 5px 10px)` }}
+                    />
+                </div>
+            ) : null}
+
+            {/* 音量读数：恒在行的右上角（轨道头与行尾的静音标记都在别的竖直位置，互不遮挡），
+                拖动期间由 paintGain 直接改它的文字，不经过 React（一次状态写入都没有）。 */}
+            {gainVisible ? (
+                <span
+                    data-edit-track-volume-badge={track.id}
+                    className="pointer-events-none absolute right-2 top-0 z-[3] flex items-center gap-1 rounded-[4px] px-1 text-[9px] leading-[10px] tabular-nums"
+                    style={{ background: token.colorBgElevated, color: audible ? token.colorTextSecondary : token.colorTextQuaternary }}
+                >
+                    <Volume2 className="size-2.5" />
+                    <span ref={readoutRef} data-edit-track-volume-readout={track.id}>
+                        {volumeReadout}
+                    </span>
                 </span>
             ) : null}
         </div>

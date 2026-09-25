@@ -62,6 +62,10 @@ const EMPTY_CLIPS: EditClip[] = [];
  * 片段一多就与严格百分比的标尺 / 播放头 / 波形错开），片段之间的视觉缝改由边框与内层色块
  * 在片段**内部**留出，不占轨道像素。
  *
+ * 轨道头（视频轨一个开关、音轨三个开关）一律**绝对定位浮在各自行的左端、不占任何宽度**：它们是覆盖层，
+ * 不是排版列。视频轨头与音轨头同处 left-1，于是视频轨头、视频片段行、各音轨头在左侧竖直对齐成一列；
+ * 视频轨头与片段行**同一行**（音轨头与波形条也是同一行），不再为它单独占一行高度。
+ *
  * 百分比之外还有一层前提：**这些元素必须摊在同一个可定位宽度上**。音轨行原先自己 overflow-y-auto，
  * 3 条以上时滚动条只吃它自己的宽度，波形条于是比标尺窄 6~15px。现在纵向滚动只放在包住全部
  * 时间定位元素的 [data-edit-timeline-scroll] 上（并固定预留滚动条槽），宽度对四类元素完全一致。
@@ -895,7 +899,11 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
                 </div>
             </div>
 
-            <div data-edit-area="timeline" aria-label={t("editor.timeline")} className="flex h-[236px] shrink-0 flex-col px-4 pt-2.5">
+            {/* h-[214px]：原来是 236px，其中 22px 是视频轨轨道头独占的那一行（mt-0.5 + h-5）。轨道头挪进片段行后
+                这一行没了，高度同比减 22px，时间线内部的可用高度（滚动区 + 标题栏 + 快捷键行）与改动前逐像素相同。
+                时间线是 shrink-0 的固定高度、预览区是 flex-1 吃剩余空间，所以减掉的这 22px 全部归预览区，
+                预览区只会更高、绝不会被挤没。 */}
+            <div data-edit-area="timeline" aria-label={t("editor.timeline")} className="flex h-[214px] shrink-0 flex-col px-4 pt-2.5">
                 <div className="flex h-6 shrink-0 items-center gap-2">
                     <span className="text-[11px] font-medium text-stone-700 dark:text-zinc-300">{t("editor.timeline")}</span>
                     <span className="text-[10px] tabular-nums text-stone-400 dark:text-zinc-600">{t("editor.clipCount", { count: views.length })}</span>
@@ -956,11 +964,14 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
                                 <span className="absolute bottom-0 right-0 text-[9px] leading-none text-stone-400 dark:text-zinc-600">{t("editor.seconds")}</span>
                             </div>
 
-                            {/* 视频轨的轨道头：这条轨是「一条轨 + 若干片段」的结构，所以轨道头上的开关
-                                作用于**本轨全部片段**（单个片段的原声在右侧属性区单独设置）。
-                                做法与音轨行一致——绝对定位浮在行左端、**不占任何宽度**，标尺 / 片段条 /
-                                波形条 / 播放头仍共用同一个定位宽度（见文件顶部的时间轴对齐纪律）。 */}
-                            <div data-edit-video-track className="relative mt-0.5 h-5">
+                            {/* 视频轨行 = 片段行：轨道头与片段条在同一个行容器里、由容器左边缘起算（都从 left-1 起），
+                                所以它和音轨头一样**不占任何宽度**，片段条仍按百分比铺满整行。 */}
+                            <div data-edit-video-track className="relative h-12" onPointerMove={handleTimelineMove} onPointerUp={endTimelineDrag} onPointerCancel={endTimelineDrag} onPointerLeave={endTimelineDrag}>
+                                {/* 视频轨的轨道头：这条轨是「一条轨 + 若干片段」的结构，所以轨道头上的开关
+                                    作用于**本轨全部片段**（单个片段的原声在右侧属性区单独设置）。
+                                    做法与音轨头逐字一致——同一个 absolute left-1 top-1/2 z-10 -translate-y-1/2 浮层：
+                                    绝对定位、**不占任何宽度**，标尺 / 片段条 / 波形条 / 播放头仍共用同一个定位宽度
+                                    （见文件顶部的时间轴对齐纪律）。它压在片段行最左端：第一段片段的标签因此内缩（见下）。 */}
                                 <span data-edit-video-track-head className="absolute left-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1 rounded-[7px] py-0.5 pl-1.5 pr-0.5" style={{ background: token.colorBgElevated, border: `1px solid ${token.colorBorderSecondary}` }}>
                                     <span className="text-[10px] text-stone-500 dark:text-zinc-400">{t("editor.videoTrack")}</span>
                                     <Tooltip title={t("editor.videoTrackMuteHint")}>
@@ -977,9 +988,6 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
                                         />
                                     </Tooltip>
                                 </span>
-                            </div>
-
-                            <div className="relative h-12" onPointerMove={handleTimelineMove} onPointerUp={endTimelineDrag} onPointerCancel={endTimelineDrag} onPointerLeave={endTimelineDrag}>
                                 {views.map((view, index) => (
                                     <div
                                         key={view.id}
@@ -998,7 +1006,11 @@ export function EditStage({ projectId, clipId, hasMedia, onSelectClip }: EditSta
                                         {/* 视觉缝画在片段内部：外框（含 1px 边框）严格落在时间位置上，内层色块左右各内缩 2px，
                                             于是相邻片段的底色之间恒有 4px 空隙——分隔不占用轨道像素，不引入任何偏移。 */}
                                         <span className="pointer-events-none absolute inset-y-0 left-[2px] right-[2px] rounded-[6px] bg-black/[0.03] dark:bg-white/[0.04]" />
-                                        <span data-clip-label className="pointer-events-none absolute inset-0 flex items-center gap-1 truncate px-2 text-[10px] text-stone-500 dark:text-zinc-400">
+                                        {/* 第一段片段的左端正好被浮着的轨道头压住（与音轨头压住波形最左端是同一个取舍）：
+                                            轨道头约 70px 宽，所以只给**第 0 段**的标签左内缩 76px，让片段名从轨道头右侧开始，
+                                            不会被盖住；其余段的左侧没有浮层，照旧 px-2 紧贴自己的左边缘。
+                                            这里只改文字起点，不动片段条本身的 left / width，百分比定位一个像素都没变。 */}
+                                        <span data-clip-label className={`pointer-events-none absolute inset-0 flex items-center gap-1 truncate text-[10px] text-stone-500 dark:text-zinc-400 ${index === 0 ? "pl-[76px] pr-2" : "px-2"}`}>
                                             {view.hasDuration ? clipLabel(view, index, view.length) : t("editor.clipNoDuration", { index: index + 1 })}
                                             {/* 关闭原声的片段在时间线上直接标出来：成片里听不到它的原声时能一眼看出是设置，而不是素材坏了。 */}
                                             {view.muted ? <VolumeX className="size-3 shrink-0" /> : null}

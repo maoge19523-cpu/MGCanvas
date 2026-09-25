@@ -229,3 +229,111 @@ describe("剪辑台时间线：音轨数量变化时，波形条与标尺 / 片�
         }
     });
 });
+
+/**
+ * 取出带某个 data 属性的那个 `<div>` 的完整内容：从它的开标签起，按 `<div>` / `</div>` 逐层配对到深度归零。
+ * 用它判断两个元素是不是**真的在同一个行容器里**——直接切片到下一个标记只能证明先后顺序，证明不了父子关系；
+ * 改动前视频轨头独占一个 `h-5` 的空行（片段行是它的下一个兄弟），这里取出来的内容里一条片段都找不到。
+ */
+function divSlice(markup: string, marker: string) {
+    const at = markup.indexOf(marker);
+    expect(at, `产物里找不到 ${marker}`).toBeGreaterThan(-1);
+    const start = markup.lastIndexOf("<div", at);
+    const tags = /<div\b|<\/div>/g;
+    tags.lastIndex = start;
+    let depth = 0;
+    let match: RegExpExecArray | null;
+    while ((match = tags.exec(markup)) !== null) {
+        if (match[0] === "</div>") {
+            depth -= 1;
+            if (depth === 0) return markup.slice(start, match.index + "</div>".length);
+        } else {
+            depth += 1;
+        }
+    }
+    throw new Error(`${marker} 所在的 <div> 没有配对的 </div>`);
+}
+
+/** 取出带某个属性的那一个真实标签（属性只可能出现在标签内部）。 */
+function headTag(text: string, marker: string) {
+    const at = text.indexOf(marker);
+    expect(at, `产物里找不到 ${marker}`).toBeGreaterThan(-1);
+    return text.slice(text.lastIndexOf("<", at), text.indexOf(">", at));
+}
+
+/** 两类轨道头共用的定位类名：都从行容器左边缘的 left-1 起算、垂直居中——这是「竖直对齐成一列」的实现。 */
+const TRACK_HEAD_POSITION = "absolute left-1 top-1/2 z-10 flex -translate-y-1/2 items-center";
+
+describe("剪辑台时间线：视频轨轨道头挪进片段行，与音轨头左缘对齐成一列（真实产物读回）", () => {
+    it("视频轨头与片段条在同一个行容器里：片段行就是视频轨行，不再为轨道头单独占一行", () => {
+        const markup = render(demo(CLIPS), "editor-timeline-video-head-row");
+        const row = divSlice(markup, "data-edit-video-track");
+
+        // 行容器 = 片段行：轨道头与**全部**片段条都在它里面（改动前轨道头在独立的 h-5 行里，这两条都会失败）。
+        expect(row).toContain("data-edit-video-track-head");
+        expect(occurrences(row, 'data-edit-clip="')).toBe(LENGTHS.length);
+        expect(occurrences(row, 'data-edit-clip="')).toBe(occurrences(markup, 'data-edit-clip="'));
+        // 容器自己就是定位上下文（relative），高度就是片段行那 48px；轨道头独占的 mt-0.5 h-5 那一行已经不存在。
+        const open = row.slice(0, row.indexOf(">") + 1);
+        expect(open).toContain("relative");
+        expect(open).toContain("h-12");
+        expect(open).not.toContain("h-5");
+        expect(markup).not.toContain("relative mt-0.5 h-5");
+        // 轨道头写在片段之前，并且是行内的浮层（absolute），不是撑开宽度的一列。
+        expect(row.indexOf("data-edit-video-track-head")).toBeLessThan(row.indexOf('data-edit-clip="'));
+        const head = headTag(row, "data-edit-video-track-head");
+        expect(head).toContain("absolute");
+        expect(head).not.toMatch(/flex-1|w-full|w-\[|basis-/);
+
+        // 少了一整行，时间线容器高度同比减 22px（mt-0.5 + h-5）：236 → 214，滚动区可用高度与改动前逐像素相同。
+        const area = markup.match(/<div data-edit-area="timeline"[^>]*>/)?.[0] ?? "";
+        expect(area).toContain("h-[214px]");
+        expect(area).not.toContain("h-[236px]");
+        // 预览区是 flex-1 吃剩余空间、时间线是 shrink-0 的固定高度：减掉的 22px 全部归预览区，不可能被挤没。
+        expect(markup.match(/<div data-edit-area="preview"[^>]*>/)?.[0] ?? "").toContain("flex-1");
+        expect(area).toContain("shrink-0");
+    });
+
+    it("片段条没有被轨道头挤窄：仍是「秒数 / 总秒数」的百分比定位，行容器也没有会挪动定位原点的内边距", () => {
+        const markup = render(demo(CLIPS), "editor-timeline-video-head-width");
+        const row = divSlice(markup, "data-edit-video-track");
+        const open = row.slice(0, row.indexOf(">") + 1);
+        const clips = readClips(markup);
+        const expected = timelinePlacements(LENGTHS, TOTAL);
+
+        // 行容器不带横向内边距 / 外边距 / 左边框：轨道头是行内唯一的左端元素，且它 absolute 不占宽度，
+        // 所以片段条的百分比原点仍是容器左边缘（这一条与音轨行的约束完全一致）。
+        expect(open).not.toMatch(/(?:^|[\s"])(?:p[lrx]?-|m[lrx]?-|border-l)/);
+        // 第一段仍从 0% 起、宽度就是它自己的时长占比：轨道头没有把它顶开、也没有从它身上扣宽度。
+        expect(clips[0]!.left).toBe(0);
+        clips.forEach((clip, index) => {
+            expect(clip.left).toBeCloseTo(expected[index]!.left, 12);
+            expect(clip.width).toBeCloseTo(expected[index]!.width, 12);
+        });
+        expect(clips[clips.length - 1]!.left + clips[clips.length - 1]!.width).toBeCloseTo(100, 12);
+        // 片段条的内联尺寸只有纯百分比：没有因为轨道头而长出像素宽度 / calc 偏移。
+        const tags = markup.match(/<div data-edit-clip="[^"]*"[^>]*>/g) ?? [];
+        expect(tags.length).toBe(LENGTHS.length);
+        for (const tag of tags) {
+            expect(tag).toMatch(/style="left:[-\d.eE+]+%;width:[-\d.eE+]+%/);
+            expect(tag).not.toContain("calc(");
+        }
+        // 遮挡取舍落在「第一段片段的文字起点」上：只有它内缩让开轨道头，片段条本身一个像素没动。
+        expect(row).toContain("pl-[76px]");
+    });
+
+    it("视频轨头与每条音轨头共用同一套定位类名，左缘因此落在同一条竖线上", () => {
+        const markup = render(withTracks(2), "editor-timeline-track-head-column");
+        const videoRow = divSlice(markup, "data-edit-video-track");
+        const audioRow = divSlice(markup, "data-edit-audio-track");
+
+        expect(headTag(videoRow, "data-edit-video-track-head")).toContain(TRACK_HEAD_POSITION);
+        for (const id of ["t1", "t2"]) {
+            expect(headTag(audioRow, `data-edit-track-head="${id}"`)).toContain(TRACK_HEAD_POSITION);
+        }
+        // 两个行容器都在同一个共享可定位容器里，且都没有横向内边距：left-1 落到的就是同一个 x。
+        expect(markup.indexOf("data-edit-video-track")).toBeGreaterThan(markup.indexOf("data-edit-timeline-scroll"));
+        expect(audioRow.slice(0, audioRow.indexOf(">") + 1)).not.toMatch(/(?:^|[\s"])(?:p[lrx]?-|m[lrx]?-|border-l)/);
+        expect(divSlice(markup, "data-edit-timeline-scroll")).toContain("data-edit-video-track");
+    });
+});

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { editAudioGainShape } from "@/lib/edit/audio-gain";
 import { editTrackAudibility, resolveAudibleTracks } from "@/lib/edit/audio-mix";
-import { EDIT_AUDIO_DRIFT_TOLERANCE, editAudioDriftSeconds, editAudioPreviewElementVolume, editAudioPreviewGain, editAudioPreviewPlan, editAudioPreviewSilence, editAudioPreviewState, type EditAudioPreviewTrack } from "@/lib/edit/audio-preview";
+import { EDIT_AUDIO_DRIFT_TOLERANCE, editAudioDriftSeconds, editAudioPreviewContent, editAudioPreviewElementVolume, editAudioPreviewGain, editAudioPreviewPlan, editAudioPreviewSilence, editAudioPreviewState, type EditAudioPreviewTrack } from "@/lib/edit/audio-preview";
 import { editDriftAction } from "@/lib/edit/playback-clock";
 import { buildComposeTracks } from "@/lib/edit/timeline";
 import { EDIT_DEFAULT_OUTPUT, type EditAudioTrack, type EditMedia, type EditProject } from "@/types/edit";
@@ -165,7 +165,7 @@ describe("预览音轨：某一时刻的增益", () => {
     it("音量拉到 0 的轨整条不出声（导出里 volume=0 就是静音）", () => {
         const silent = planned([track({ id: "t1", volume: 0 })], media, "t1");
         expect(editAudioPreviewGain(silent, 3)).toBe(0);
-        expect(editAudioPreviewState(silent, 3)).toEqual({ offsetSeconds: 3, gain: 0 });
+        expect(editAudioPreviewState(silent, 3)).toEqual({ offsetSeconds: 3, gain: 0, cycleSeconds: 30 });
     });
 
     it("音轨超过成片总长的部分按成片总长截断（导出 atrim=end=total）", () => {
@@ -252,8 +252,7 @@ describe("预览音轨：跳转之后的重对齐（素材内位置）", () => {
         expect(editAudioDriftSeconds(5, 4.9, 20, false)).toBeCloseTo(0.1, 6);
     });
 
-    it("漂移判定用的还是视频那一套 editDriftAction，只是容差按音频放宽到 3 帧", () => {
-        const frame = 1 / 30;
+    it("漂移判定用的还是视频那一套 editDriftAction，只是容差按音频放宽到 3 帧", () => {        const frame = 1 / 30;
 
         // 音频的容差是 3 帧（0.1s）：一帧的偏差不纠正（音频几十毫秒听不出来，纠正一次要重新解码）。
         expect(editDriftAction(0.05, frame, EDIT_AUDIO_DRIFT_TOLERANCE)).toBe("ok");
@@ -261,6 +260,45 @@ describe("预览音轨：跳转之后的重对齐（素材内位置）", () => {
         expect(editDriftAction(-0.2, frame, EDIT_AUDIO_DRIFT_TOLERANCE)).toBe("wait");
         // 同一组偏差在视频那一档（1 帧）里是要纠正的：容差不同、判定函数是同一个。
         expect(editDriftAction(0.05, frame, 1)).toBe("skip");
+    });
+
+    /**
+     * 裁剪之后预览必须与导出同口径：**出声区间、循环体、漂移取模的基准**都换成留下的那一段。
+     * 素材 m1 是 4 秒；裁成素材内 [1, 3) ⇒ 内容 2 秒。
+     */
+    it("非循环：留下的那一段放完就不出声（导出 atrim 之后就没有了）", () => {
+        const trimmed = planned([track({ id: "t1", start: 0, mediaId: "m1", sourceStart: 1, sourceEnd: 3 })], media, "t1");
+
+        expect(editAudioPreviewContent(trimmed, 4)).toBeCloseTo(2, 6);
+        // 素材内位置 = 入点 + 本地时间（起点 0）。
+        expect(editAudioPreviewState(trimmed, 0)!.offsetSeconds).toBeCloseTo(1, 6);
+        expect(editAudioPreviewState(trimmed, 1.5)!.offsetSeconds).toBeCloseTo(2.5, 6);
+        // 本地 2 秒（内容放完）之后一刻都不再出声：素材里剩下的 3~4 秒与裁掉的开头都不进成片。
+        expect(editAudioPreviewState(trimmed, 2)).toBeNull();
+        expect(editAudioPreviewState(trimmed, 3)).toBeNull();
+        expect(editAudioPreviewSilence(trimmed, 3)).toBe("past-source");
+    });
+
+    it("循环：循环体是**裁剪后的那一段**（对应导出的 aloop），不是整个文件", () => {
+        const looped = planned([track({ id: "t1", start: 0, loop: true, mediaId: "m1", sourceStart: 1, sourceEnd: 3 })], media, "t1");
+
+        expect(editAudioPreviewState(looped, 0)!.offsetSeconds).toBeCloseTo(1, 6);
+        expect(editAudioPreviewState(looped, 1.5)!.offsetSeconds).toBeCloseTo(2.5, 6);
+        // 本地 2 秒回卷到入点（按整条素材取模会算成 2 秒——那已经是被裁掉的内容了）。
+        expect(editAudioPreviewState(looped, 2)!.offsetSeconds).toBeCloseTo(1, 6);
+        expect(editAudioPreviewState(looped, 3.5)!.offsetSeconds).toBeCloseTo(2.5, 6);
+        // 循环体的长度随状态一起给出，漂移取模、元素回卷修正都读它。
+        expect(editAudioPreviewState(looped, 0)!.cycleSeconds).toBeCloseTo(2, 6);
+        expect(editAudioDriftSeconds(0.03, 1.98, editAudioPreviewState(looped, 0)!.cycleSeconds, true)).toBeCloseTo(0.05, 6);
+    });
+
+    it("出点缺省时内容长度=素材时长 − 入点；素材时长未知且没有出点时算不出来", () => {
+        const head = planned([track({ id: "t1", start: 0, mediaId: "m1", sourceStart: 1 })], media, "t1");
+        expect(editAudioPreviewContent(head, 4)).toBeCloseTo(3, 6);
+        const unknown = planned([track({ id: "t1", start: 0, mediaId: "m1", sourceStart: 1 })], media, "t1");
+        expect(editAudioPreviewContent(unknown, 0)).toBe(0);
+        // 时长未知（元素还没报出 duration）时不做取模：本地时间就是素材内位置，与改动前一致。
+        expect(editAudioPreviewState({ ...unknown, loop: true }, 5, 0)!.offsetSeconds).toBeCloseTo(6, 6);
     });
 });
 

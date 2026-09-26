@@ -206,8 +206,35 @@ describe("淡入淡出坡度：秒数与增益", () => {
         expect(shifted.fadeOutAnchor).toBe("shifted");
     });
 
-    it("淡入 + 淡出 超过音轨时长：两条坡度相乘，重叠区到不了满音量，采样点落在重叠区里", () => {
-        // 10 秒音轨、淡入 4 秒 + 淡出 8 秒 = 12 秒 > 10 秒：重叠区 = [2, 4]。
+    /**
+     * 裁过之后导出读的是**裁剪后那一段内容的末尾**（Rust 侧 track_fade_out_start 收到的是内容长度），
+     * 所以这里也必须跟着走：否则「裁短了却仍按成片末尾起淡出」，行上会报一句假的 unheard。
+     */
+    it("裁过的音轨：导出锚点落在留下的那一段末尾，不再报一句假的 unheard", () => {
+        // 素材 30 秒、裁成 5~15 秒（内容 10 秒）、起点 0、成片 60 秒、淡出 2 秒：
+        // 没裁过时锚点在 58 秒（成片末尾 − 2），早就越过了内容末尾 10 秒 ⇒ 会被标成 unheard。
+        const untrimmed = editAudioGainShape({ volume: 1, fadeIn: 0, fadeOut: 2 }, { start: 0, seconds: 10, total: 60 });
+        expect(untrimmed.exportFadeOutStart).toBe(58);
+        expect(untrimmed.fadeOutAnchor).toBe("unheard");
+        // 裁过之后锚点跟着内容末尾走：10 − 2 = 8 秒，与画出的坡度起点严格一致。
+        const trimmed = editAudioGainShape({ volume: 1, fadeIn: 0, fadeOut: 2 }, { start: 0, seconds: 10, total: 60, trimmed: true });
+        expect(trimmed.exportFadeOutStart).toBe(8);
+        expect(trimmed.fadeOutAnchor).toBe("none");
+        // 起点 20 秒、成片只剩 40 秒时长可用（内容 10 秒铺不满）：锚点仍在内容末尾（20 + 8 = 28）。
+        const late = editAudioGainShape({ volume: 1, fadeIn: 0, fadeOut: 2 }, { start: 20, seconds: 10, total: 60, trimmed: true });
+        expect(late.exportFadeOutStart).toBe(28);
+        expect(late.fadeOutAnchor).toBe("none");
+        // 锚点绝不早于这条轨的起点（淡出最多从它一开口就开始）。
+        const tiny = editAudioGainShape({ volume: 1, fadeIn: 0, fadeOut: 10 }, { start: 20, seconds: 3, total: 60, trimmed: true });
+        expect(tiny.exportFadeOutStart).toBe(20);
+        expect(tiny.fadeOutAnchor).toBe("none");
+        // 内容铺满成片（loop / 裁得只剩一段但成片更短）：锚点与成片末尾一致，与没裁过时同一个位置。
+        const full = editAudioGainShape({ volume: 1, fadeIn: 0, fadeOut: 2 }, { start: 0, seconds: 60, total: 60, trimmed: true });
+        expect(full.exportFadeOutStart).toBe(58);
+        expect(full.fadeOutAnchor).toBe("none");
+    });
+
+    it("淡入 + 淡出 超过音轨时长：两条坡度相乘，重叠区到不了满音量，采样点落在重叠区里", () => {        // 10 秒音轨、淡入 4 秒 + 淡出 8 秒 = 12 秒 > 10 秒：重叠区 = [2, 4]。
         const shape = editAudioGainShape({ volume: 1, fadeIn: 4, fadeOut: 8 }, { start: 0, seconds: 10, total: 10 });
 
         expect(shape.overlap).toBe(true);

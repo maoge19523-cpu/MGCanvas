@@ -1,5 +1,6 @@
 import type { ComposeAudioTrackInput, ComposeSegmentInput, ComposeSubtitleInput, ComposeVideoRequest } from "@/services/platform/desktop-ffmpeg";
 import { resolveAudibleTracks } from "./audio-mix";
+import { editAudioTrimFields, editAudioTrimWindow } from "./audio-trim";
 import { normalizeEditTransition, type EditClip, type EditMedia, type EditProject } from "@/types/edit";
 
 /** 时间线上的一段：时长与起点都由素材真实时长与入出点算出，顺序即数组顺序。 */
@@ -173,7 +174,7 @@ export function buildComposeSegments({ project, paths }: EditComposeInput): Comp
         });
 }
 
-/** 剪辑台音轨 → compose_video 的 tracks：音频素材按整段混进成片，起点、音量与淡入淡出生效。 */
+/** 剪辑台音轨 → compose_video 的 tracks：音频素材按裁剪后的区间混进成片，起点、音量与淡入淡出生效。 */
 export function buildComposeTracks({ project, paths }: EditComposeInput): ComposeAudioTrackInput[] {
     const mediaById = new Map(project.media.map((item) => [item.id, item]));
     // 静音轨与被独奏排除的轨**整条跳过**，不进 FFmpeg 的 tracks：
@@ -183,7 +184,10 @@ export function buildComposeTracks({ project, paths }: EditComposeInput): Compos
     return project.audioTracks.flatMap((track) => {
         if (!audible.has(track.id)) return [];
         const path = paths[track.mediaId];
-        if (!path || mediaById.get(track.mediaId)?.kind !== "audio") return [];
+        const source = mediaById.get(track.mediaId);
+        if (!path || source?.kind !== "audio") return [];
+        // 裁剪区间按素材登记时长换算（与时间线上画出来的那一段同一份纯函数）。
+        const trim = editAudioTrimWindow(track, (source.durationMs || 0) / 1000);
         return [
             {
                 path,
@@ -194,6 +198,9 @@ export function buildComposeTracks({ project, paths }: EditComposeInput): Compos
                 // 起始时间照旧只下发「真的不是 0」的那一种：缺省 / 0 不下发这个字段，
                 // 请求体与改动前逐字一致（Rust 侧也就不追加 adelay）。
                 start: track.start !== undefined && track.start > 0 ? track.start : undefined,
+                // 同理，裁剪也只下发「真的裁过」的那一种：入点为 0、出点到素材末尾都写 undefined，
+                // 于是**没裁过的工程请求体与改动前逐字一致**（JSON 里连键都不出现，Rust 侧也就不加那对 atrim）。
+                ...editAudioTrimFields(trim),
             },
         ];
     });

@@ -89,6 +89,36 @@ describe("波形：秒数 → 采样点换算", () => {
         expect(waveformPointAt(1, 4, false, 0)).toBe(-1);
         expect(waveformPointAt(1, 0, false, 100)).toBe(-1);
     });
+
+    /**
+     * 裁剪之后波形画的必须是**留下的那一段**：`window.start` 是素材内的入点（画布上的第 0 秒对的就是它），
+     * `window.length` 是取用长度（循环时按它回卷，而不是按整个文件）。
+     * 缺省（不传 window）= 整条素材，也就是改动前的口径，所以没裁过的轨一个像素都不会变。
+     */
+    it("裁剪区间：画布第 0 秒对应素材内的入点，长度只覆盖留下的那一段", () => {
+        // 素材 4 秒、裁成 [1, 3)：内容 2 秒，画布 0 秒 → 素材 1 秒（下标 25），画布 1 秒 → 素材 2 秒（下标 50）。
+        expect(waveformPointAt(0, 4, false, 100, { start: 1, length: 2 })).toBe(25);
+        expect(waveformPointAt(1, 4, false, 100, { start: 1, length: 2 })).toBe(50);
+        expect(waveformPointAt(1.99, 4, false, 100, { start: 1, length: 2 })).toBe(74);
+        // 循环体是留下的那一段（2 秒）而不是整个文件（4 秒）：画布 2.5 秒 → 素材 1 + 0.5 = 1.5 秒。
+        expect(waveformPointAt(2.5, 4, true, 100, { start: 1, length: 2 })).toBe(37);
+        // 不传窗口 = 改动前的口径（同一组参数逐字相同）。
+        expect(waveformPointAt(2, 4, false, 100)).toBe(50);
+        expect(waveformPointAt(2, 4, false, 100, { start: 0, length: 4 })).toBe(50);
+    });
+
+    it("裁剪区间的列聚合：取的也是留下那一段的极值", () => {
+        const peaks = f32([0.25, 0.75, 0.5, 0.375]);
+        const troughs = f32([-0.25, -0.75, -0.5, -0.375]);
+        // 只取素材内的 [1, 3)（下标 1、2）：整条素材时第一列会混入下标 0/1 的极值（0.75），
+        // 裁掉开头之后第一列只该看到下标 1/2。
+        expect(waveformColumns(peaks, troughs, 2, 2, 4, false, { start: 1, length: 2 })).toEqual([
+            { peak: 0.75, trough: -0.75 },
+            { peak: 0.5, trough: -0.5 },
+        ]);
+        // 只取最后一段 [3, 4)：只剩下标 3。
+        expect(waveformColumns(peaks, troughs, 1, 1, 4, false, { start: 3, length: 1 })).toEqual([{ peak: 0.375, trough: -0.375 }]);
+    });
 });
 
 describe("波形：峰值 → canvas 每一列", () => {

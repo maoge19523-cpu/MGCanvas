@@ -16,7 +16,8 @@ import {
     resolveEditTrackStart,
     type EditSnapPoint,
 } from "@/lib/edit/timeline-edit";
-import { EDIT_AUDIO_DRIFT_TOLERANCE, editAudioDriftSeconds, editAudioPreviewElementVolume, editAudioPreviewPlan, editAudioPreviewSilence, editAudioPreviewState, type EditAudioPreviewTrack } from "@/lib/edit/audio-preview";
+import { EDIT_AUDIO_DRIFT_TOLERANCE, editAudioDriftSeconds, editAudioPreviewContent, editAudioPreviewElementVolume, editAudioPreviewPlan, editAudioPreviewSilence, editAudioPreviewState, type EditAudioPreviewTrack } from "@/lib/edit/audio-preview";
+import { resolveEditAudioTrim } from "@/lib/edit/audio-trim";
 import {
     EditPlaybackClock,
     editDesiredMediaSeconds,
@@ -365,7 +366,8 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
         if (reason === "before-start") return t("editor.previewAudioBeforeStart", { name: track.name, at: formatEditTime(track.start) });
         if (reason === "start-past-end") return t("editor.previewAudioStartPastEnd", { name: track.name, at: formatEditTime(track.start) });
         if (reason === "past-film") return t("editor.previewAudioPastFilm", { name: track.name, at: formatEditTime(track.start + track.span) });
-        if (reason === "past-source") return t("editor.previewAudioPastSource", { name: track.name, at: formatEditTime(duration) });
+        // 素材放完的判据是**裁剪后**那一段的末尾（出点），不是文件末尾：导出侧 atrim 之后就没有了。
+        if (reason === "past-source") return t("editor.previewAudioPastSource", { name: track.name, at: formatEditTime(track.sourceStart + editAudioPreviewContent(track, duration)) });
         return "";
     };
 
@@ -404,7 +406,8 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
                     }));
                     continue;
                 }
-                const drift = editAudioDriftSeconds(state.offsetSeconds, element.currentTime, duration, track.loop);
+                // 漂移按**循环体**取模：裁剪后循环体就是留下的那一段（不是整个文件）。
+                const drift = editAudioDriftSeconds(state.offsetSeconds, element.currentTime, state.cycleSeconds, track.loop);
                 if (editDriftAction(drift, frameSecondsRef.current, EDIT_AUDIO_DRIFT_TOLERANCE) !== "ok") parts.push(t("editor.previewAudioDrift", { name: track.name, delta: Math.abs(drift).toFixed(1) }));
             }
         }
@@ -462,7 +465,15 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
                 playAudio(track, element);
                 continue;
             }
-            const drift = editAudioDriftSeconds(state.offsetSeconds, element.currentTime, duration, track.loop);
+            // 裁剪 + 循环：<audio> 自己的 loop 循环的是**整个文件**，而导出循环的是裁剪后的那一段
+            // （Rust 侧 aloop 的 size）。元素一旦越过裁剪区间的末尾就立刻拉回这一段开头，
+            // 否则被裁掉的那部分内容会真的响出来——这一处漂移判定看不出来（它按循环体取模）。
+            // 没有裁剪时窗口末尾就是文件末尾，元素自己会在那里回卷，这条分支不改变旧行为。
+            if (track.loop && state.cycleSeconds > 0 && element.currentTime >= track.sourceStart + state.cycleSeconds) {
+                element.currentTime = state.offsetSeconds;
+                continue;
+            }
+            const drift = editAudioDriftSeconds(state.offsetSeconds, element.currentTime, state.cycleSeconds, track.loop);
             if (editDriftAction(drift, frameSeconds, EDIT_AUDIO_DRIFT_TOLERANCE) === "ok") continue;
             if (!editDriftCooldownReady(lastAudioCorrectionRef.current, now)) continue;
             lastAudioCorrectionRef.current = now;
@@ -827,9 +838,14 @@ export function EditStage({ projectId, clipId, subtitleId, hasMedia, onSelectCli
             velocityRef.current = { x: event.clientX, at: performance.now() };
         },
         place: (event, rawSeconds) => (snapActive(event) ? resolveEditTrackStart(rawSeconds, snapPointsFor(), snapThreshold(), totalSeconds) : resolveEditTrackStart(rawSeconds, [], 0, totalSeconds)),
+        // 拖两端裁剪：落点是这条边在**成片时间轴上的绝对秒数**，所以与片段裁剪、字幕裁剪
+        // 共用 snapActive / snapPointsFor / snapThreshold 这一份候选点与阈值（音轨行不另造第二套吸附）。
+        placeTrim: (event, filmSeconds, target) => (snapActive(event) ? resolveEditAudioTrim(filmSeconds, target, snapPointsFor(), snapThreshold()) : resolveEditAudioTrim(filmSeconds, target, [], 0)),
         guide: paintGuide,
         // 起始 0 回缺省（undefined）：落盘与导出请求里都不留多余的 start 字段，老项目语义不变。
         commit: (trackId, start) => updateAudioTrack(projectId, trackId, { start: start > 0 ? start : undefined }),
+        // 裁剪的两个键同样只在有意义时才写（回到整条素材的那一侧写回 undefined）。
+        commitTrim: (trackId, patch) => updateAudioTrack(projectId, trackId, patch),
         refuse: () => message.warning(t("editor.trackLockedNotice")),
     };
 

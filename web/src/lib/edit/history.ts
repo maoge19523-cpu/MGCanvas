@@ -66,7 +66,11 @@ function sameTrack(left: EditAudioTrack, right: EditAudioTrack) {
             left.locked === right.locked &&
             // 同理：时间线起点是「拖一下改变一个值」的编辑，漏了它整次拖动都会被判成「值没变」而丢掉，
             // 现象就是「拖了不动、撤销栈里也没有这一次」。
-            left.start === right.start)
+            left.start === right.start &&
+            // 同理，**裁剪的两端**也是「拖一下改变一个值」：漏了它们，拖两端同样会「拖了不动、
+            // 撤销栈里也没有这一次」（这个仓库已经两次栽在「新增字段没进比较函数」上，所以这次一并加上）。
+            left.sourceStart === right.sourceStart &&
+            left.sourceEnd === right.sourceEnd)
     );
 }
 

@@ -21,7 +21,8 @@ export function setFfmpegPath(path: string) {
 }
 
 export type ComposeSegmentInput = { path: string; start?: number; end?: number; volume?: number; transition?: string; transitionDuration?: number; subtitle?: string; fadeIn?: number; fadeOut?: number; muted?: boolean };
-export type ComposeAudioTrackInput = { path: string; volume?: number; fadeIn?: number; fadeOut?: number; loop?: boolean; start?: number };
+/** 附加音轨：素材内的入点 / 出点缺省即「整条素材」，只有裁过时才下发（Rust 侧才出现那对 atrim）。 */
+export type ComposeAudioTrackInput = { path: string; volume?: number; fadeIn?: number; fadeOut?: number; loop?: boolean; start?: number; sourceStart?: number; sourceEnd?: number };
 /** 独立字幕：按成片时间轴的绝对秒数给起止时间（与片段无关，可跨片段、可超出片段区间）。 */
 export type ComposeSubtitleInput = { start: number; end: number; text: string };
 export type ComposeVideoRequest = {

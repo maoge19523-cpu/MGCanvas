@@ -17,6 +17,13 @@ export const EDIT_SNAP_VELOCITY_LIMIT = 900;
 /** 片段最短时长：小于它就不值得拆，也不允许裁到 0。 */
 export const EDIT_MIN_CLIP_SECONDS = 0.05;
 
+/**
+ * 拖两端裁剪时两条边之间至少留出的秒数。
+ * 视频片段的两端裁剪（edit-stage 的 clampTrimValue）一直用的是这个值，音轨的两端裁剪与它同口径：
+ * 太短的一段既看不见也抓不住，0.1 秒在 30fps 下正好是 3 帧，是「裁得动但不会裁成 0」的下限。
+ */
+export const EDIT_MIN_TRIM_SECONDS = 0.1;
+
 const SNAP_PRIORITY: Record<EditSnapKind, number> = { "clip-start": 0, "clip-end": 0, playhead: 1, grid: 2 };
 
 /** 像素阈值 → 秒。时间线把总时长铺满整个宽度，所以每秒像素数 = 宽度 / 总时长。 */

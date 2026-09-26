@@ -1112,6 +1112,8 @@ export default {
         trackStartHint: "这条音轨在时间线上的起点（秒）：0 表示从成片开头混入，之后的音频才进成片；上界是成片总长",
         trackStartAt: "起点 {{time}}",
         trackDragHint: "左右拖动这一行改变这条音轨的起点：会吸附到 0 秒、播放头与片段边界，松手才生效",
+        trackTrimHint: "拖动两端裁剪音轨：拖左端裁掉素材开头、拖右端裁掉素材结尾，这条轨仍从同一个起点混入成片；聚焦后用 ← → 每次移动 0.1 秒，松手才生效",
+        trackTrimmedNote: "已裁剪：取素材的 {{start}} 起共 {{length}}",
         trackVolumeLine: "音量线",
         trackVolumeHint: "音量线：当前 {{value}} · 上下拖动调整，会吸附到 100%（原始音量）；聚焦后用 ↑ ↓ 每次调 5%，松手才生效",
         trackVolumeMutedNote: "这条轨已静音：音量仍可调整，取消静音后生效",

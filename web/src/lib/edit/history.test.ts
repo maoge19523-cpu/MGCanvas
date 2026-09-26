@@ -104,6 +104,31 @@ describe("剪辑台撤销栈：快照只存会被改动的切片", () => {
         // 值确实没变的两次快照不算改动（不会白压一条历史）。
         expect(sameEditSnapshot(editSnapshot(trackWith({ start: 3 })), editSnapshot({ ...trackWith({ start: 3 }) }))).toBe(true);
     });
+
+    /**
+     * 音轨**两端裁剪**（sourceStart / sourceEnd）同样是一次「拖一下改变一个值」的编辑。
+     * 这个仓库已经两次栽在「新增字段没进比较函数」上，现象都是「拖了不动」：波形条看着变了，
+     * 松手后弹回原位、撤销栈里也没有这一次——所以这两个字段各自都要有一条断言。
+     */
+    it("音轨两端裁剪必须参与比较：拖到哪就是哪，拖回缺省同样算一次改动", () => {
+        const base = project({ audioTracks: [{ id: "t1", mediaId: "m1", volume: 1, fadeIn: 0, fadeOut: 0, loop: false }] });
+        const trackWith = (patch: Partial<EditTrack>) => ({ ...base, audioTracks: [{ ...base.audioTracks[0]!, ...patch }] });
+
+        // 拖左端（入点）：0 → 2 是一次真改动。
+        expect(sameEditSnapshot(editSnapshot(base), editSnapshot(trackWith({ sourceStart: 2 })))).toBe(false);
+        // 2 → 5 也是一次真改动（连续两次拖动不能互相吞掉）。
+        expect(sameEditSnapshot(editSnapshot(trackWith({ sourceStart: 2 })), editSnapshot(trackWith({ sourceStart: 5 })))).toBe(false);
+        // 拖右端（出点）：两条边各自独立参与比较。
+        expect(sameEditSnapshot(editSnapshot(base), editSnapshot(trackWith({ sourceEnd: 8 })))).toBe(false);
+        expect(sameEditSnapshot(editSnapshot(trackWith({ sourceEnd: 8 })), editSnapshot(trackWith({ sourceEnd: 6 })))).toBe(false);
+        // 拖回缺省（整条素材）同样必须被记成一次改动，否则波形会停在半路。
+        expect(sameEditSnapshot(editSnapshot(trackWith({ sourceStart: 2 })), editSnapshot(trackWith({ sourceStart: undefined })))).toBe(false);
+        expect(sameEditSnapshot(editSnapshot(trackWith({ sourceEnd: 8 })), editSnapshot(trackWith({ sourceEnd: undefined })))).toBe(false);
+        // 起点与裁剪是两件独立的事：只改其中一个也要判定为改动。
+        expect(sameEditSnapshot(editSnapshot(trackWith({ start: 3 })), editSnapshot(trackWith({ start: 3, sourceStart: 2 })))).toBe(false);
+        // 值确实没变时不算改动（不会白压一条历史）。
+        expect(sameEditSnapshot(editSnapshot(trackWith({ sourceStart: 2, sourceEnd: 8 })), editSnapshot({ ...trackWith({ sourceStart: 2, sourceEnd: 8 }) }))).toBe(true);
+    });
 });
 
 describe("剪辑台撤销栈：分组与内存上限", () => {

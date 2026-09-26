@@ -356,6 +356,52 @@ describe("剪辑台导出：项目数据 → compose_video 入参", () => {
         });
     });
 
+    describe("音轨两端裁剪直接改的是交给 FFmpeg 的素材区间", () => {
+        // 素材 m 是 30 秒的音频（与下面「起点」那一组同一份构造）。
+        const withTrim = (patch: Partial<EditAudioTrack>) =>
+            project({
+                media: [...project().media, media("m", 30, "audio")],
+                audioTracks: [{ id: "t1", mediaId: "m", volume: 0.4, fadeIn: 1, fadeOut: 2, loop: false, ...patch }],
+            });
+
+        it("裁过时请求体带上素材内的入点 / 出点，其余参数一个都不变", () => {
+            expect(buildComposeTracks({ project: withTrim({ sourceStart: 2, sourceEnd: 8 }), paths })).toEqual([{ path: paths.m, volume: 0.4, fadeIn: 1, fadeOut: 2, loop: false, start: undefined, sourceStart: 2, sourceEnd: 8 }]);
+            // JSON 里真的出现了这两个键（Rust 侧才读得到）：undefined 的 start 不进 JSON。
+            expect(JSON.stringify(buildComposeTracks({ project: withTrim({ sourceStart: 2, sourceEnd: 8 }), paths })[0])).toBe(`{"path":${JSON.stringify(paths.m)},"volume":0.4,"fadeIn":1,"fadeOut":2,"loop":false,"sourceStart":2,"sourceEnd":8}`);
+        });
+
+        it("只裁一端时只下发那一个键（另一端留 undefined）", () => {
+            expect(buildComposeTracks({ project: withTrim({ sourceStart: 2 }), paths })).toEqual([{ path: paths.m, volume: 0.4, fadeIn: 1, fadeOut: 2, loop: false, start: undefined, sourceStart: 2, sourceEnd: undefined }]);
+            expect(JSON.stringify(buildComposeTracks({ project: withTrim({ sourceStart: 2 }), paths })[0])).toBe(`{"path":${JSON.stringify(paths.m)},"volume":0.4,"fadeIn":1,"fadeOut":2,"loop":false,"sourceStart":2}`);
+            expect(JSON.stringify(buildComposeTracks({ project: withTrim({ sourceEnd: 8 }), paths })[0])).toBe(`{"path":${JSON.stringify(paths.m)},"volume":0.4,"fadeIn":1,"fadeOut":2,"loop":false,"sourceEnd":8}`);
+        });
+
+        it("缺省 / 0 / 出点等于素材末尾都不下发裁剪：整条轨的请求体与改动前逐字一致", () => {
+            const plain = buildComposeTracks({ project: withTrim({}), paths });
+            const frozen = `{"path":${JSON.stringify(paths.m)},"volume":0.4,"fadeIn":1,"fadeOut":2,"loop":false}`;
+            // 逐字对照：JSON 里既没有 sourceStart，也没有 sourceEnd。
+            expect(JSON.stringify(plain[0])).toBe(frozen);
+            for (const patch of [{ sourceStart: 0 }, { sourceEnd: 0 }, { sourceEnd: 30 }, { sourceStart: 0, sourceEnd: 0 }] as Partial<EditAudioTrack>[]) {
+                expect(JSON.stringify(buildComposeTracks({ project: withTrim(patch), paths })[0]), JSON.stringify(patch)).toBe(frozen);
+            }
+            // 畸形数据（入点 ≥ 出点、入点越过素材末尾）同样不下发：宁可不裁，也不给 FFmpeg 一个空区间。
+            for (const patch of [{ sourceStart: 5, sourceEnd: 3 }, { sourceStart: 40 }, { sourceStart: 3, sourceEnd: 3 }] as Partial<EditAudioTrack>[]) {
+                expect(JSON.stringify(buildComposeTracks({ project: withTrim(patch), paths })[0]), JSON.stringify(patch)).toBe(frozen);
+            }
+        });
+
+        it("裁剪与起始时间是各自独立的两个参数，一起进请求体", () => {
+            const tracks = buildComposeTracks({ project: withTrim({ start: 3, sourceStart: 2, sourceEnd: 8 }), paths });
+            expect(tracks[0]).toMatchObject({ start: 3, sourceStart: 2, sourceEnd: 8 });
+            // 裁剪不改起点：start 仍是那个 3 秒（拖左端裁掉的是素材开头，不是把整条轨往后挪）。
+            expect(buildComposeTracks({ project: withTrim({ start: 3, sourceStart: 2 }), paths })[0]).toMatchObject({ start: 3, sourceStart: 2 });
+        });
+
+        it("被静音 / 被独奏排除的轨照旧整条不进请求体（裁剪不改变这一点）", () => {
+            expect(buildComposeTracks({ project: withTrim({ sourceStart: 2, muted: true }), paths })).toEqual([]);
+        });
+    });
+
     it("整份导出请求带上输出参数与项目名，不涉及画布节点或 compositeSettings", () => {
         const request = buildComposeRequest({ project: project({ output: { ...EDIT_DEFAULT_OUTPUT, longEdge: 720, fps: 24, fadeIn: 0.2, fadeOut: 1, subtitleStyle: "center", subtitleSize: "large" } }), paths });
 

@@ -1133,6 +1133,8 @@ export default {
         trackStartHint: "Where this track starts on the timeline, in seconds: 0 mixes it in from the very beginning, and only the audio after the start makes it into the final cut; the upper bound is the total length",
         trackStartAt: "Starts at {{time}}",
         trackDragHint: "Drag this row sideways to move the track start: it snaps to 0s, the playhead and clip edges, and applies on release",
+        trackTrimHint: "Drag either end to trim the track: the left end cuts from the start of the material, the right end cuts from its end, and the track still joins the film at the same start. Focus a handle and press ← → to move it 0.1s at a time; it applies on release",
+        trackTrimmedNote: "Trimmed: takes the material from {{start}} for {{length}}",
         trackVolumeLine: "Volume line",
         trackVolumeHint: "Volume line: currently {{value}} · drag up or down to adjust; it snaps to 100% (original volume); focus it and use ↑ ↓ for 5% steps, applied on release",
         trackVolumeMutedNote: "This track is muted: its volume can still be adjusted and takes effect once unmuted",

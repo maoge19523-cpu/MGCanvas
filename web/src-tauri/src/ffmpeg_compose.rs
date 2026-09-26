@@ -55,6 +55,11 @@ pub struct ComposeAudioTrack {
     // 这条轨在成片时间线上的起点（秒）：整条素材从这个时刻开始混入，之前是静音。
     // 缺省 / 0 表示从 0 秒起混入，滤镜链与改动前逐字一致（不出现 adelay）。
     start: Option<f64>,
+    // **素材内的入点**（秒）：这条轨从素材的第几秒开始取（时间线上拖音轨条左端改的就是它）。
+    // 缺省 / 0 = 从素材开头取；两者都不出现时滤镜链与改动前逐字一致（不出现那对 atrim）。
+    source_start: Option<f64>,
+    // **素材内的出点**（秒）：缺省 / 0 = 到素材末尾（与片段 end 同一口径）。
+    source_end: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -319,44 +324,112 @@ fn global_fade_chain(video_label: &str, fade_in: f64, fade_out: f64, total: f64)
 /// 锚到成片末尾之后（内容早就没了）时这条 afade 在成片里根本不会发生——
 /// 「3 秒音频 + 淡出 1 秒 + 9 秒成片」的旧公式算出 8 秒，而音频在第 3 秒就结束了，实测整段淡出静默失效。
 ///
-/// - `delay`（起点）为 0 / 缺省时**逐字沿用改动前的公式** `成片总长 − fade_out`：旧项目的滤镜链一个字符都不变；
-/// - `source_seconds` 未知 / 循环（`-stream_loop -1`，素材被无限拉长）时按「铺满起点之后的剩余时长」算，
-///   结果与改动前的公式相同（音轨真的铺到成片末尾时，两个锚点本来就重合）；
+/// - `delay`（起点）为 0 / 缺省且**没裁过**时逐字沿用改动前的公式 `成片总长 − fade_out`：旧项目的滤镜链一个字符都不变；
+/// - `source_seconds` 传的是这条轨**真正有声音的内容长度**（裁过时是「出点 − 入点」，没裁过时是素材全长）：
+///   未知 / 循环（`-stream_loop -1` / `aloop`，素材被无限拉长）时按「铺满起点之后的剩余时长」算，
+///   与改动前的公式相同（音轨真的铺到成片末尾时，两个锚点本来就重合）；
+/// - `trimmed` = 这条轨裁过：此时**起点为 0 也走内容口径**（留下的那一段末尾就是淡出的落点），
+///   与前端 lib/edit/audio-gain 里 `geometry.trimmed` 那一个分支严格同一口径；
 /// - `fade_out` 比这条轨能听见的内容还长时，锚点夹到内容的起点（本函数的 0）：淡出从这条轨一开口就开始，
 ///   到内容结束为止都没有走完——绝不产生负数、也不会把锚点甩到这条轨之外。
-fn track_fade_out_start(total: f64, delay: f64, fade_out: f64, source_seconds: f64) -> f64 {
+fn track_fade_out_start(total: f64, delay: f64, fade_out: f64, source_seconds: f64, trimmed: bool) -> f64 {
     let span = (total - delay).max(0.0);
-    if delay <= 0.0 {
+    if !trimmed && delay <= 0.0 {
         return (span - fade_out).max(0.0);
     }
-    // 素材比「起点之后剩下的时长」长时，能被听见的就只有剩下的这一段（atrim 与 amix 各截一刀）。
+    // 素材比「起点之后剩下的时长」长时，能被听见的就只有剩下的这一段（裁剪 + atrim 与 amix 各截一刀）。
     let content = if source_seconds.is_finite() && source_seconds > 0.0 { clamp(source_seconds, 0.0, span) } else { span };
     (content - fade_out).max(0.0)
 }
 
-/// 这条音轨素材自身的时长（秒），**只**用于算淡出锚点：
-/// - 起点为 0 / 缺省：不需要（旧公式与素材长度无关），直接返回「未知」，也就不会多跑一次探测；
-/// - `loop`：`-stream_loop -1` 把素材无限拉长，同样算「未知」（等价于铺满剩余时长）；
+/// 素材内的入点（秒）：缺省 / 0 / 非有限值 / 负数一律当 0（从素材开头取）。
+fn track_trim_start(track: &ComposeAudioTrack) -> f64 {
+    track.source_start.filter(|value| value.is_finite() && *value > 0.0).unwrap_or(0.0)
+}
+
+/// 素材内的出点（秒）：缺省 / 0 / 非有限值一律当「到素材末尾」（返回 None）。
+fn track_trim_end(track: &ComposeAudioTrack) -> Option<f64> {
+    track.source_end.filter(|value| value.is_finite() && *value > 0.0)
+}
+
+/// 这条音轨在素材内取用的区间：`Some((入点, 出点))`，`None` = **没裁过**（整条素材）。
+/// 出点为 `None` = 到素材末尾。
+///
+/// 边界与前端 lib/edit/audio-trim 的 editAudioTrimWindow 逐条对齐（两边算出来的必须是同一个区间）：
+/// - 入点为 0 且没有出点 → 没裁过（旧项目的滤镜链一个字符都不变）；
+/// - 出点与素材末尾重合 / 越过素材末尾 → 按「到素材末尾」算；
+/// - **入点 ≥ 出点**（含入点越过素材末尾这种畸形数据）→ 整段裁剪作废、按没裁过处理：
+///   `atrim=start=5:end=3` 会产出空流，amix 的输入数随之对不上而**整次出片失败**；
+///   也不能让整条轨静默消失，所以宁可不裁也要让它出声。
+fn track_trim(track: &ComposeAudioTrack, source_seconds: f64) -> Option<(f64, Option<f64>)> {
+    let start = track_trim_start(track);
+    let end = match track_trim_end(track) {
+        Some(value) if source_seconds.is_finite() && value >= source_seconds => None,
+        other => other,
+    };
+    if start <= 0.0 && end.is_none() {
+        return None;
+    }
+    match end {
+        Some(value) if value <= start => None,
+        None if source_seconds.is_finite() && source_seconds <= start => None,
+        _ => Some((start, end)),
+    }
+}
+
+/// 裁剪之后这条轨在**素材内**真正取用的内容长度（秒）：出点 − 入点；出点缺省时是「素材时长 − 入点」。
+/// 素材时长未知（探测失败且没有出点）时返回 `f64::INFINITY`（等价于「铺满剩余时长」，与改动前的口径一致）。
+fn track_trim_seconds(trim: Option<(f64, Option<f64>)>, source_seconds: f64) -> f64 {
+    match trim {
+        Some((start, Some(end))) => end - start,
+        Some((start, None)) => source_seconds - start,
+        None => source_seconds,
+    }
+}
+
+/// 循环补齐的循环体采样数（`aloop` 的 size，按 aformat 之后的 44100Hz 计）。
+///
+/// `aloop` 循环的是**缓冲区里的前 size 个采样**，所以 size 必须 ≥ 循环体的长度：
+/// 实测 2 秒内容（88200 采样）配 `size=44100` 时只循环了前 1 秒，`size=88200` 才完整。
+/// 因此这里向上取整，并把上界夹到「起点之后剩下的时长」——裁剪后内容比成片还长时，
+/// 第一遍就已经盖满成片、后面的重复根本进不了成片，夹住它能把这块缓冲区限制在成片长度以内。
+fn track_loop_size(content_seconds: f64, span: f64) -> Option<i64> {
+    let content = if content_seconds.is_finite() && content_seconds > 0.0 { content_seconds } else { return None };
+    let bounded = if span.is_finite() && span > 0.0 { content.min(span) } else { content };
+    Some(((bounded * 44100.0).ceil() as i64).max(1))
+}
+
+/// 这条音轨素材自身的时长（秒），用于算内容长度（淡出锚点）与循环体的采样数：
+/// - 起点为 0 / 缺省且**没裁过**：不需要（旧公式与素材长度无关），直接返回「未知」，也就不会多跑一次探测；
+/// - `loop`（裁剪之前的老口径）：`-stream_loop -1` 把素材无限拉长，同样算「未知」（等价于铺满剩余时长）；
+/// - **裁过且没有出点**：内容长度与循环体都要靠素材时长算，必须探测（哪怕起点为 0、哪怕是循环轨）；
 /// - 探测失败：仍算「未知」，回落到改动前的公式——不让多出来的一次探测把整次出片搞失败。
 ///
 /// 「未知」用 `f64::INFINITY` 表示：它天然大于任何剩余时长，取 min 之后就是剩余时长本身。
 fn track_source_seconds(executable: &Path, track: &ComposeAudioTrack) -> f64 {
-    if track.looped.unwrap_or(false) || track.start.unwrap_or(0.0) <= 0.0 {
+    let trimmed_without_end = track_trim_start(track) > 0.0 && track_trim_end(track).is_none();
+    if !trimmed_without_end && (track.looped.unwrap_or(false) || track.start.unwrap_or(0.0) <= 0.0) {
         return f64::INFINITY;
     }
     probe_audio_duration(executable, &track.path).unwrap_or(f64::INFINITY)
 }
 
-/// 一条附加音轨的整形链：音量 → 裁到成片时长 → 时间戳归零 → 淡入淡出 → 起始时间（前置静音）。
+/// 一条附加音轨的整形链：**裁剪**（只在真的裁过时才出现）→ 音量 → 裁到成片时长 → 时间戳归零 → 淡入淡出 → 起始时间（前置静音）。
 ///
-/// - `atrim=end` 仍是**成片总长**（与本改动前逐字相同），起点之后的尾巴交给 amix 的 duration=first 截断；
-/// - 淡出的锚点由 `track_fade_out_start` 给出（本地时间轴）：起点为 0 时与改动前的 `span − fade_out`
-///   逐字一致，起点 > 0 时改用**这条音轨自己那一段内容的末尾**（见该函数的说明）；
-/// - 起始时间 > 0 时才在链**末尾**追加一个 adelay（前置静音）。前面每一步的顺序与参数一个都没动，
-///   改动面只有淡出那一个 `st` 的取值——这条链上出过「末尾多一个逗号 ⇒ 空滤镜名 ⇒ 拒绝出片」的事故，
-///   链的**形状 / 顺序 / 参数个数**都没变（仍然只有 afade 的 st 与 d 两个参数），越少动越好。
+/// - 裁剪那两步（`atrim=start=入点[:end=出点]` + `asetpts`）**只在真的裁过时**才拼在链首，
+///   而且顺序有讲究：先取素材内的一段、再把时间戳归零，后面每一步（音量、淡出、延迟）看到的就都是
+///   「留下的那一段」的本地时间轴——正因为如此，`atrim=end` 仍是**成片总长**（截断成片之外的尾巴，
+///   与改动前逐字相同），裁剪后的内容比成片长时由它兜住；
+/// - 裁剪 + 循环时在 aformat 之后插一个 `aloop=loop=-1:size=N`（N 见 track_loop_size）：
+///   `-stream_loop -1` 循环的是**整个文件**，用户裁掉的那一段会被它原样放回来，
+///   所以循环体必须显式换成裁剪后的那一段；成片之外的部分仍由链尾那个 `atrim=end=成片总长` 终止。
+///   这两个元素（裁剪 + 循环）同时出现时链的**形状**确实变了，故此处单独说明：新增的只有链首这段前缀
+///   与这一个 aloop，`aformat` 之后的每一次调用、每一个参数、先后顺序都与改动前逐字相同；
+/// - 淡出的锚点由 `track_fade_out_start` 给出（本地时间轴）：没裁过时与改动前逐字一致，
+///   裁过时改用**这条轨自己那一段内容的末尾**（见该函数的说明）；
+/// - 起始时间 > 0 时才在链**末尾**追加一个 adelay（前置静音）。
 ///
-/// 起始时间缺省 / 为 0 时输出的字符串一个字符都不变，所以旧项目的滤镜链与改动前逐字一致。
+/// **没裁过时输出的字符串一个字符都不变**（连 aformat 都还在原来的位置上），所以旧项目的滤镜链与改动前逐字一致。
 ///
 /// 淡入一侧没有同类问题，**不需要改**：`afade=t=in:st=0` 锚的是这条链上时间戳归零后的**内容起点**，
 /// 拼在 adelay 之前，所以延迟之后它正好落在这条轨自己开口的那一刻；内容再短也不会有锚点跑出内容之外
@@ -367,15 +440,23 @@ fn track_chain(input_index: u32, track: &ComposeAudioTrack, total: f64, source_s
     let fade_out = clamp(track.fade_out.unwrap_or(0.0), 0.0, 10.0);
     // 起点的合法区间是 [0, 成片总长]：落到末尾之后这条轨在成片里一个字都听不到。
     let delay = clamp(track.start.unwrap_or(0.0), 0.0, total);
-    let mut chain = format!(
-        "[{input_index}:a]aformat=sample_rates=44100:channel_layouts=stereo,volume={volume},atrim=end={},asetpts=PTS-STARTPTS",
-        seconds(total)
-    );
+    let trim = track_trim(track, source_seconds);
+    let mut chain = format!("[{input_index}:a]");
+    if let Some((start, end)) = trim {
+        chain.push_str(&format!("atrim=start={}{},asetpts=PTS-STARTPTS,", seconds(start), end.map(|value| format!(":end={}", seconds(value))).unwrap_or_default()));
+    }
+    chain.push_str("aformat=sample_rates=44100:channel_layouts=stereo");
+    if trim.is_some() && track.looped.unwrap_or(false) {
+        if let Some(size) = track_loop_size(track_trim_seconds(trim, source_seconds), (total - delay).max(0.0)) {
+            chain.push_str(&format!(",aloop=loop=-1:size={size}"));
+        }
+    }
+    chain.push_str(&format!(",volume={volume},atrim=end={},asetpts=PTS-STARTPTS", seconds(total)));
     if fade_in > 0.0 {
         chain.push_str(&format!(",afade=t=in:st=0:d={}", seconds(fade_in)));
     }
     if fade_out > 0.0 {
-        chain.push_str(&format!(",afade=t=out:st={}:d={}", seconds(track_fade_out_start(total, delay, fade_out, source_seconds)), seconds(fade_out)));
+        chain.push_str(&format!(",afade=t=out:st={}:d={}", seconds(track_fade_out_start(total, delay, fade_out, track_trim_seconds(trim, source_seconds), trim.is_some())), seconds(fade_out)));
     }
     if delay > 0.0 {
         // adelay 的位置参数就是 delays：aformat 已经把这条流固定成 stereo，所以 | 两侧各给一个毫秒数。
@@ -1165,6 +1246,8 @@ mod tests {
             fade_out: Some(2.0),
             looped: Some(true),
             start,
+            source_start: None,
+            source_end: None,
         };
         // 「素材够长 / 铺满起点之后的剩余时长」：循环轨、或时长探测不到时的取值。
         // 这种轨的淡出锚点与改动前完全相同（内容真的铺到成片末尾时两个锚点本来就重合）。
@@ -1201,7 +1284,7 @@ mod tests {
             "{}[mix0]",
             track_chain(
                 0,
-                &ComposeAudioTrack { path: "x.mp3".to_owned(), volume: None, fade_in: None, fade_out: None, looped: None, start: Some(0.5) },
+                &ComposeAudioTrack { path: "x.mp3".to_owned(), volume: None, fade_in: None, fade_out: None, looped: None, start: Some(0.5), source_start: None, source_end: None },
                 4.0,
                 long
             )
@@ -1217,23 +1300,26 @@ mod tests {
     /// 静默不做任何淡出，成片里这段淡出**一次都不会发生**（下面的真实 FFmpeg 冒烟里有用音量测出来的证据）。
     #[test]
     fn fade_out_anchor_follows_the_tracks_own_end_only_when_it_starts_late() {
-        // 起点 0 / 缺省：逐字沿用改动前的公式，素材多短都一样（旧项目行为不变的硬约束）。
-        assert_eq!(track_fade_out_start(9.0, 0.0, 1.0, 3.0), 8.0);
-        assert_eq!(track_fade_out_start(9.0, 0.0, 1.0, f64::INFINITY), 8.0);
-        assert_eq!(track_fade_out_start(9.0, 0.0, 20.0, 3.0), 0.0, "锚点不得为负");
+        // 起点 0 / 缺省且**没裁过**：逐字沿用改动前的公式，素材多短都一样（旧项目行为不变的硬约束）。
+        assert_eq!(track_fade_out_start(9.0, 0.0, 1.0, 3.0, false), 8.0);
+        assert_eq!(track_fade_out_start(9.0, 0.0, 1.0, f64::INFINITY, false), 8.0);
+        assert_eq!(track_fade_out_start(9.0, 0.0, 20.0, 3.0, false), 0.0, "锚点不得为负");
+        // 裁过之后**起点为 0 也走内容口径**：留下的那一段末尾就是淡出的落点（与前端 geometry.trimmed 同一分支）。
+        assert_eq!(track_fade_out_start(9.0, 0.0, 1.0, 3.0, true), 2.0);
+        assert_eq!(track_fade_out_start(9.0, 0.0, 1.0, f64::INFINITY, true), 8.0, "内容未知时仍回落到铺满剩余时长");
 
         // 起点 3 秒、素材 3 秒：内容在成片时间轴上占 [3, 6]，淡出从 6 − 1 = 5 秒（本地 2 秒）开始。
-        assert_eq!(track_fade_out_start(9.0, 3.0, 1.0, 3.0), 2.0);
+        assert_eq!(track_fade_out_start(9.0, 3.0, 1.0, 3.0, false), 2.0);
         // 素材比剩余时长长 / 循环轨 / 探测不到：内容铺满剩余时长，锚点与改动前相同。
-        assert_eq!(track_fade_out_start(9.0, 3.0, 1.0, 20.0), 5.0);
-        assert_eq!(track_fade_out_start(9.0, 3.0, 1.0, f64::INFINITY), 5.0);
-        assert_eq!(track_fade_out_start(9.0, 3.0, 1.0, f64::NAN), 5.0, "探测结果缺失时回落到旧公式");
+        assert_eq!(track_fade_out_start(9.0, 3.0, 1.0, 20.0, false), 5.0);
+        assert_eq!(track_fade_out_start(9.0, 3.0, 1.0, f64::INFINITY, false), 5.0);
+        assert_eq!(track_fade_out_start(9.0, 3.0, 1.0, f64::NAN, false), 5.0, "探测结果缺失时回落到旧公式");
 
         // 淡出比这条轨能听见的内容还长：锚点夹在内容起点（0），淡出从这条轨一开口就开始，
         // 到内容结束都没走完——不是负数，也不会被甩到这条轨之外。
-        assert_eq!(track_fade_out_start(9.0, 3.0, 5.0, 3.0), 0.0);
+        assert_eq!(track_fade_out_start(9.0, 3.0, 5.0, 3.0, false), 0.0);
         // 起点被夹到成片总长时（这条轨一秒都占不到）：锚点同样是 0，不会产生负时间。
-        assert_eq!(track_fade_out_start(9.0, 9.0, 5.0, 3.0), 0.0);
+        assert_eq!(track_fade_out_start(9.0, 9.0, 5.0, 3.0, false), 0.0);
 
         // 落到链上：链的**形状 / 顺序 / 参数个数**一点没变，只有淡出那个 st 从 8 变成 2。
         let short = ComposeAudioTrack {
@@ -1243,6 +1329,8 @@ mod tests {
             fade_out: Some(1.0),
             looped: None,
             start: Some(3.0),
+            source_start: None,
+            source_end: None,
         };
         let chain = track_chain(1, &short, 9.0, 3.0);
         assert_eq!(
@@ -1260,6 +1348,106 @@ mod tests {
         let chain = track_chain(1, &with_in, 9.0, 3.0);
         assert!(chain.contains(",afade=t=in:st=0:d=1.5"), "淡入锚点必须仍是本地内容起点 0：{chain}");
         assert!(chain.find("afade=t=in").unwrap() < chain.find("adelay").unwrap(), "淡入必须拼在 adelay 之前：{chain}");
+    }
+
+    /// 音轨的**两端裁剪**：`atrim=start=入点[:end=出点]` + `asetpts` 只拼在链首，而且**只在真的裁过时**才出现；
+    /// 没裁过的链必须与改动前逐字一致（下面第一条断言就是那把锁）。
+    #[test]
+    fn track_chain_trims_the_material_only_when_it_is_actually_trimmed() {
+        let trimmed = |start: Option<f64>, end: Option<f64>, looped: bool| ComposeAudioTrack {
+            path: "music.wav".to_owned(),
+            volume: Some(1.0),
+            fade_in: None,
+            fade_out: None,
+            looped: Some(looped),
+            start: None,
+            source_start: start,
+            source_end: end,
+        };
+        // 没裁过：链与改动前逐字一致，连 aformat 都还在原来的位置（attr 级冻住，防以后有人顺手挪顺序）。
+        let plain = track_chain(1, &trimmed(None, None, false), 10.0, f64::INFINITY);
+        assert_eq!(plain, "[1:a]aformat=sample_rates=44100:channel_layouts=stereo,volume=1,atrim=end=10,asetpts=PTS-STARTPTS");
+        assert_eq!(track_chain(1, &trimmed(Some(0.0), Some(0.0), false), 10.0, f64::INFINITY), plain, "0 与缺省同一口径");
+        assert!(!plain.contains("atrim=start"), "没裁过时不得出现裁剪那一步：{plain}");
+
+        // 只裁左端（入点 3 秒）：素材内从第 3 秒取到末尾，时间戳归零，后面每一步看到的都是留下的那一段。
+        assert_eq!(
+            track_chain(1, &trimmed(Some(3.0), None, false), 10.0, 8.0),
+            "[1:a]atrim=start=3,asetpts=PTS-STARTPTS,aformat=sample_rates=44100:channel_layouts=stereo,volume=1,atrim=end=10,asetpts=PTS-STARTPTS"
+        );
+        // 只裁右端（出点 6 秒）：两个键都在时 start 与 end 一起给出。
+        assert_eq!(
+            track_chain(1, &trimmed(Some(3.0), Some(6.0), false), 10.0, 8.0),
+            "[1:a]atrim=start=3:end=6,asetpts=PTS-STARTPTS,aformat=sample_rates=44100:channel_layouts=stereo,volume=1,atrim=end=10,asetpts=PTS-STARTPTS"
+        );
+        // 链尾接上输出标签时不能多出逗号（这条链上出过「空滤镜名 ⇒ 拒绝出片」的事故）。
+        assert_no_empty_filter(&format!("{}[mix0]", track_chain(1, &trimmed(Some(3.0), Some(6.0), false), 10.0, 8.0)));
+
+        // 裁剪 + 起点：裁剪在前、adelay 仍在链尾（裁剪本身不改起点，两者互不影响）。
+        let at_two = ComposeAudioTrack { start: Some(2.0), ..trimmed(Some(3.0), Some(6.0), false) };
+        let chain = track_chain(1, &at_two, 10.0, 8.0);
+        assert!(chain.contains(",adelay=2000|2000"), "起点照旧只追加 adelay：{chain}");
+        assert!(chain.find("atrim=start").unwrap() < chain.find("adelay").unwrap(), "裁剪必须在延迟之前：{chain}");
+        assert_no_empty_filter(&format!("{chain}[mix0]"));
+
+        // 裁剪 + 循环：循环体换成裁剪后的那一段（aloop 的 size = 3 秒 × 44100，且不小于内容长度）。
+        let looped = track_chain(1, &trimmed(Some(2.0), Some(5.0), true), 10.0, 8.0);
+        assert!(looped.contains(",aloop=loop=-1:size=132300"), "循环体必须是留下的 3 秒：{looped}");
+        assert!(looped.find("aformat").unwrap() < looped.find("aloop").unwrap(), "aloop 必须排在 aformat 之后（size 按 44100 计）：{looped}");
+        assert!(looped.find("aloop").unwrap() < looped.find("atrim=end=10").unwrap(), "成片之外的重复仍由链尾的 atrim 终止：{looped}");
+        assert_no_empty_filter(&format!("{looped}[mix0]"));
+        // 循环但没裁过：一个 aloop 都不出现（行为与改动前逐字一致）。
+        assert!(!track_chain(1, &trimmed(None, None, true), 10.0, f64::INFINITY).contains("aloop"));
+
+        // 出点缺省时的循环体按「素材时长 − 入点」算（这里素材 8 秒、入点 2 秒 ⇒ 6 秒 × 44100）。
+        assert!(track_chain(1, &trimmed(Some(2.0), None, true), 10.0, 8.0).contains(",aloop=loop=-1:size=264600"));
+        // 素材时长探测不到（INFINITY）时算不出循环体：宁可不加 aloop，也不给一个会截断循环体的 size。
+        assert!(!track_chain(1, &trimmed(Some(2.0), None, true), 10.0, f64::INFINITY).contains("aloop"));
+
+        // 裁剪后内容比成片还长：循环体夹到「起点之后剩下的时长」（第一遍就盖满成片，重复进不了成片）。
+        assert!(track_chain(1, &trimmed(Some(2.0), Some(9.0), true), 5.0, 10.0).contains(",aloop=loop=-1:size=220500"));
+
+        // 畸形数据（入点 ≥ 出点 / 入点越过素材末尾）一律当作没裁过：不能让 atrim 产出空流
+        // （amix 的输入数随之对不上，整次出片失败），也不能让整条轨静默消失。
+        for (start, end, source) in [(Some(5.0), Some(3.0), 8.0), (Some(9.0), None, 8.0), (Some(3.0), Some(3.0), 8.0)] {
+            let chain = track_chain(1, &trimmed(start, end, false), 10.0, source);
+            assert_eq!(chain, plain, "畸形裁剪（{start:?}/{end:?}）必须按没裁过处理：{chain}");
+            assert_no_empty_filter(&format!("{chain}[mix0]"));
+        }
+        // 出点与素材末尾重合 / 越过素材末尾：按「到素材末尾」算，不写出点（atrim 的 end 省掉）。
+        assert_eq!(track_chain(1, &trimmed(Some(2.0), Some(8.0), false), 10.0, 8.0), track_chain(1, &trimmed(Some(2.0), None, false), 10.0, 8.0));
+        assert_eq!(track_chain(1, &trimmed(Some(2.0), Some(99.0), false), 10.0, 8.0), track_chain(1, &trimmed(Some(2.0), None, false), 10.0, 8.0));
+        // 非有限值与负数一并按缺省算（畸形 JSON 不能算出 NaN 秒数交给 FFmpeg）。
+        assert_eq!(track_chain(1, &trimmed(Some(f64::NAN), Some(-1.0), false), 10.0, 8.0), plain);
+    }
+
+    /// 裁剪之后的淡出锚点跟着**留下来的那一段**走：这是「裁短了却仍按成片末尾起淡出」那类错位的地方。
+    #[test]
+    fn trim_moves_the_fade_out_anchor_to_the_trimmed_content() {
+        let track = ComposeAudioTrack {
+            path: "music.wav".to_owned(),
+            volume: None,
+            fade_in: None,
+            fade_out: Some(1.0),
+            looped: None,
+            start: None,
+            source_start: Some(2.0),
+            source_end: Some(6.0),
+        };
+        // 内容 4 秒、起点 0：淡出从内容末尾往回 1 秒（本地 3 秒）开始，而不是成片末尾 − 1。
+        let chain = track_chain(1, &track, 20.0, 8.0);
+        assert!(chain.contains(",afade=t=out:st=3:d=1"), "裁剪后淡出锚在留下的那一段末尾：{chain}");
+        // 起点 5 秒：本地时间轴上再减去起点之后剩下的时长（20 − 5 = 15 > 4 ⇒ 仍是内容末尾）。
+        let late = ComposeAudioTrack { start: Some(5.0), ..track };
+        assert!(track_chain(1, &late, 20.0, 8.0).contains(",afade=t=out:st=3:d=1"));
+        // 成片只剩 3 秒（起点 5、成片 8）时内容被成片尽头夹住：锚点落在本地 2 秒。
+        assert!(track_chain(1, &late, 8.0, 8.0).contains(",afade=t=out:st=2:d=1"));
+        // 没裁过时锚点仍是旧口径（起点 5、素材 8 秒 ⇒ 本地 8 − 1 = 7 秒），一个字符都不变。
+        let plain = ComposeAudioTrack { source_start: None, source_end: None, ..late };
+        assert!(track_chain(1, &plain, 20.0, 8.0).contains(",afade=t=out:st=7:d=1"));
+        // 起点为 0 且没裁过：仍是改动前的 `成片末尾 − fadeOut`（这里 20 − 1 = 19）。
+        let plain_at_zero = ComposeAudioTrack { start: None, ..plain };
+        assert!(track_chain(1, &plain_at_zero, 20.0, 8.0).contains(",afade=t=out:st=19:d=1"));
     }
 
     // ── 波形峰值包络 ──────────────────────────────────────────────────────────
@@ -1469,7 +1657,7 @@ mod tests {
                 }],
                 tracks: tracks
                     .iter()
-                    .map(|(path, start)| ComposeAudioTrack { path: (*path).to_owned(), volume: None, fade_in: None, fade_out: None, looped: None, start: *start })
+                    .map(|(path, start)| ComposeAudioTrack { path: (*path).to_owned(), volume: None, fade_in: None, fade_out: None, looped: None, start: *start, source_start: None, source_end: None })
                     .collect(),
                 subtitles: Vec::new(),
                 long_edge: Some(320.0),
@@ -1823,7 +2011,7 @@ mod tests {
                     fade_out: None,
                     muted: None,
                 }],
-                tracks: vec![ComposeAudioTrack { path: music.to_owned(), volume: None, fade_in: None, fade_out, looped: None, start }],
+                tracks: vec![ComposeAudioTrack { path: music.to_owned(), volume: None, fade_in: None, fade_out, looped: None, start, source_start: None, source_end: None }],
                 subtitles: Vec::new(),
                 long_edge: Some(320.0),
                 fps: Some(30.0),
@@ -1959,9 +2147,250 @@ mod tests {
         .expect("带独立字幕的真实合成应当成功（滤镜链语法必须成立）")
     }
 
+    // ── 音轨两端裁剪的真实 FFmpeg 冒烟 ────────────────────────────────────────────────
+    // 这一组回答的是「裁剪到底有没有改到声音」，而不是「链的字符串对不对」。素材刻意做成
+    // **逐段不同的内容**（有声音 / 静音交替），于是每一段窗口的电平就能指出成片里响的是素材的哪一部分：
+    // 只比时长、只看退出码都证明不了这件事。窗口电平一律用 `atrim` 在滤镜里截（不用输出侧 `-ss`，
+    // 那个坑见 window_mean_db 的说明）。默认忽略，用
+    // `cargo test --offline --lib -- --ignored --nocapture` 执行。
+
+    /// 6 秒素材，每一秒一个**不同响度**（−6 / −18 / −30 / −42 dB，然后两秒静音）。
+    /// 电平逐段拉开是有意的：只靠「有声 / 静音」分不出「裁掉开头 2 秒」与「没裁」——
+    /// 素材每 2 秒重复一次时，错位两秒看起来一模一样。电平各不相同，任何错位都能在同一秒的窗口上量出来。
+    fn tone_pattern_wav(executable: &Path, path: &str) {
+        let tone = |gain: &str| format!("sine=frequency=440:duration=1:sample_rate=44100,volume={gain}");
+        let made = run_captured(
+            executable,
+            &[
+                "-hide_banner",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                &tone("8"),
+                "-f",
+                "lavfi",
+                "-i",
+                &tone("2"),
+                "-f",
+                "lavfi",
+                "-i",
+                &tone("0.5"),
+                "-f",
+                "lavfi",
+                "-i",
+                &tone("0.125"),
+                "-f",
+                "lavfi",
+                "-i",
+                "anullsrc=r=44100:cl=mono:d=1",
+                "-f",
+                "lavfi",
+                "-i",
+                "anullsrc=r=44100:cl=mono:d=1",
+                "-filter_complex",
+                "[0:a][1:a][2:a][3:a][4:a][5:a]concat=n=6:v=0:a=1[a]",
+                "-map",
+                "[a]",
+                "-c:a",
+                "pcm_s16le",
+                path,
+            ],
+        )
+        .expect("应当能生成测试音频");
+        assert!(made.status.success(), "生成测试音频失败：{}", String::from_utf8_lossy(&made.stderr));
+    }
+
+    /// 单个无声视频段 + 一条音轨的合成（音轨的起点 / 裁剪区间由调用方给）。
+    fn compose_trim_smoke(cache: &Path, video: &str, music: &str, track: (Option<f64>, Option<f64>, Option<f64>, Option<bool>), title: &str) -> ComposeVideoResult {
+        let (start, source_start, source_end, looped) = track;
+        compose_blocking(
+            cache,
+            ComposeVideoRequest {
+                ffmpeg_path: None,
+                segments: vec![ComposeSegment {
+                    path: video.to_owned(),
+                    start: None,
+                    end: None,
+                    volume: None,
+                    transition: None,
+                    transition_duration: None,
+                    subtitle: None,
+                    fade_in: None,
+                    fade_out: None,
+                    muted: None,
+                }],
+                tracks: vec![ComposeAudioTrack { path: music.to_owned(), volume: None, fade_in: None, fade_out: None, looped, start, source_start, source_end }],
+                subtitles: Vec::new(),
+                long_edge: Some(320.0),
+                fps: Some(30.0),
+                fade_in: None,
+                fade_out: None,
+                title: Some(title.to_owned()),
+                subtitle_style: None,
+                subtitle_size: None,
+            },
+        )
+        .expect("真实合成应当成功（滤镜链语法必须成立）")
+    }
+
+    /// 六段各 1 秒的窗口平均电平（素材与成片用同一把尺子量）。
+    fn pattern_of(executable: &Path, path: &str, seconds_count: usize) -> Vec<f64> {
+        (0..seconds_count).map(|index| window_mean_db(executable, path, index as f64 + 0.1, index as f64 + 0.9)).collect()
+    }
+
+    /// 成片每一秒的电平必须与**素材的指定那一秒**一致，期望 `None` 的窗口必须是静音。
+    /// 容差 6 dB：混音这一步本身就带约 3 dB 的整体偏差（单声道素材 → 立体声成片），
+    /// 而素材相邻两段相差 12 dB，所以「响的是素材的哪一段」这件事仍然判得开。
+    /// 这条断言才真正回答了「成片里响的是素材的哪一段」。
+    fn assert_pattern(label: &str, got: &[f64], material: &[f64], expected: &[Option<usize>]) {
+        for (index, want) in expected.iter().enumerate() {
+            match want {
+                Some(at) => {
+                    let reference = material[*at];
+                    assert!(
+                        reference.is_finite() && (got[index] - reference).abs() < 6.0,
+                        "{label}：第 {index} 秒应当是素材第 {at} 秒（{reference:.1} dB），实测 {:.1} dB；整条 {got:?}",
+                        got[index]
+                    );
+                }
+                None => assert!(got[index] < -60.0, "{label}：第 {index} 秒应当是静音，实测 {:.1} dB；整条 {got:?}", got[index]),
+            }
+        }
+    }
+
+    /// 拖两端裁剪的现场证据：裁左端 / 裁右端 / 裁剪 + 起点 / 裁剪 + 循环，四种都在成片里量出来。
+    #[test]
+    #[ignore]
+    fn track_trim_really_changes_which_part_of_the_material_is_heard() {
+        let Some(executable) = detect_ffmpeg_path(None) else {
+            return;
+        };
+        let dir = std::env::temp_dir().join(format!("mgcanvas-track-trim-smoke-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("应当能建临时目录");
+        let video = dir.join("segment.mp4").to_string_lossy().into_owned();
+        let music = dir.join("pattern.wav").to_string_lossy().into_owned();
+
+        // 4 秒无声片段：成片里剩下的声音只可能来自附加音轨。
+        let generated = run_captured(
+            &executable,
+            &["-hide_banner", "-y", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30:duration=4", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", &video],
+        )
+        .expect("应当能生成测试视频");
+        assert!(generated.status.success(), "生成测试视频失败：{}", String::from_utf8_lossy(&generated.stderr));
+        tone_pattern_wav(&executable, &music);
+
+        // ① 没裁过：成片四秒应当依次是「有声、静音、有声、静音」（素材 [0,4) 原样进成片）。
+        let plain = compose_trim_smoke(&dir, &video, &music, (None, None, None, None), "trim-none");
+        // ② 裁掉素材开头 2 秒（入点 2）：起点照旧是 0 ⇒ 成片第一秒就该是素材第 2 秒的声音，
+        //    后面依次是静音、有声、静音。**第一秒由静音变有声**就是「开头真的被砍掉了」。
+        let head = compose_trim_smoke(&dir, &video, &music, (None, Some(2.0), None, None), "trim-head");
+        // ③ 裁掉素材末尾（出点 2）：只留素材 [0,2) = 有声、静音，成片后两秒彻底静音。
+        let tail = compose_trim_smoke(&dir, &video, &music, (None, None, Some(2.0), None), "trim-tail");
+        // ④ 裁剪 + 起点 1 秒：起点照旧生效（成片第一秒静音），而内容仍是裁过的那一段。
+        let shifted = compose_trim_smoke(&dir, &video, &music, (Some(1.0), Some(2.0), None, None), "trim-start");
+        // ⑤ 裁剪 + 循环：循环体是留下的那 1 秒（素材 [2,3)），四秒都该有声。
+        //    如果循环体仍是整个文件（-stream_loop -1 的老行为），成片会是「有声、静音、有声、静音」。
+        let looped = compose_trim_smoke(&dir, &video, &music, (None, Some(2.0), Some(3.0), Some(true)), "trim-loop");
+
+        let plain_db = pattern_of(&executable, &plain.absolute_path, 4);
+        let head_db = pattern_of(&executable, &head.absolute_path, 4);
+        let tail_db = pattern_of(&executable, &tail.absolute_path, 4);
+        let shifted_db = pattern_of(&executable, &shifted.absolute_path, 4);
+        let looped_db = pattern_of(&executable, &looped.absolute_path, 4);
+        // 素材自身的六段电平（同一把尺子量）：成片每一秒都要对得上其中某一段。
+        let material_db = pattern_of(&executable, &music, 6);
+        println!("素材六段：[{:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}] dB", material_db[0], material_db[1], material_db[2], material_db[3], material_db[4], material_db[5]);
+        println!("① 未裁剪：{plain_db:?}");
+        println!("② 裁掉开头 2 秒：{head_db:?}");
+        println!("③ 裁掉末尾（出点 2）：{tail_db:?}");
+        println!("④ 裁剪 + 起点 1 秒：{shifted_db:?}");
+        println!("⑤ 裁剪 + 循环：{looped_db:?}");
+        println!(
+            "时长：未裁剪 {}ms / 裁头 {}ms / 裁尾 {}ms（原片段 4s）",
+            plain.duration_ms, head.duration_ms, tail.duration_ms
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // 素材本身必须先站得住：六段依次是 −6 / −18 / −30 / −42 dB 与两段静音，相邻差 12 dB。
+        assert!(material_db[0] > material_db[1] + 8.0 && material_db[1] > material_db[2] + 8.0 && material_db[2] > material_db[3] + 8.0, "素材六段的电平没拉开，后面的判定不成立：{material_db:?}");
+        assert!(material_db[4] < -60.0 && material_db[5] < -60.0, "素材后两段应当是静音：{material_db:?}");
+
+        // ① 未裁剪：成片四秒就是素材的第 0~3 秒（有声的四段依次变轻）。
+        assert_pattern("① 未裁剪", &plain_db, &material_db, &[Some(0), Some(1), Some(2), Some(3)]);
+        // ② 裁掉开头 2 秒：起点照旧是 0 ⇒ 成片第一秒响的是**素材第 2 秒**（−30 dB）。
+        //    若实现改的是 start（把整条轨往后挪 2 秒）而不是砍掉素材开头，这里第一秒会是静音 —— 两种做法在这一秒上判得开。
+        assert_pattern("② 裁掉开头", &head_db, &material_db, &[Some(2), Some(3), None, None]);
+        // ③ 裁掉末尾：只留素材 [0,2)（−6 / −18），出点之后一个字都进不了成片。
+        assert_pattern("③ 裁掉末尾", &tail_db, &material_db, &[Some(0), Some(1), None, None]);
+        // ④ 裁剪 + 起点 1 秒：起点照旧推后一秒（第一秒静音），之后是裁过的那一段。
+        assert_pattern("④ 裁剪 + 起点", &shifted_db, &material_db, &[None, Some(2), Some(3), None]);
+        // ⑤ 裁剪 + 循环：循环体是留下的那 1 秒（素材第 2 秒），四秒都响在同一条电平上。
+        //    老行为（-stream_loop -1 循环整个文件）会给出「第 2 秒 −30、第 3 秒 −42、第 4 秒静音…」那种交替。
+        assert_pattern("⑤ 裁剪 + 循环", &looped_db, &material_db, &[Some(2), Some(2), Some(2), Some(2)]);
+        // ⑥ 成片时长没有被裁剪改变：仍按片段长度算（4 秒）。
+        for (name, result) in [("未裁剪", &plain), ("裁头", &head), ("裁尾", &tail), ("裁剪+起点", &shifted), ("裁剪+循环", &looped)] {
+            assert!((result.duration_ms as i64 - 4_000).abs() <= 400, "{name}的成片时长应当仍按片段长度算：{}ms", result.duration_ms);
+            assert!(result.bytes > 0, "{name}必须真的出片");
+        }
+    }
+
+    /// **裁剪量为 0 时必须逐字节一致**：缺省（连键都不发）与显式 `source_start = 0 / source_end = 0`
+    /// 两种请求，成片音轨的 PCM 必须一模一样（不是「听起来一样」，是逐字节相等）。
+    /// 这是「旧项目的导出体与产物都没变」的现场证据；链一级的对照见 track_chain 的单元测试。
+    #[test]
+    #[ignore]
+    fn zero_trim_keeps_the_exported_audio_byte_identical() {
+        use sha2::{Digest, Sha256};
+
+        let Some(executable) = detect_ffmpeg_path(None) else {
+            return;
+        };
+        let dir = std::env::temp_dir().join(format!("mgcanvas-track-trim-zero-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("应当能建临时目录");
+        let video = dir.join("segment.mp4").to_string_lossy().into_owned();
+        let music = dir.join("pattern.wav").to_string_lossy().into_owned();
+
+        let generated = run_captured(
+            &executable,
+            &["-hide_banner", "-y", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30:duration=3", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", &video],
+        )
+        .expect("应当能生成测试视频");
+        assert!(generated.status.success(), "生成测试视频失败：{}", String::from_utf8_lossy(&generated.stderr));
+        tone_pattern_wav(&executable, &music);
+
+        // ① 改动前的口径：请求里连裁剪字段都没有（缺省 / 0 都不下发）。
+        let plain = compose_trim_smoke(&dir, &video, &music, (Some(1.0), None, None, None), "zero-trim-plain");
+        // ② 显式把两个字段都写成 0（等价于缺省）：Rust 侧必须走完全一样的分支。
+        let explicit = compose_trim_smoke(&dir, &video, &music, (Some(1.0), Some(0.0), Some(0.0), None), "zero-trim-explicit");
+
+        // 把成片的音频流抽成 44100Hz / stereo / s16le 的 PCM 再逐字节比。
+        let pcm = |path: &str| {
+            let output = run_captured(&executable, &["-hide_banner", "-v", "error", "-i", path, "-vn", "-ac", "2", "-ar", "44100", "-f", "s16le", "-"]).expect("应当能抽出 PCM");
+            assert!(output.status.success(), "抽 PCM 失败：{}", String::from_utf8_lossy(&output.stderr));
+            output.stdout
+        };
+        let before = pcm(&plain.absolute_path);
+        let after = pcm(&explicit.absolute_path);
+        println!(
+            "缺省 {} 字节 / sha256 {:x}；显式 0 {} 字节 / sha256 {:x}",
+            before.len(),
+            Sha256::digest(&before),
+            after.len(),
+            Sha256::digest(&after)
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(before.len() > 44_100, "PCM 太短（抽流没成功？）：{} 字节", before.len());
+        assert_eq!(before.len(), after.len(), "裁剪量为 0 时 PCM 长度必须相同");
+        assert_eq!(Sha256::digest(&before), Sha256::digest(&after), "裁剪量为 0 时 PCM 必须逐字节一致");
+        assert_eq!(before, after, "裁剪量为 0 时 PCM 必须逐字节一致");
+    }
+
     /// 抽一帧、按灰度读回最亮的那个像素：黑底素材上的白字就是「有没有亮像素」。
-    fn brightest_pixel(executable: &Path, video: &str, at: &str) -> u8 {
-        let output = run_captured(executable, &["-hide_banner", "-v", "error", "-ss", at, "-i", video, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-"])
+    fn brightest_pixel(executable: &Path, video: &str, at: &str) -> u8 {        let output = run_captured(executable, &["-hide_banner", "-v", "error", "-ss", at, "-i", video, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-"])
             .expect("应当能抽出这一帧");
         assert!(output.status.success(), "抽帧失败：{}", String::from_utf8_lossy(&output.stderr));
         output.stdout.iter().copied().max().unwrap_or(0)

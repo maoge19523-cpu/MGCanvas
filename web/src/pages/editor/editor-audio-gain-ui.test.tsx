@@ -512,7 +512,9 @@ describe("剪辑台时间线：音轨的音量线与淡入淡出坡度画出来�
         const strip = block("const paintStrip");
         expect(strip).toContain("timeToPercent(");
         expect(strip).not.toMatch(/\s*\/\s*\(?\s*(audioSeconds|totalSeconds)\b/);
-        expect(strip).toContain("paintGain(start, track.volume)");
+        // 第三个参数是「此刻要按哪一段秒数画」（拖动中取未提交的裁剪区间）：拖两端裁剪时音量线
+        // 与折线必须跟着留下那一段走，所以这个实参不能被省略。
+        expect(strip).toContain("paintGain(start, track.volume, window)");
     });
 });
 

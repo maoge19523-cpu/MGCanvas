@@ -5,7 +5,8 @@ import { useTranslation } from "react-i18next";
 
 import { EDIT_GAIN_AREA_FILL_OPACITY, EDIT_VOLUME_MAX, EDIT_VOLUME_MIN, editAudioGainShape, editGainAreaText, editGainHeightPercent, editGainPointsText, editVolumeFromDrag, editVolumeLabel, editVolumeReadout, editVolumeSnap, editVolumeStep } from "@/lib/edit/audio-gain";
 import { editTrackAudibility, type EditTrackAudibility } from "@/lib/edit/audio-mix";
-import { editTrackDraggable, editTrackStartLimit, type EditSnapPoint, type EditSnapResult } from "@/lib/edit/timeline-edit";
+import { editAudioTrimEdge, editAudioTrimFields, editAudioTrimWindow, type EditAudioTrimEdge, type EditAudioTrimTarget, type EditAudioTrimWindow } from "@/lib/edit/audio-trim";
+import { EDIT_MIN_TRIM_SECONDS, editTrackDraggable, editTrackStartLimit, type EditSnapPoint, type EditSnapResult } from "@/lib/edit/timeline-edit";
 import { editWaveformBuckets, waveformColumns, waveformHasSignal, waveformStripSeconds, waveformY } from "@/lib/edit/waveform";
 import { formatEditTime } from "@/lib/edit/timeline";
 import { timeToPercent } from "@/lib/timeline-scale";
@@ -38,10 +39,17 @@ export type EditTrackDrag = {
     begin: (event: ReactPointerEvent<HTMLElement>) => void;
     /** 求落点：复用时间线的吸附（0 秒 / 播放头 / 片段边界 / 网格）并夹进 [0, 成片总长]。 */
     place: (event: ReactPointerEvent<HTMLElement>, rawSeconds: number) => EditSnapResult;
+    /**
+     * 拖两端裁剪时求落点：`filmSeconds` 是这条边在**成片时间轴上的绝对秒数**
+     * （素材内秒数 − 入点 + 起点），吸附候选点、吸附阈值、导引线都与片段拖动共用同一份。
+     */
+    placeTrim: (event: ReactPointerEvent<HTMLElement>, filmSeconds: number, target: EditAudioTrimTarget) => EditSnapResult;
     /** 显示 / 收起吸附导引线（与片段拖动共用同一条线）。 */
     guide: (point: EditSnapPoint | null) => void;
     /** 松手时才调用：提交一次起始时间（0 回缺省）。 */
     commit: (trackId: string, start: number) => void;
+    /** 松手时才调用：提交一次裁剪（回到缺省的那一侧写回 undefined）。 */
+    commitTrim: (trackId: string, patch: { sourceStart?: number; sourceEnd?: number }) => void;
     /** 锁定轨被拖动时的反馈。 */
     refuse: () => void;
 };
@@ -165,13 +173,22 @@ function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility, d
     // 时间线上的起点（秒）：缺省 / 0 都表示从 0 秒起混入，与改动前逐字一致。
     const trackStart = track.start !== undefined && track.start > 0 ? track.start : 0;
     const audioSeconds = (source?.durationMs || 0) / 1000;
-    const stripSeconds = waveformStripSeconds(audioSeconds, totalSeconds, track.loop, trackStart);
+    /**
+     * **裁剪区间**（这条轨在素材内取哪一段，见 lib/edit/audio-trim）：
+     * 缺省 = 整条素材（`start` 0、长度就是素材时长），与改动前逐字一致。
+     * 这里的 `trim.seconds` 是**留下的那一段**有多长，下面所有「这条轨能占多久」都按它算：
+     * 波形条宽、音量线、淡入淡出坡度、以及导出侧那对 atrim 读的都是同一个数。
+     */
+    const trim = editAudioTrimWindow(track, audioSeconds);
+    const stripSecondsFor = (startSeconds: number, window: EditAudioTrimWindow) => waveformStripSeconds(window.seconds, totalSeconds, track.loop, startSeconds);
+    const stripSeconds = stripSecondsFor(trackStart, trim);
 
     /**
-     * 音量线与淡入淡出坡度的几何：与同一行的波形条**同一段秒数**（起点 + 这条轨还能占的时长），
+     * 音量线与淡入淡出坡度的几何：与同一行的波形条**同一段秒数**（起点 + 裁剪后那段还能占的时长），
      * 全部由 lib/edit/audio-gain 的纯函数算出来（高度是分贝映射，横轴最后仍走 timeToPercent）。
+     * `trimmed` 只影响一件事：导出侧淡出的锚点（裁过之后导出按裁剪后内容的末尾起淡出）。
      */
-    const gain = editAudioGainShape(track, { start: trackStart, seconds: stripSeconds, total: totalSeconds });
+    const gain = editAudioGainShape(track, { start: trackStart, seconds: stripSeconds, total: totalSeconds, trimmed: trim.trimmed });
     // 首屏（React 渲染那一份）的折线与面积坐标：与拖动期间 paintGain 直写 DOM 的值来自同一个纯函数。
     const gainPoints = editGainPointsText(gain, totalSeconds);
     const gainArea = editGainAreaText(gain, totalSeconds);
@@ -189,10 +206,15 @@ function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility, d
         gain.fadeOutAnchor === "unheard" ? t("editor.trackFadeOutUnheardNote", { at: formatEditTime(gain.exportFadeOutStart), end: formatEditTime(gain.end) }) : null,
         gain.fadeOutAnchor === "shifted" ? t("editor.trackFadeOutShiftedNote", { at: formatEditTime(gain.exportFadeOutStart), start: formatEditTime(gain.end - gain.fadeOut) }) : null,
     ].filter(Boolean);
+    /**
+     * 拖两端裁剪的说明挂在**两端把手的提示**上（那是本次新加的元素）。
+     * 不动行本身那个 title：它的整段文字被 editor-audio-gain-ui 的回归测试逐字冻着
+     * （「原有元素一个字都没变、新元素只许追加在后面」那把锁），动它等于把旧锁拆掉。
+     */
+    const trimHint = [t("editor.trackTrimHint"), trim.trimmed ? t("editor.trackTrimmedNote", { start: formatEditTime(trim.start), length: formatEditTime(trim.seconds) }) : null].filter(Boolean).join(" · ");
 
     // 拖动音量线的过程量：只进 ref，一次都不写 store / setState（与左右拖动音轨同一套纪律）。
-    const volumeDragRef = useRef<{ y: number; volume: number; rowHeight: number; pending: number } | null>(null);
-    const volumeRef = useRef<HTMLDivElement | null>(null);
+    const volumeDragRef = useRef<{ y: number; volume: number; rowHeight: number; pending: number } | null>(null);    const volumeRef = useRef<HTMLDivElement | null>(null);
     const gainLineRef = useRef<SVGPolylineElement | null>(null);
     const gainAreaRef = useRef<SVGPolygonElement | null>(null);
     const readoutRef = useRef<HTMLSpanElement | null>(null);
@@ -200,12 +222,13 @@ function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility, d
     /**
      * 音量线与折线的画面：**只有这一个地方写**（拖动过程走它；React 那侧的内联样式由同一个纯函数给出，
      * 所以拖完松手后 React 渲染出来的值与拖动期间直写的值严格一致）。
-     * 左右拖动这条轨时也只写 DOM：起点一变，音量线的 left / width 与整条折线都跟着重算。
+     * 左右拖动这条轨、或拖两端裁剪时也只写 DOM：秒数一变，音量线的 left / width 与整条折线都跟着重算。
+     * `trim` 缺省取「拖动中的那一份，否则是已提交的那一份」，所以调用方不传也不会画错。
      */
-    const paintGain = (startSeconds: number, volume: number) => {
+    const paintGain = (startSeconds: number, volume: number, window: EditAudioTrimWindow = pendingTrimRef.current ?? trim) => {
         const start = Math.min(editTrackStartLimit(totalSeconds), Math.max(0, Number.isFinite(startSeconds) ? startSeconds : 0));
-        const seconds = waveformStripSeconds(audioSeconds, totalSeconds, track.loop, start);
-        const next = editAudioGainShape({ ...track, volume }, { start, seconds, total: totalSeconds });
+        const seconds = stripSecondsFor(start, window);
+        const next = editAudioGainShape({ ...track, volume }, { start, seconds, total: totalSeconds, trimmed: window.trimmed });
         const line = volumeRef.current;
         if (line) {
             line.style.left = `${timeToPercent(start, totalSeconds)}%`;
@@ -223,18 +246,24 @@ function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility, d
      * 换算仍走 lib/timeline-scale 的 timeToPercent（与标尺、播放头、片段条同一套），
      * 起点为 0 时**不写 left**（回落到 left-0 类名），旧项目的产物与改动前逐字一致。
      */
-    const paintStrip = (startSeconds: number) => {
+    const paintStrip = (startSeconds: number, window: EditAudioTrimWindow = pendingTrimRef.current ?? trim) => {
         const element = stripRef.current;
         if (!element) return;
         const start = Math.min(editTrackStartLimit(totalSeconds), Math.max(0, Number.isFinite(startSeconds) ? startSeconds : 0));
         if (start > 0) element.style.left = `${timeToPercent(start, totalSeconds)}%`;
         else element.style.removeProperty("left");
-        element.style.width = `${timeToPercent(waveformStripSeconds(audioSeconds, totalSeconds, track.loop, start), totalSeconds)}%`;
-        // 条长变了，画布上的波形也要按新的秒数重画（ResizeObserver 回调里用的仍是同一个 drawRef）。
+        element.style.width = `${timeToPercent(stripSecondsFor(start, window), totalSeconds)}%`;
+        // 条长变了，画布上的波形也要按新的秒数重画（条宽变化由 ResizeObserver 兜住）。
         // 这里只写 ref：拖动期间一次状态写入都没有。
+        const previous = pendingTrimRef.current;
         pendingStartRef.current = start;
+        // 裁掉的区间同样只进 ref：draw 读它来画「留下的那一段」的波形（一次状态写入都没有）。
+        pendingTrimRef.current = window;
+        // 取用区间变了就显式重画一次：条宽的变化会被 ResizeObserver 兜住，但**窗口变化不一定改条宽**
+        // （例如裁掉的开头落在成片之外时，条宽仍被成片尽头夹住），不重画就会停在旧区间的波形上。
+        if (previous === null || previous.start !== window.start || previous.end !== window.end) draw();
         // 音量线与折线横跨的就是这同一段秒数：起点一变，它们跟着一起改（同样只写 DOM）。
-        paintGain(start, track.volume);
+        paintGain(start, track.volume, window);
     };
 
     const draw = () => {
@@ -245,10 +274,13 @@ function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility, d
         if (!context) return;
         context.clearRect(0, 0, width, height);
         const waveform = waveformRef.current;
-        // 拖动中（还没松手）用 ref 里的未提交起点重算条长，否则条被裁短的那一刻画布会先用旧秒数画一帧。
-        const seconds = pendingStartRef.current === null ? stripSeconds : waveformStripSeconds(audioSeconds, totalSeconds, track.loop, pendingStartRef.current);
+        // 拖动中（还没松手）用 ref 里的未提交起点 / 未提交裁剪区间重算，否则条被裁短的那一刻
+        // 画布会先用旧秒数画一帧（拖两端裁剪时波形也要跟着换成留下的那一段）。
+        const window = pendingTrimRef.current ?? trim;
+        const seconds = stripSecondsFor(pendingStartRef.current ?? trackStart, window);
         // 一列画布像素 = 一列波形极值；数据为空（还没算出来 / 素材没有音频流）时全是 0，只剩中位线。
-        const columns = waveformColumns(waveform?.peaks ?? EMPTY_PEAKS, waveform?.troughs ?? EMPTY_PEAKS, width, seconds, audioSeconds, track.loop);
+        // 取峰值的窗口就是裁剪后的那一段：波形只画留下的部分（loop 时按这一段回卷）。
+        const columns = waveformColumns(waveform?.peaks ?? EMPTY_PEAKS, waveform?.troughs ?? EMPTY_PEAKS, width, seconds, audioSeconds, track.loop, { start: window.start, length: window.seconds });
         context.fillStyle = token.colorFill;
         context.fillRect(0, Math.round(height / 2), width, 1);
         context.fillStyle = token.colorPrimary;
@@ -314,10 +346,11 @@ function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility, d
     }, [source?.id, source?.storageKey, source?.url, source?.localPath, source?.durationMs, buckets]);
 
     // 数据或尺寸变化后重绘（状态与档位就是这两件事的签名，颜色变化也重绘一次以跟上主题）。
+    // 裁剪区间（入点 / 长度）也必须进签名：裁得前后一样长时波形显示的是**另一段**内容。
     useEffect(() => {
         draw();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [track.loop, status, buckets, stripSeconds, token.colorPrimary, token.colorFill]);
+    }, [track.loop, status, buckets, stripSeconds, trim.start, trim.seconds, token.colorPrimary, token.colorFill]);
 
     const hint = !source ? t("editor.mediaRemoved") : !source.durationMs ? t("editor.noDurationInline") : status === "pending" ? t("editor.waveformPending") : status === "failed" ? t("editor.waveformFailed") : null;
     // 每个开关都是「点一下切状态」的低频交互，直接提交一次 store —— 拖动路径里一次都不写（见文件顶部说明）。
@@ -333,6 +366,9 @@ function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility, d
     // 拖动期间「还没提交的起点」：只由 paintStrip 写、由 draw 读（都是 ref，不产生状态写入）。
     // 松手提交后置回 null，之后画布与条宽都只认 props 里那个已经提交的值。
     const pendingStartRef = useRef<number | null>(null);
+    // 拖动期间「还没提交的裁剪区间」（拖两端裁剪时写）：与 pendingStartRef 同一套纪律，
+    // paintStrip 写、draw 与 paintGain 读，一次状态写入都没有。
+    const pendingTrimRef = useRef<EditAudioTrimWindow | null>(null);
 
     const startDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
         // 轨道头（静音 / 独奏 / 锁定）压在行上：点它是在按开关，不是在拖轨。
@@ -366,9 +402,85 @@ function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility, d
         if (!state) return;
         // 先把 DOM 钉在要提交的那个值上（拖动期间是自己写的像素，React 的 style 差分未必覆盖），再提交一次；
         // 提交后清掉「未提交起点」，之后条宽与画布都只认 props 里那个已经提交的值。
-        paintStrip(state.pending);
+        paintStrip(state.pending, pendingTrimRef.current ?? trim);
         pendingStartRef.current = null;
+        pendingTrimRef.current = null;
         drag.commit(track.id, state.pending);
+    };
+
+    /**
+     * **拖两端裁剪**：拖左端改素材内的**入点**（开头被砍掉），拖右端改**出点**（结尾被砍掉）。
+     * 与视频片段拖两端、字幕块拖两端同一套手感：命中带 6px（两端各一条）、光标 ew-resize、
+     * 悬停有一片淡底、锁定轨一点就给出同一句反馈、键盘左右箭头每次一步。
+     *
+     * 三处语义（与片段裁剪逐字同形，别再各写一套）：
+     * - **`start`（这条轨在成片里的起点）不动**：裁左端不是把整条轨往右挪，而是让内容改从素材的更后面开始，
+     *   于是整条轨变短、右端在成片上提前结束——这条轨仍从原来那一刻混进成片；
+     * - 两条边之间至少留 EDIT_MIN_TRIM_SECONDS（与片段裁剪同一个值），出点不越过素材全长；
+     * - 拖动过程**只写 ref 与 DOM**（条宽 + 波形 + 音量线 + 折线），松手才提交一次（React #185 的纪律）。
+     */
+    const trimDragRef = useRef<{ edge: EditAudioTrimEdge; x: number; perPixel: number; trim: EditAudioTrimWindow; pending: EditAudioTrimWindow } | null>(null);
+
+    const startTrimDrag = (event: ReactPointerEvent<HTMLSpanElement>, edge: EditAudioTrimEdge) => {
+        // 这一下是在裁两端，不是在拖整行改起点、也不是在调音量：不让事件冒泡到行上。
+        event.stopPropagation();
+        // 锁定的轨连 trimDragRef 都不建：拖动过程一次都不会发生，并给出同一句可理解的反馈（不静默失效）。
+        if (!editTrackDraggable(track)) {
+            drag.refuse();
+            return;
+        }
+        // 秒 / 像素用「成片总秒数 ÷ 行宽」：行宽就是标尺、片段条、波形条共用的那个可定位宽度，
+        // 而且素材内的秒数与成片时间轴上的秒数是 1:1 平移（裁掉开头不改变这个比例），所以同一把尺子通用。
+        const row = (event.currentTarget as HTMLElement).closest<HTMLElement>("[data-edit-track-row]");
+        const width = row?.getBoundingClientRect().width ?? 0;
+        trimDragRef.current = { edge, x: event.clientX, perPixel: width > 0 && totalSeconds > 0 ? totalSeconds / width : 0.05, trim, pending: trim };
+        // 抓住指针：拖出这一行（甚至拖出窗口）都不会中途丢事件，松手一定提交。
+        event.currentTarget.setPointerCapture(event.pointerId);
+    };
+
+    const moveTrimDrag = (event: ReactPointerEvent<HTMLSpanElement>) => {
+        const state = trimDragRef.current;
+        if (!state) return;
+        event.stopPropagation();
+        // 被拖的那条边现在的素材内秒数（出点缺省 0 = 素材末尾，拖动时按素材末尾起算）。
+        const from = state.edge === "start" ? state.trim.start : state.trim.end > 0 ? state.trim.end : audioSeconds;
+        const target = from + (event.clientX - state.x) * state.perPixel;
+        // 吸附：落点是这条边在**成片时间轴上的绝对秒数**（起点 + (素材内秒数 − 入点)），交给时间线那一套
+        // 候选点（0 秒 / 播放头 / 片段边界 / 网格）吸附，再换回素材内秒数并夹进合法区间（见 lib/edit/audio-trim）。
+        const placed = drag.placeTrim(event, trackStart + (target - state.trim.start), { edge: state.edge, window: state.trim, startSeconds: trackStart, sourceSeconds: audioSeconds });
+        const next = editAudioTrimWindow({ sourceStart: state.edge === "start" ? placed.seconds : state.trim.start, sourceEnd: state.edge === "end" ? placed.seconds : state.trim.end }, audioSeconds);
+        state.pending = next;
+        // 起点照旧（裁两端不动 start），只把「留下的那一段」重画一遍：条宽、波形、音量线、折线一起改。
+        paintStrip(trackStart, next);
+        drag.guide(placed.point ?? null);
+    };
+
+    const endTrimDrag = (event: ReactPointerEvent<HTMLSpanElement>) => {
+        const state = trimDragRef.current;
+        trimDragRef.current = null;
+        if (!state) return;
+        event.stopPropagation();
+        drag.guide(null);
+        // 先把 DOM 钉在要提交的那个值上，再提交一次；值没变就不写 store（不产生一条空的撤销记录）。
+        paintStrip(trackStart, state.pending);
+        pendingStartRef.current = null;
+        pendingTrimRef.current = null;
+        if (state.pending.start !== trim.start || state.pending.end !== trim.end) drag.commitTrim(track.id, editAudioTrimFields(state.pending));
+    };
+
+    /**
+     * 键盘可达：两端把手各自是 role="slider" 的可聚焦元素，← → 每次移动一步（0.1 秒，与片段裁剪的最小长度同值）。
+     * 左右箭头是时间线的快捷键（移动播放头），所以这里必须 preventDefault + stopPropagation：
+     * 焦点在这个把手上时，按键改的是这条边的裁剪，而不是把播放头挪走。
+     */
+    const onTrimKeyDown = (event: ReactKeyboardEvent<HTMLSpanElement>, edge: EditAudioTrimEdge) => {
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+        event.preventDefault();
+        event.stopPropagation();
+        const from = edge === "start" ? trim.start : trim.end > 0 ? trim.end : audioSeconds;
+        const moved = editAudioTrimEdge(trim, edge, from + (event.key === "ArrowRight" ? EDIT_MIN_TRIM_SECONDS : -EDIT_MIN_TRIM_SECONDS), audioSeconds);
+        const next = editAudioTrimWindow({ sourceStart: edge === "start" ? moved.start : trim.start, sourceEnd: edge === "end" ? moved.end : trim.end }, audioSeconds);
+        if (next.start !== trim.start || next.end !== trim.end) updateAudioTrack(projectId, track.id, editAudioTrimFields(next));
     };
 
     /**
@@ -622,6 +734,51 @@ function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility, d
                     </span>
                 </span>
             ) : null}
+
+            {/*
+              两端裁剪把手：**绝对定位的覆盖层**（与片段条两端的把手、接缝标记同一类），
+              固定 6px 宽、不参与任何宽度分配，所以标尺 / 播放头 / 片段条 / 波形条的百分比一个都没动。
+              位置由 timeToPercent 给出（与波形条的两条边严格同一套换算）：
+              左端 = 起点，右端 = 起点 + 裁剪后那段能占的秒数（也就是波形条的右边缘）。
+              命中带压在音量线（z-[3]）与波形之上：它贴在两端的 6px 里，中间整片仍然是整行拖动的地盘，
+              所以「拖整行改起点」与「拖两端裁剪」不会互相抢那一下。
+              把手本身不改 start：拖左端裁掉的是素材的开头（内容往后挪），这条轨仍从同一时刻混进成片。
+            */}
+            {gainVisible
+                ? (
+                      [
+                          { edge: "start" as const, at: trackStart, hint: t("editor.trimStart"), cursor: "cursor-ew-resize" },
+                          { edge: "end" as const, at: trackStart + stripSeconds, hint: t("editor.trimEnd"), cursor: "cursor-ew-resize" },
+                      ] as const
+                  ).map((handle) => (
+                      <span
+                          key={handle.edge}
+                          data-edit-track-trim-start={handle.edge === "start" ? track.id : undefined}
+                          data-edit-track-trim-end={handle.edge === "end" ? track.id : undefined}
+                          // 键盘可达：可聚焦的水平滑块，← → 每次移动一步（0.1 秒）。锁定时不给滑块语义、不进 Tab 序列。
+                          role={track.locked ? undefined : "slider"}
+                          tabIndex={track.locked ? -1 : 0}
+                          aria-orientation="horizontal"
+                          aria-label={handle.hint}
+                          aria-valuemin={0}
+                          aria-valuemax={Math.round(audioSeconds * 10) / 10}
+                          aria-valuenow={Math.round((handle.edge === "start" ? trim.start : trim.end > 0 ? trim.end : audioSeconds) * 10) / 10}
+                          aria-valuetext={formatEditTime(handle.edge === "start" ? trim.start : trim.end > 0 ? trim.end : audioSeconds)}
+                          aria-disabled={track.locked ? true : undefined}
+                          // 与片段条两端逐字同一套外观：6px 命中带、悬停才显出一层淡底，光标先说清能左右拖。
+                          // 提示里带上「这一拖会改什么」与裁剪现状（行本身的 title 一个字都没动，见上面的 trimHint）。
+                          title={track.locked ? t("editor.trackLockHint") : `${handle.hint} · ${trimHint}`}
+                          className={`absolute inset-y-0 z-[4] w-1.5 touch-none ${track.locked ? "cursor-not-allowed" : handle.cursor} hover:bg-black/10 dark:hover:bg-white/15`}
+                          // 右端贴着波形条的右边缘往内收 6px（与片段条的右把手同一取舍），不越过那条边。
+                          style={{ left: `calc(${timeToPercent(handle.at, totalSeconds)}% ${handle.edge === "start" ? "+ 2px" : "- 8px"})` }}
+                          onPointerDown={(event) => startTrimDrag(event, handle.edge)}
+                          onPointerMove={moveTrimDrag}
+                          onPointerUp={endTrimDrag}
+                          onPointerCancel={endTrimDrag}
+                          onKeyDown={(event) => onTrimKeyDown(event, handle.edge)}
+                      />
+                  ))
+                : null}
         </div>
     );
 }

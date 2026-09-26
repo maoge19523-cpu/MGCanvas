@@ -15,9 +15,12 @@ import type { EditAudioTrack } from "@/types/edit";
  * 上下各拖同样多的像素，听感上的变化也一样大，与 DAW 的推子刻度是同一个直觉。
  *
  * 导出侧的真实参数（web/src-tauri/src/ffmpeg_compose.rs 的 track_chain）：
- * `volume` 夹进 [0,4] → `afade=t=in:st=0:d=fadeIn`（本地 0 秒 = 成片里的起点）→
- * `afade=t=out:st=(span − fadeOut):d=fadeOut`，其中 span 是起点之后剩下的时长、`fadeIn`/`fadeOut`
- * 分别夹进 [0,5] / [0,10]。这里的夹取范围与它们逐字一致，画出来的坡度就是导出真正会做的那一段。
+ * 裁剪（只在裁过时才出现：`atrim=start=入点[:end=出点]` + `asetpts`，循环轨再跟一个 `aloop`）→
+ * `aformat` → `volume` 夹进 [0,4] → `atrim=end=成片总长` → `asetpts` →
+ * `afade=t=in:st=0:d=fadeIn`（本地 0 秒 = 成片里的起点）→
+ * `afade=t=out:st=(内容长度 − fadeOut):d=fadeOut`，其中「内容长度」是这条轨在本地时间轴上
+ * 真正有声音的那一段（裁剪后就只剩留下的那一段），`fadeIn`/`fadeOut` 分别夹进 [0,5] / [0,10]。
+ * 这里的夹取范围与它们逐字一致，画出来的坡度就是导出真正会做的那一段。
  */
 
 /** 音量取值域与步长：与属性区那条 InputNumber（min 0 / max 400 / step 5）逐字一致。 */
@@ -153,7 +156,19 @@ export function editVolumeReadout(volume: number): string {
 export type EditAudioGainPoint = { seconds: number; gain: number };
 
 /** 音轨在时间线上的几何：起点、能占的秒数（见 waveformStripSeconds）、成片总秒数。 */
-export type EditAudioGainGeometry = { start: number; seconds: number; total: number };
+export type EditAudioGainGeometry = {
+    start: number;
+    seconds: number;
+    total: number;
+    /**
+     * 这条轨在素材内**裁过**（sourceStart / sourceEnd 生效，见 lib/edit/audio-trim）。
+     * 它只影响一处：导出侧的淡出锚点。没有裁剪时导出按「成片末尾 − fadeOut」起淡出（旧口径，逐字不变）；
+     * 裁过之后导出读的是**裁剪后那一段内容的末尾**（Rust 侧 track_fade_out_start 收到的是内容长度），
+     * 所以这里也跟着改成内容末尾，否则「裁短了却仍报 unheard」会是一句假话。
+     * 缺省（undefined）= 没裁过，与改动前逐字一致。
+     */
+    trimmed?: boolean;
+};
 
 /**
  * 画出的淡出坡度与导出锚点的关系：
@@ -213,7 +228,9 @@ export function editAudioGainShape(track: Pick<EditAudioTrack, "volume" | "fadeI
     const fadeIn = Math.min(rawIn, seconds);
     const fadeOut = Math.min(rawOut, seconds);
     // 导出锚点：span − fade_out 再延迟 delay，绝对位置就是「成片末尾 − fadeOut」。
-    const exportFadeOutStart = Math.max(0, total - rawOut);
+    // 裁过之后导出读的是裁剪后那一段内容的末尾（见 geometry.trimmed 的说明），锚点随之落在 end 之前 fadeOut 处；
+    // 起点在成片里不动（`start` 不变），所以锚点绝不早于 start。
+    const exportFadeOutStart = geometry.trimmed === true ? Math.max(start, end - rawOut) : Math.max(0, total - rawOut);
 
     const rampIn = (at: number) => (fadeIn > 0 ? clamp((at - start) / fadeIn, 0, 1) : 1);
     const rampOut = (at: number) => (fadeOut > 0 ? clamp(1 - (at - (end - fadeOut)) / fadeOut, 0, 1) : 1);

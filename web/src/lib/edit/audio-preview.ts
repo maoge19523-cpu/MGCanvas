@@ -1,5 +1,6 @@
 import { EDIT_FADE_IN_MAX, EDIT_FADE_OUT_MAX, EDIT_VOLUME_MAX } from "./audio-gain";
 import { resolveAudibleTracks } from "./audio-mix";
+import { editAudioTrimWindow } from "./audio-trim";
 import type { EditAudioTrack, EditMedia } from "@/types/edit";
 
 /**
@@ -8,16 +9,18 @@ import type { EditAudioTrack, EditMedia } from "@/types/edit";
  * pages/editor/components/edit-stage.tsx 的播放心跳里。
  *
  * 口径来源是**导出侧** web/src-tauri/src/ffmpeg_compose.rs 的 track_chain，逐项对应：
- * `[i:a]aformat=…,volume=V,atrim=end=total,asetpts=PTS-STARTPTS,afade=t=in:st=0:d=fi,
- *  afade=t=out:st=(span − fo):d=fo,adelay=start`
+ * `[i:a]atrim=start=入点[:end=出点],asetpts[,aloop=loop=-1:size=N],aformat=…,volume=V,
+ *  atrim=end=total,asetpts=PTS-STARTPTS,afade=t=in:st=0:d=fi,afade=t=out:st=(内容长度 − fo):d=fo,adelay=start`
+ * （裁剪那两步**只在真的裁过时**才出现，`aloop` 只在「裁过 + 循环」时才出现）
  * - `V` 夹进 [0,4]、`fi` 夹进 [0,5]、`fo` 夹进 [0,10]（与属性区、与 lib/edit/audio-gain 的取值域同一口径）；
  * - `afade=t=in` 的 `st=0` 是**延迟之前的本地时间轴**，配上 `adelay=start` 就是「淡入自音轨起点起算」；
- * - `afade=t=out` 的 `st=span − fadeOut` 换算到成片时间轴就是 `start + span − fadeOut = total − fadeOut`
- *   （span 是起点之后剩下的时长），也就是**淡出收在成片末尾**，不是收在音频内容末尾
- *   （音轨比成片短时可视化里的 fadeOutAnchor 会标出这处差异）；
- * - `span − fadeOut` 为负时导出取 0，绝对位置退化成 `start`，这里逐字照搬 `Math.max(0, …)`；
- * - `atrim=end=total` + amix 的 `duration=first`：音轨超过成片总长的部分在成片里根本不存在，
- *   所以本地时间超过 span 之后一律不出声（预览同样按成片总长截断）。
+ * - `afade=t=out` 的 `st=内容长度 − fadeOut` 换算到成片时间轴就是 `start + 内容长度 − fadeOut`，
+ *   其中内容长度是**裁剪后**这一段（起点之后剩下的时长也一并夹进去），也就是淡出收在这条轨
+ *   真正有声音的内容末尾——音轨比成片短、或两头被裁短时，它都不是成片末尾
+ *   （可视化里的 fadeOutAnchor 会标出这处差异）；
+ * - `内容长度 − fadeOut` 为负时导出取 0，绝对位置退化成 `start`，这里逐字照搬 `Math.max(0, …)`；
+ * - 裁剪后的 `atrim` + amix 的 `duration=first`：留下的那一段放完就没有了（循环轨由 `aloop` 续上），
+ *   所以本地时间超过裁剪后的内容长度之后一律不出声（预览同样按它截断）。
  *
  * 「哪条轨真的出声」**不在这里判**：本模块只读 lib/edit/audio-mix 的 resolveAudibleTracks
  * （导出请求构造与轨道头显示读的也是它），不另造第二套静音 / 独奏规则。
@@ -42,6 +45,10 @@ export type EditAudioPreviewTrack = {
     loop: boolean;
     /** 素材自身时长（秒），0 = 没探测到。 */
     sourceSeconds: number;
+    /** 素材内的入点（秒，缺省 0）；裁剪后这条轨从素材的更后面开始取。 */
+    sourceStart: number;
+    /** 素材内的出点（秒，0 / 缺省 = 到素材末尾，与 EditClip.end 同一口径）。 */
+    sourceEnd: number;
 };
 
 /**
@@ -110,6 +117,7 @@ export function editAudioPreviewPlan(tracks: EditAudioTrack[], media: EditMedia[
             continue;
         }
         const start = clamp(track.start ?? 0, 0, total);
+        const trim = editAudioTrimWindow(track, (source.durationMs || 0) / 1000);
         list.push({
             id: track.id,
             mediaId: track.mediaId,
@@ -123,6 +131,9 @@ export function editAudioPreviewPlan(tracks: EditAudioTrack[], media: EditMedia[
             span: Math.max(0, total - start),
             loop: track.loop === true,
             sourceSeconds: (source.durationMs || 0) / 1000,
+            // 裁剪区间同样按素材登记时长换算：预览与时间线画的是同一段，导出侧读的也是这两个字段。
+            sourceStart: trim.start,
+            sourceEnd: trim.end,
         });
     }
     return { tracks: list, unavailable, gaps };
@@ -147,8 +158,29 @@ export function editAudioPreviewGain(track: EditAudioPreviewTrack, seconds: numb
     return track.volume * rampIn * rampOut;
 }
 
-/** 此刻这条轨该处于素材内的哪个位置（秒）、以多大增益出声。 */
-export type EditAudioPreviewState = { offsetSeconds: number; gain: number };
+/**
+ * 这条轨在素材内**真正能取用的内容长度**（秒）：出点减入点；出点缺省时按传入的素材时长算。
+ * 0 = 时长未知（拿不到素材时长，也没有出点）。
+ *
+ * 它就是导出侧 `atrim` 之后剩下的那一段（裁剪）——预览的出声区间、循环体长度、
+ * 淡出锚点（见 lib/edit/audio-gain 的 geometry.trimmed）读的都是它。
+ * `sourceSeconds` 传元素自己报的时长更准（解码出来的 duration 比登记时的 durationMs 可靠）。
+ */
+export function editAudioPreviewContent(track: EditAudioPreviewTrack, sourceSeconds: number): number {
+    const duration = Number.isFinite(sourceSeconds) && sourceSeconds > 0 ? sourceSeconds : 0;
+    const end = track.sourceEnd > 0 ? track.sourceEnd : duration;
+    const content = end - track.sourceStart;
+    return Number.isFinite(content) && content > 0 ? content : 0;
+}
+
+/** 此刻这条轨该处于素材内的哪个位置（秒）、以多大增益出声、循环体有多长。 */
+export type EditAudioPreviewState = {
+    /** 该赋给 <audio>.currentTime 的**素材内**位置（秒）。 */
+    offsetSeconds: number;
+    gain: number;
+    /** 循环体长度（秒）= 裁剪后的内容长度；漂移判定按它取模，0 = 时长未知（不取模）。 */
+    cycleSeconds: number;
+};
 
 /**
  * 播放到成片时刻 seconds 时这条轨的状态；`null` = 此刻它不该出声，调用方应把它停住。
@@ -157,14 +189,21 @@ export type EditAudioPreviewState = { offsetSeconds: number; gain: number };
  *
  * `sourceSeconds` 可以传**元素自己报的时长**：loop 的轨要按素材真实长度回卷，
  * 元素解码出来的 duration 比登记时的 durationMs 更准。
+ *
+ * 裁剪后「素材已经放完」的时刻是**裁剪区间的末尾**（出点）而不是素材末尾——导出侧 atrim 之后
+ * 那一段就结束了，后面即使在素材里还有内容也不会进成片。
  */
 export function editAudioPreviewState(track: EditAudioPreviewTrack, seconds: number, sourceSeconds = track.sourceSeconds): EditAudioPreviewState | null {
     const local = seconds - track.start;
     if (!(local >= 0) || local >= track.span) return null;
-    const duration = Number.isFinite(sourceSeconds) && sourceSeconds > 0 ? sourceSeconds : 0;
-    if (!track.loop && duration > 0 && local >= duration) return null;
-    // loop 对应导出的 -stream_loop -1：素材从头再来，所以素材内的位置就是本地时间对素材时长取模。
-    return { offsetSeconds: track.loop && duration > 0 ? local % duration : local, gain: editAudioPreviewGain(track, seconds) };
+    const content = editAudioPreviewContent(track, sourceSeconds);
+    // 非循环：留下的那一段放完就没了（导出那边此时是静音，一直等到成片结束）。
+    if (!track.loop && content > 0 && local >= content) return null;
+    // loop 对应导出的循环（-stream_loop -1 / 裁剪后的 aloop）：循环体是**裁剪后的那一段**，
+    // 所以素材内的位置 = 入点 + 本地时间对内容长度取模（按整条素材取模会把裁掉的部分放回来）。
+    const cycleSeconds = content > 0 ? content : 0;
+    const offsetSeconds = track.loop && cycleSeconds > 0 ? track.sourceStart + (local % cycleSeconds) : track.sourceStart + local;
+    return { offsetSeconds, gain: editAudioPreviewGain(track, seconds), cycleSeconds };
 }
 
 /**
@@ -197,7 +236,10 @@ export function editAudioPreviewSilence(track: EditAudioPreviewTrack, seconds: n
  * 与视频共用同一套判定（editDriftSeconds 的差值 + editDriftAction + editDriftCooldownReady），
  * 唯一的补充是 loop：主时钟刚刚回卷到 0.1s 而元素还在 19.9s 时，两者其实在**同一个位置**，
  * 直接用差值会算成 −19.8s 而白白 seek 一次（听感上就是接缝处断一下）。
- * 所以先取「与元素当前位置最近的那个循环等价点」，把差值收敛到 ±素材时长/2 以内。
+ * 所以先取「与元素当前位置最近的那个循环等价点」，把差值收敛到 ±循环体长度/2 以内。
+ *
+ * `durationSeconds` 传的是**循环体长度**（裁剪后就是留下的那一段，见 EditAudioPreviewState.cycleSeconds）：
+ * 按整条素材取模时，元素已经播到被裁掉的那一段里也会被判成「位置正确」，从此不再纠正。
  */
 export function editAudioDriftSeconds(desired: number, current: number, durationSeconds: number, loop: boolean): number {
     if (!loop || !(durationSeconds > 0)) return desired - current;

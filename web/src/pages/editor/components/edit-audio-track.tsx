@@ -3,7 +3,7 @@ import { HeadphoneOff, Headphones, Lock, LockOpen, Plus, Volume2, VolumeX } from
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { EDIT_VOLUME_MAX, EDIT_VOLUME_MIN, editAudioGainShape, editGainAreaText, editGainHeightPercent, editGainPointsText, editVolumeFromDrag, editVolumeLabel, editVolumeReadout, editVolumeSnap, editVolumeStep } from "@/lib/edit/audio-gain";
+import { EDIT_GAIN_AREA_FILL_OPACITY, EDIT_VOLUME_MAX, EDIT_VOLUME_MIN, editAudioGainShape, editGainAreaText, editGainHeightPercent, editGainPointsText, editVolumeFromDrag, editVolumeLabel, editVolumeReadout, editVolumeSnap, editVolumeStep } from "@/lib/edit/audio-gain";
 import { editTrackAudibility, type EditTrackAudibility } from "@/lib/edit/audio-mix";
 import { editTrackDraggable, editTrackStartLimit, type EditSnapPoint, type EditSnapResult } from "@/lib/edit/timeline-edit";
 import { editWaveformBuckets, waveformColumns, waveformHasSignal, waveformStripSeconds, waveformY } from "@/lib/edit/waveform";
@@ -552,8 +552,12 @@ function AudioTrackStrip({ projectId, track, source, totalSeconds, audibility, d
                     // 这个层就会盖住它下面的行。把它约束在行盒里，从根上避免这两件事。
                     style={{ width: "100%", height: "100%" }}
                 >
-                    {/* 折线下方那块面积：把「被淡变压下去多少」也画出来，光一条线看不出削掉了多少。 */}
-                    <polygon ref={gainAreaRef} data-edit-track-gain-area={track.id} points={gainArea} style={{ fill: token.colorPrimaryBg }} />
+                    {/* 折线下方那块面积：把「被淡变压下去多少」也画出来，光一条线看不出削掉了多少。
+                        填充**只能是与波形条同一个 token（colorPrimary）+ fillOpacity 的低透明度**：这块曾经用
+                        colorPrimaryBg，而它在当前主题下是实心的中灰（浅色 #575757 / 深色 #595959），
+                        整行波形被一块 70.5% 行高的灰板压死（用户报的「颜色太重、把波形遮盖完了」）。
+                        同色叠加 = 波形色本身，所以低透明度的填充挡不住波形；详见 EDIT_GAIN_AREA_FILL_OPACITY。 */}
+                    <polygon ref={gainAreaRef} data-edit-track-gain-area={track.id} points={gainArea} fillOpacity={EDIT_GAIN_AREA_FILL_OPACITY} style={{ fill: token.colorPrimary }} />
                     {/* 折线 = 音量 × 淡入系数 × 淡出系数：淡入 / 淡出为 0 时它就是一条与音量线等高的平线，
                         不会画出零宽的坡度；两条坡度重叠时这里是相乘后的曲线（导出就是两条 afade 串起来）。
                         被排除的音轨画成虚线并与波形条一起变淡：静音的轨不该看起来和正常一样。 */}

@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
-import { App } from "antd";
+import { App, ConfigProvider, theme as antdTheme } from "antd";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
@@ -20,6 +20,8 @@ vi.hoisted(() => {
     });
 });
 
+import { getAntThemeConfig } from "@/lib/app-theme";
+import { EDIT_GAIN_AREA_FILL_OPACITY } from "@/lib/edit/audio-gain";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useEditStore } from "@/stores/use-edit-store";
 import { EDIT_DEFAULT_OUTPUT, type EditAudioTrack, type EditProject } from "@/types/edit";
@@ -92,6 +94,32 @@ function render(project: EditProject, name: string) {
     );
 }
 
+/**
+ * 带**应用真实主题**（lib/app-theme 的 getAntThemeConfig）的渲染：浅色 / 深色各来一份。
+ * 默认那份 render 走的是 antd 的缺省主题（colorPrimary 是蓝色 #1677ff），而应用把主色改成了中性色
+ * （浅色 #171717 / 深色 #d8d8d8）——「颜色太重盖住波形」那次事故**只在真实主题下才看得出来**：
+ * colorPrimaryBg 在中性主色下派生出来的是 #575757 / #595959 这种实心中灰，而不是缺省主题下的浅蓝 #e6f4ff。
+ * 所以凡是与「叠加层的颜色 / 不透明度」有关的断言，都必须在这两套真实主题下各跑一遍。
+ */
+function renderThemed(project: EditProject, name: string, dark: boolean) {
+    useEditStore.setState({ hydrated: true, projects: [project], history: {} });
+    useAssetStore.setState({ assets: [], hydrated: true });
+    return dump(
+        name,
+        renderToStaticMarkup(
+            <ConfigProvider theme={getAntThemeConfig(dark)}>
+                <App>
+                    <MemoryRouter initialEntries={[`/editor/${project.id}`]}>
+                        <Routes>
+                            <Route path="/editor/:id" element={<EditProjectPage />} />
+                        </Routes>
+                    </MemoryRouter>
+                </App>
+            </ConfigProvider>,
+        ),
+    );
+}
+
 /** 截出某个标记所在的那个 <div> 子树（含它自己的闭合标签）：产物读回都用它，不靠正则碰运气。 */
 function divSlice(markup: string, marker: string) {
     const at = markup.indexOf(marker);
@@ -143,6 +171,42 @@ function readTicks(markup: string) {
 
 function readSubtitles(markup: string) {
     return [...markup.matchAll(/data-edit-subtitle-block="[^"]+"[^>]*style="([^"]*)"/g)].map((match) => match[1]);
+}
+
+/** 元素类名里的 z-index（`z-[2]` 与 `z-10` 两种写法都认）；没写 z-index 记 0（auto，等于「按 DOM 顺序画」）。 */
+function zIndexOf(tag: string) {
+    const match = tag.match(/z-(?:\[(\d+)\]|(\d+))(?![\w-])/);
+    return match ? Number(match[1] ?? match[2]) : 0;
+}
+
+/** #rrggbb → 三个 0..255 的通道。 */
+function channels(hex: string) {
+    const value = hex.replace("#", "");
+    const full = value.length === 3 ? [...value].map((item) => item + item).join("") : value;
+    return [0, 2, 4].map((at) => parseInt(full.slice(at, at + 2), 16));
+}
+
+/** 分层合成：上层色按其不透明度叠在底层色上（sRGB 直算，够用于「谁盖住谁」的量化）。 */
+function over(top: string, alpha: number, bottom: string) {
+    const front = channels(top);
+    const back = channels(bottom);
+    const mixed = front.map((value, index) => Math.round(value * alpha + back[index]! * (1 - alpha)));
+    return `#${mixed.map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** WCAG 2.x 相对亮度（0 = 黑、1 = 白）。 */
+function luminance(hex: string) {
+    const [red, green, blue] = channels(hex).map((value) => {
+        const channel = value / 255;
+        return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!;
+}
+
+/** WCAG 对比度（1 ~ 21）；1.4.11 要求「非文本的图形」对底色至少 3:1。 */
+function contrast(left: string, right: string) {
+    const [high, low] = [luminance(left), luminance(right)].sort((a, b) => b - a);
+    return (high! + 0.05) / (low! + 0.05);
 }
 
 describe("剪辑台时间线：音轨的音量线与淡入淡出坡度画出来了", () => {
@@ -535,5 +599,172 @@ describe("剪辑台时间线：音量线与淡入淡出没有动过别的元素�
         expect(svg).toContain("pointer-events-none");
         // 时间轴的纵向滚动仍然只有共享的那一个容器（音轨行没有自己再套一个）。
         expect(markup.match(/data-edit-timeline-scroll/g)).toHaveLength(1);
+    });
+});
+
+/**
+ * 用户报告：「音轨的调整声音的颜色太重了 把波形都遮盖完了」——截图里音轨行是一整块不通透的灰矩形，
+ * 波形完全看不见，行右端还写着「🔊 100% · 0.0 dB」。
+ *
+ * 根因（实测的产物，不是推测）：折线下方那块**面积填充**用的是 antd 的 `colorPrimaryBg`，而本应用把
+ * `colorPrimary` 设成了中性色（浅色 #171717 / 深色 #d8d8d8），由它派生出来的 `colorPrimaryBg` 是
+ * **#575757 / #595959 的中灰、而且不带任何透明度**；这块面积在 100% 音量下占 **70.5% 行高 × 整行宽**
+ * （折线 26.5% → 面积底 97%），正好压在波形上——波形是「1px 一列铺满整段」的实心色块，
+ * 被一块不透明的灰板盖住就等于消失。用户在界面上看到的「曲线」其实是行里那条音量基准线。
+ *
+ * 修法：填充改成**与波形条同一个 token（colorPrimary）** + 低不透明度（EDIT_GAIN_AREA_FILL_OPACITY）。
+ * 同色叠加是恒等运算（0.92 × 波形色 + 0.08 × 同一个波形色 = 波形色），所以这层填充**在算术上
+ * 不可能削弱波形的对比度**；折线的坡度与音量基准线一点没减弱，静音态的虚线 / 变淡也原样保留。
+ * 下面把「让路之后仍然看得见」做成可读回 / 可计算的断言，两套**真实主题**各跑一遍。
+ *
+ * 无法验证的部分：node 环境没有 DOM（本仓库不引入 jsdom），这里量不出真实像素，
+ * 「波形在界面上是不是真的清楚」只能由用户在实机上看——本文件给的是产物 + 算术证据，不能替代人眼验收。
+ */
+describe("剪辑台音轨：波形是主信息，音量与淡入淡出的叠加层必须让路（浅色 / 深色各核一遍）", () => {
+    /** 面积填充能盖住多少行高：折线在 100% 音量时的高度是 26.5%，面积一直铺到 97%。 */
+    const COVERED_ROW_PERCENT = 97 - 26.5;
+
+    it("面积填充是低透明度的同色底纹：波形条的可见度 = 1 − 填充不透明度，两套主题都不低于 0.9", () => {
+        for (const dark of [false, true]) {
+            const markup = renderThemed(demo(TRACKS_BASE), `editor-gain-fill-${dark ? "dark" : "light"}`, dark);
+            const area = tagOf(markup, 'data-edit-track-gain-area="t1"');
+            const line = tagOf(markup, 'data-edit-track-gain-line="t1"');
+
+            // ① 产物读回：填充的不透明度必须真的写在产物里。缺这个属性就等于 1 = 完全不透明，
+            //    也就是用户报的那个状态（修复前 fill-opacity 属性根本不存在，这里读到的是 1）。
+            const raw = attrOf(area, "fill-opacity");
+            const alpha = raw === null ? 1 : Number(raw);
+            expect(alpha, "面积填充必须带一个明确的不透明度").toBe(EDIT_GAIN_AREA_FILL_OPACITY);
+            expect(alpha).toBeLessThanOrEqual(0.1);
+            // 波形条的视觉可见度 = 1 − 填充不透明度（填充就盖在波形上）。
+            expect(1 - alpha).toBeGreaterThanOrEqual(0.9);
+
+            // ② 填充用的是**与折线（也就是波形条）同一个 token**：产物里两者的颜色必须逐字相同。
+            //    canvas 画波形条的 fillStyle 就是 token.colorPrimary，折线的 stroke 也是它，
+            //    所以「填充色 === 折线色」就是「填充色 === 波形色」在产物里的可读证据。
+            const bar = styleOf(line).match(/stroke:(#\w+)/)?.[1];
+            expect(bar, "折线上的 stroke 必须是具体色值").toBeTruthy();
+            expect(styleOf(area)).toContain(`fill:${bar}`);
+            //    同色叠加是恒等运算：叠在波形条上的合成色就是波形色本身 ⇒ 填充削弱不了波形。
+            expect(over(bar!, alpha, bar!)).toBe(bar);
+
+            // ③ 上一轮那块把波形盖死的填充色是两个具体的中灰（两套主题的 colorPrimaryBg 实测值），
+            //    这里逐字钉住「不许再回去」。修复前这两条都会失败。
+            expect(styleOf(area)).not.toContain(dark ? "#595959" : "#575757");
+            expect(styleOf(area)).not.toContain("colorPrimaryBg");
+
+            // ④ 可计算对比：填充盖住 70.5% 的行高，所以「填充之后波形条 vs 它周围的底色」的对比度
+            //    就是波形清不清楚的全部依据（WCAG 1.4.11 对非文本图形要求 ≥ 3:1）。
+            const tokens = antdTheme.getDesignToken(getAntThemeConfig(dark));
+            // 行底 = 行自己的 bg-black/[0.03]（深色主题是 dark:bg-white/[0.05]，见行容器的类名）压在页面底色上。
+            const rowBackground = over(dark ? "#ffffff" : "#000000", dark ? 0.05 : 0.03, tokens.colorBgContainer);
+            const tinted = over(bar!, alpha, rowBackground);
+            expect(contrast(bar!, tinted)).toBeGreaterThanOrEqual(3);
+            // 顺序也核一遍：填充确实盖住了这一行的大部分——不是「因为只盖了一小块」才没挡住波形。
+            const areaPoints = pointsOf(area);
+            expect(Math.max(...areaPoints.map((point) => point[1])) - Math.min(...areaPoints.map((point) => point[1]))).toBe(COVERED_ROW_PERCENT);
+            expect(COVERED_ROW_PERCENT).toBeGreaterThan(60);
+        }
+    });
+
+    it("层级：覆盖层在波形条之上、音量线在覆盖层之上，覆盖层里唯一实心的画笔只有一条 2px 描边", () => {
+        const markup = render(demo(TRACKS_BASE), "editor-gain-layer");
+        const row = divSlice(markup, 'data-edit-track-row="t1"');
+        const svg = tagOf(markup, 'data-edit-track-gain="t1"');
+        const strip = tagOf(markup, 'data-edit-waveform-strip="t1"');
+        const line = tagOf(markup, 'data-edit-track-volume="t1"');
+        const head = tagOf(markup, 'data-edit-track-head="t1"');
+
+        // 波形条不写 z-index（auto = 0，按 DOM 顺序先画、在下面）。这是**刻意**的顺序：
+        // 波形条是「1px 一列铺满整段」的实心块，把折线 / 面积画在它**下面**等于没画（上一轮那次就是这样
+        // 被裁掉的），所以让路的办法只能是「叠加层自己不遮挡」，见上面那条用例。
+        expect(zIndexOf(strip)).toBe(0);
+        expect(zIndexOf(svg)).toBe(2);
+        expect(zIndexOf(line)).toBe(3);
+        expect(zIndexOf(head)).toBe(10);
+        expect(zIndexOf(svg)).toBeGreaterThan(zIndexOf(strip));
+        // 音量线压在覆盖层之上 ⇒ 它拖得到（覆盖层本身 pointer-events-none）。
+        expect(zIndexOf(line)).toBeGreaterThan(zIndexOf(svg));
+        // 轨道头仍压在音量线之上 ⇒ 静音 / 独奏 / 锁定三个开关仍点得到
+        // （覆盖层不吃指针事件、内部没有可交互元素，另有 editor-audio-mute-regression-ui.test.tsx 专门冻结）。
+        expect(zIndexOf(head)).toBeGreaterThan(zIndexOf(line));
+
+        // 覆盖层里只有两支画笔：一块 0.08 的填充（上一条用例）与一条 2px 描边。
+        // 行高 36px（h-9；Tailwind 的 --spacing 没有被改过，h-9 = 9 × 4px），所以那条线最多占住
+        // 2/36 = 5.6% 的行高——它是一条线，不是一块面，这是「音量线必须看得见」与「不挡波形」的取舍点。
+        const overlayAt = row.indexOf("<svg data-edit-track-gain");
+        const overlay = row.slice(overlayAt, row.indexOf("</svg>", overlayAt));
+        expect(overlay.match(/<polygon/g)).toHaveLength(1);
+        expect(overlay.match(/<polyline/g)).toHaveLength(1);
+        expect(attrOf(tagOf(markup, 'data-edit-track-gain-line="t1"'), "stroke-width")).toBe("2");
+        expect(2 / 36).toBeLessThan(0.1);
+
+        // 覆盖层的盒子仍然**就是本行**（上一轮的 width/height:100% 不许改回去）：它不越出本行，
+        // 就不可能盖到视频轨行 / 字幕行 / 接缝标记上。
+        expect(styleOf(svg)).toContain("width:100%");
+        expect(styleOf(svg)).toContain("height:100%");
+        expect(svg).toContain("inset-0");
+        expect(tagOf(markup, 'data-edit-track-row="t1"')).toContain("overflow-hidden");
+        // 整行只有这一个覆盖层：没有第二块面被画到波形上面。
+        expect(row.match(/data-edit-track-gain="/g)).toHaveLength(1);
+    });
+
+    it("音量线仍在、仍拖得动：12px 的命中带、在覆盖层之上、仍是带 ns-resize 的竖直滑块", () => {
+        const markup = render(demo(TRACKS_BASE), "editor-gain-hit");
+        const line = tagOf(markup, 'data-edit-track-volume="t1"');
+
+        // 视觉上只有 2px 的线，命中带是 h-3 = 12px（6 倍行内），远宽于线本身。
+        expect(divSlice(markup, 'data-edit-track-volume="t1"')).toContain("h-[2px]");
+        expect(line).toContain("h-3");
+        expect(12 / 36).toBeGreaterThan(0.25);
+        // 手感与语义：上下拖才有效（光标先说清楚）、键盘可达的竖直滑块。
+        expect(line).toContain("cursor-ns-resize");
+        expect(attrOf(line, "role")).toBe("slider");
+        expect(attrOf(line, "aria-orientation")).toBe("vertical");
+        expect(attrOf(line, "aria-valuetext")).toBe("100% · 0.0 dB");
+        // 它在覆盖层之上（z-3 > z-2），而覆盖层 pointer-events-none ⇒ 指针一定落在线上而不是被覆盖层吃掉。
+        expect(zIndexOf(line)).toBe(3);
+        expect(zIndexOf(line)).toBeGreaterThan(zIndexOf(tagOf(markup, 'data-edit-track-gain="t1"')));
+    });
+
+    it("减弱填充没有把静音态与淡入淡出一起减弱：坡度仍是实心 2px、静音仍变虚线并更淡", () => {
+        const markup = renderThemed(demo(TRACKS_BASE), "editor-gain-keep-light", false);
+        // t2 = 静音 + 50% + 淡入 1 秒 / 淡出 2 秒。
+        const svg = tagOf(markup, 'data-edit-track-gain="t2"');
+        const line = tagOf(markup, 'data-edit-track-gain-line="t2"');
+        const area = tagOf(markup, 'data-edit-track-gain-area="t2"');
+
+        // 坡度**一点没减弱**：描边没有任何额外透明度、宽度仍是 2px、折点仍画在正确位置
+        // （1 秒 → 11.11%、7 秒 → 77.78%，与标尺刻度同一把尺子；位置另有专门用例逐个核对）。
+        expect(attrOf(line, "stroke-opacity")).toBeNull();
+        expect(attrOf(line, "stroke-width")).toBe("2");
+        expect(pointsOf(line)).toEqual([
+            [0, 97],
+            [11.11111111111111, 38.29034149683927],
+            [77.77777777777779, 38.29034149683927],
+            [100, 97],
+        ]);
+
+        // 静音态仍与正常态看得出区别：整层 opacity-50 + 折线虚线 + 填充的有效不透明度减半（0.08 × 0.5）。
+        expect(svg).toContain("opacity-50");
+        expect(attrOf(line, "stroke-dasharray")).toBe("4 3");
+        const mutedAlpha = Number(attrOf(area, "fill-opacity") ?? 1) * 0.5;
+        expect(mutedAlpha).toBeCloseTo(0.04, 6);
+        expect(mutedAlpha).toBeLessThan(EDIT_GAIN_AREA_FILL_OPACITY);
+        // 波形条自己也变淡（opacity-40）：静音轨的波形比正常轨更弱，这是既有设定，本次没动它。
+        expect(tagOf(markup, 'data-edit-waveform-strip="t2"')).toContain("opacity-40");
+        // 读数一字不变（用户在截图里能看到它，说明它是有效的）。
+        expect(markup).toContain("50% · -6.0 dB");
+    });
+
+    it("源码级闸门：组件里不再出现 colorPrimaryBg，填充只能走 colorPrimary + EDIT_GAIN_AREA_FILL_OPACITY", () => {
+        // 这条能防住的失败模式：有人为了「再明显一点」把填充换回 colorPrimaryBg（或别的实心底色 token）。
+        // 那种改动在产物断言里也会红，但这里给出的是**原因**：本应用的主色是中性色，
+        // 从它派生出来的 colorPrimaryBg 是中灰实心块，正是用户报的那个「灰色矩形」。
+        const source = readFileSync(new URL("./components/edit-audio-track.tsx", import.meta.url), "utf8");
+        // 查的是**用法**（token.colorPrimaryBg）而不是裸词：那段说明里要写明「曾经用的是它」，会提到这个名字。
+        expect(source).not.toContain("token.colorPrimaryBg");
+        expect(source).toContain("fillOpacity={EDIT_GAIN_AREA_FILL_OPACITY}");
+        expect(source).toContain("style={{ fill: token.colorPrimary }}");
     });
 });
